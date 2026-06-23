@@ -1,0 +1,4725 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+  <title>고전역학 시뮬레이터</title>
+  <style>
+    /* ── 전역 리셋 ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* 배경 계열 (Circuit 토큰 채택) */
+      --bg: #0d0f1a;            /* 앱 전체 배경 (Circuit --bg-app) */
+      --surface: #111827;       /* 사이드바 (Circuit --bg-sidebar) */
+      --surface2: #1a2438;      /* 아이템 (Circuit --bg-item) */
+      --bg-panel: rgba(10,16,30,0.97);   /* 글래스 패널 */
+      --bg-glass: rgba(17,24,39,0.90);   /* 반투명 버튼/pill */
+      --bg-ctx:   rgba(14,22,40,0.97);   /* 컨텍스트 메뉴 */
+
+      /* 테두리 계열 */
+      --border: #1e3050;        /* 기본 테두리 (Circuit --border-base) */
+      --border-dim: #1e2d45;    /* 약한 구분선 */
+      --border-active: #2d6fc0; /* 활성 강조 */
+      --border-focus: #4a90d9;  /* 입력 포커스 */
+
+      /* 텍스트 계열 */
+      --text: #c8d6e5;          /* 기본 본문 (Circuit --text-base) */
+      --text-dim: #506a88;      /* 흐린 텍스트 */
+      --text-label: #607a99;    /* 라벨 */
+      --text-accent: #7ec8f0;   /* 강조(하늘색) */
+      --text-accent2: #9ecfff;  /* 강조(밝은 하늘) */
+      --text-title: #4a90d9;    /* 제목 */
+
+      /* 강조 (구 --accent/--accent2 → 파랑 계열로 통일, 초록 제거) */
+      --accent: #4a90d9;
+      --accent2: #7ec8f0;
+
+      /* 위험(삭제) 계열 */
+      --danger-bg: #3a1010;
+      --danger-border: #5a2020;
+      --danger-text: #f08080;
+
+      /* 경고 바 (밝은 노랑 → 다크/글래스) */
+      --warn-bg: rgba(58,16,16,0.92);
+      --warn-fg: #f0a0a0;
+      --warn-border: #5a2020;
+
+      /* 버튼 호버 */
+      --btn-h: #243352;
+
+      /* 캔버스 무대 배경 */
+      --bg-stage: #0a0c14;
+
+      /* 형태 */
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 10px;
+      --radius-xl: 14px;
+      --radius-pill: 36px;
+
+      /* 효과 */
+      --blur: blur(12px);
+      --shadow-panel: 0 4px 20px rgba(0,0,0,0.5);
+      --shadow-float: 0 6px 32px rgba(0,0,0,0.7);
+
+      /* 레이아웃 치수 */
+      --panel-w: 200px;
+      --sidebar-w: 64px;
+      --bottom-h: 56px;
+      --font: 'Courier New', 'Consolas', monospace;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+    }
+
+    /* ── 레이아웃 ── */
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+    }
+
+    /* 1. 경고 바 */
+    #warning-bar {
+      display: none;
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+      padding: 8px 16px;
+      font-size: 13px;
+      font-family: var(--font);
+      text-align: center;
+      border-bottom: 1px solid var(--warn-border);
+      backdrop-filter: var(--blur);
+      flex-shrink: 0;
+      z-index: 50;
+    }
+
+    /* 2. 앱 래퍼 */
+    #app-wrapper {
+      display: flex;
+      flex-direction: row;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 3. 사이드바 */
+    #sidebar-left {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border-dim);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 0;
+      gap: 6px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      z-index: 10;
+      scrollbar-width: none;
+    }
+    #sidebar-left::-webkit-scrollbar { display: none; }
+
+    .palette-item {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 16px;
+      transition: background 0.12s, border-color 0.12s, transform 0.08s;
+      user-select: none;
+      touch-action: manipulation;
+      position: relative;
+    }
+    .palette-item:hover {
+      background: var(--btn-h);
+      border-color: var(--border-active);
+    }
+    .palette-item.active-mode {
+      background: rgba(26,58,106,0.95);
+      border: 1px solid var(--border-active);
+      color: var(--text-accent);
+      box-shadow: 0 0 10px rgba(60,130,220,0.3);
+    }
+    .palette-item:active {
+      transform: scale(0.88);
+    }
+    .palette-item[title]:hover::after {
+      content: attr(title);
+      position: absolute;
+      left: calc(100% + 8px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--bg-ctx);
+      color: var(--text-accent2);
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+      font-size: 11px;
+      pointer-events: none;
+      z-index: 100;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow-panel);
+    }
+
+    .palette-separator {
+      width: 40px;
+      height: 1px;
+      background: var(--border-dim);
+      margin: 2px 0;
+    }
+
+    /* 4. 캔버스 래퍼 */
+    #canvas-wrapper {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      background: var(--bg-stage);
+    }
+
+    #gridCanvas,
+    #mainCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+    }
+
+    #gridCanvas {
+      z-index: 1;
+    }
+    #mainCanvas {
+      z-index: 2;
+    }
+
+    /* 5. 속성 패널 */
+    #panel-right {
+      width: var(--panel-w);
+      flex-shrink: 0;
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border);
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 14px;
+      overflow-y: auto;
+      z-index: 10;
+      font-size: 11px;
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow-panel);
+    }
+
+    .panel-label {
+      color: var(--text-title);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    .panel-input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-accent);
+      padding: 4px 6px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font);
+      font-size: 11px;
+    }
+    .panel-input:focus { outline: none; border-color: var(--border-focus); }
+
+    .panel-btn {
+      width: 100%;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      color: var(--text-accent);
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 11px;
+      text-align: center;
+      min-height: 32px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .panel-btn:hover { background: var(--btn-h); border-color: var(--border-active); }
+    .panel-btn.danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+    .panel-btn.danger:hover { background: #4f1c1c; }
+
+    /* 6. 하단 컨트롤 → 떠있는 mode-bar pill (Circuit 패턴, #canvas-wrapper 기준 absolute) */
+    #controls-bottom {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      padding: 5px 8px;
+      backdrop-filter: var(--blur);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    }
+
+    .ctrl-btn {
+      padding: 7px 16px;
+      height: auto;
+      min-height: 0;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      border-radius: 28px;
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      transition: all 0.18s;
+      white-space: nowrap;
+      touch-action: manipulation;
+    }
+    .ctrl-btn:hover:not(.active) { color: var(--text-accent2); background: rgba(255,255,255,0.05); }
+    .ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .ctrl-btn.active { background: #1a3a6a; border-color: var(--border-active); color: var(--text-accent); box-shadow: 0 0 10px rgba(60,130,220,0.3); }
+
+    /* 줌 레벨 표시 (Circuit 오버레이 톤) */
+    #zoom-indicator {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: var(--bg-glass);
+      color: var(--text-dim);
+      font-size: 10px;
+      padding: 3px 7px;
+      border-radius: var(--radius-sm);
+      pointer-events: none;
+      z-index: 5;
+      font-family: var(--font);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+    }
+
+    /* 모바일 전용 요소 (기본 숨김 — 데스크톱) */
+    #hamburger-btn, #sidebar-overlay { display: none; }
+
+    /* 모바일 레이아웃 (≤480px) — Circuit 햄버거 오버레이 패턴 */
+    @media (max-width: 480px) {
+      /* 사이드바: 슬라이드 오버레이 */
+      #sidebar-left {
+        position: fixed; left: 0; top: 0; bottom: 0;
+        width: 72px; z-index: 200;
+        transform: translateX(-100%);
+        transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
+        box-shadow: 4px 0 24px rgba(0,0,0,0.7);
+        padding: 56px 0 12px 0;
+      }
+      #sidebar-left.mobile-open { transform: translateX(0); }
+
+      /* 사이드바 배경 딤 */
+      #sidebar-overlay {
+        display: none; position: fixed; inset: 0; z-index: 199;
+        background: rgba(0,0,0,0.55);
+      }
+      #sidebar-overlay.visible { display: block; }
+
+      /* 햄버거 버튼 */
+      #hamburger-btn {
+        display: flex; position: fixed; top: 10px; left: 10px; z-index: 201;
+        width: 40px; height: 40px; border-radius: var(--radius-lg);
+        background: var(--bg-glass); border: 1px solid var(--border);
+        flex-direction: column; align-items: center; justify-content: center;
+        gap: 5px; cursor: pointer; backdrop-filter: blur(8px);
+      }
+      #hamburger-btn span { display: block; width: 20px; height: 2px; background: var(--text-accent); border-radius: 1px; }
+
+      /* 하단 pill: 약간 축소 */
+      .ctrl-btn { font-size: 11px; padding: 6px 12px; }
+
+      /* 속성 패널: 기존 display-구동 바텀시트 유지(글래스 재스타일) */
+      #panel-right {
+        position: fixed;
+        bottom: 0; right: 0; left: 0;
+        width: 100% !important;
+        max-height: 60vh;
+        overflow-y: auto;
+        background: var(--bg-panel);
+        z-index: 180;
+        border-top: 1px solid var(--border);
+        border-left: none;
+        border-radius: 18px 18px 0 0;
+        padding: 16px 18px 24px;
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow-float);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 경고 바 -->
+  <div id="warning-bar"></div>
+
+  <!-- 모바일 전용: 햄버거 버튼 + 사이드바 배경 딤 (데스크톱에서는 CSS로 숨김) -->
+  <button id="hamburger-btn" aria-label="메뉴 열기"><span></span><span></span><span></span></button>
+  <div id="sidebar-overlay"></div>
+
+  <!-- 앱 래퍼 -->
+  <div id="app-wrapper">
+
+    <!-- 사이드바 (팔레트) -->
+    <div id="sidebar-left">
+      <div class="palette-item" data-type="rect" title="네모 물체">■</div>
+      <div class="palette-item" data-type="circle" title="원 물체">●</div>
+      <div class="palette-separator"></div>
+      <div class="palette-item" data-mode="floor_draw" title="바닥면 그리기">⌇</div>
+      <div class="palette-item" data-type="forceZone" title="힘 구간">F</div>
+      <div class="palette-separator"></div>
+      <div class="palette-item" data-mode="rope_draw" title="실 그리기">∿</div>
+      <div class="palette-item" data-type="pulley" title="도르래">○</div>
+      <div class="palette-item" data-type="spring" title="용수철">≈</div>
+    </div>
+
+    <!-- 캔버스 래퍼 -->
+    <div id="canvas-wrapper">
+      <canvas id="gridCanvas"></canvas>
+      <canvas id="mainCanvas"></canvas>
+      <div id="zoom-indicator">100%</div>
+
+      <!-- 하단 컨트롤 → 떠있는 mode-bar pill (canvas-wrapper 기준 absolute) -->
+      <div id="controls-bottom">
+        <button class="ctrl-btn" id="btn-run">▶ 실행</button>
+        <button class="ctrl-btn" id="btn-reset">↺ 초기화</button>
+        <button class="ctrl-btn" id="btn-capture">📷 촬영</button>
+        <button class="ctrl-btn" id="btn-gravity">⊙ 무중력</button>
+      </div>
+    </div>
+
+    <!-- 속성 패널 (기본 hidden) -->
+    <div id="panel-right">
+      <div class="panel-label">속성</div>
+      <!-- Sprint 3에서 채워짐 -->
+    </div>
+
+  </div>
+
+  <script>
+  /* ================================================================
+     [CONFIG] — 물리/렌더링 상수
+  ================================================================ */
+  const CONFIG = {
+    G:          9.8,
+    SUBSTEPS:   4,
+    MAX_DT:     0.033,
+    GRID_SIZE:  100,
+    cellSize:   null,   // initCanvas()에서 설정
+    DEFAULT_E:  1.0,
+    DEFAULT_MU: 0.3,
+    DEFAULT_K:  10.0,
+  };
+
+  /* ================================================================
+     [VIEWPORT] — 줌/팬 상태
+  ================================================================ */
+  const VIEWPORT = {
+    scale:    1.0,
+    offsetX:  0,
+    offsetY:  0,
+    minScale: 0.2,
+    maxScale: 5.0,
+  };
+
+  /* ================================================================
+     [STATE] — 전역 상태
+  ================================================================ */
+  const STATE = {
+    simMode:           'EDIT',
+    interactionMode:   'IDLE',
+    elements:          [],
+    floorSegments:     [],
+    ropes:             [],
+    selected:          null,
+    pendingGridPoint:  null,
+    pendingRopeAnchor: null,
+    snapshot:          null,
+    gravityOn:         true,
+    dragOffset:        { x: 0, y: 0 },
+    activePointers:    new Map(),
+    prevPinchDist:     null,
+    _ropePreviewWorld: null,   // ROPE_DRAW 커서 위치 (월드 픽셀)
+  };
+
+  /* ================================================================
+     [DOM REFS]
+  ================================================================ */
+  const gridCanvas   = document.getElementById('gridCanvas');
+  const mainCanvas   = document.getElementById('mainCanvas');
+  const gridCtx      = gridCanvas.getContext('2d');
+  const mainCtx      = mainCanvas.getContext('2d');
+  const canvasWrapper = document.getElementById('canvas-wrapper');
+  const zoomIndicator = document.getElementById('zoom-indicator');
+  const btnRun       = document.getElementById('btn-run');
+  const btnReset     = document.getElementById('btn-reset');
+  const btnCapture   = document.getElementById('btn-capture');
+  const btnGravity   = document.getElementById('btn-gravity');
+  const warningBar   = document.getElementById('warning-bar');
+  const panelRight   = document.getElementById('panel-right');
+
+  /* ================================================================
+     [VIEWPORT UTILS] — 좌표 변환
+  ================================================================ */
+
+  /** 월드 픽셀 → 화면 픽셀 */
+  function worldToScreen(wx, wy) {
+    return {
+      x: wx * VIEWPORT.scale + VIEWPORT.offsetX,
+      y: wy * VIEWPORT.scale + VIEWPORT.offsetY,
+    };
+  }
+
+  /** 화면 픽셀 → 월드 픽셀 */
+  function screenToWorld(sx, sy) {
+    return {
+      x: (sx - VIEWPORT.offsetX) / VIEWPORT.scale,
+      y: (sy - VIEWPORT.offsetY) / VIEWPORT.scale,
+    };
+  }
+
+  /** ctx에 뷰포트 변환 행렬 적용 */
+  function applyViewport(ctx) {
+    ctx.setTransform(
+      VIEWPORT.scale, 0,
+      0, VIEWPORT.scale,
+      VIEWPORT.offsetX, VIEWPORT.offsetY
+    );
+  }
+
+  /** 물리 좌표(m) → 월드 픽셀 좌표 (y 반전) */
+  function physToWorld(physX, physY) {
+    return {
+      x: physX * CONFIG.cellSize,
+      y: (CONFIG.GRID_SIZE - physY) * CONFIG.cellSize,
+    };
+  }
+
+  /** 월드 픽셀 → 물리 좌표(m) */
+  function worldToPhys(worldX, worldY) {
+    return {
+      x: worldX / CONFIG.cellSize,
+      y: CONFIG.GRID_SIZE - (worldY / CONFIG.cellSize),
+    };
+  }
+
+  /** 월드 픽셀값 → 가장 가까운 격자 픽셀 좌표 */
+  function snapToGrid(worldVal) {
+    return Math.round(worldVal / CONFIG.cellSize) * CONFIG.cellSize;
+  }
+
+  /** 월드 픽셀값 → 격자 인덱스 (0–99) */
+  function snapToGridIndex(worldVal) {
+    return Math.round(worldVal / CONFIG.cellSize);
+  }
+
+  /** 격자 인덱스 → 월드 픽셀 */
+  function gridToWorld(index) {
+    return index * CONFIG.cellSize;
+  }
+
+  /** 범위 클램프 */
+  function clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  }
+
+  /** 점 (px,py) → 선분 (ax,ay)-(bx,by) 최근접 거리 */
+  function pointToSegmentDist(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-10) return Math.hypot(px - ax, py - ay);
+    const t = clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  }
+
+  /* ================================================================
+     [CANVAS INIT] — 초기화 및 리사이즈
+  ================================================================ */
+
+  /** 캔버스 크기를 래퍼에 맞춰 초기화 */
+  function initCanvas() {
+    const w = canvasWrapper.clientWidth;
+    const h = canvasWrapper.clientHeight;
+
+    // 캔버스 크기를 래퍼에 맞춤 (정사각형 아니어도 됨)
+    gridCanvas.width  = mainCanvas.width  = w;
+    gridCanvas.height = mainCanvas.height = h;
+
+    // cellSize: 짧은 쪽 기준, GRID_SIZE 칸으로 나눔
+    const canvasSize = Math.min(w, h);
+    CONFIG.cellSize = canvasSize / CONFIG.GRID_SIZE;
+
+    // 최초 로드 시 뷰포트: 400% 배율, 그리드 중앙이 화면 중앙에 오도록
+    if (!CONFIG._initialized) {
+      CONFIG._initialized = true;
+      VIEWPORT.scale = 4.0;  // 초기 배율 400%
+      // 그리드 중앙(50, 50)이 화면 중앙에 오도록 offset 계산
+      const gridCenter_world_x = (CONFIG.GRID_SIZE / 2) * CONFIG.cellSize;
+      const gridCenter_world_y = (CONFIG.GRID_SIZE / 2) * CONFIG.cellSize;
+      VIEWPORT.offsetX = w / 2 - gridCenter_world_x * VIEWPORT.scale;
+      VIEWPORT.offsetY = h / 2 - gridCenter_world_y * VIEWPORT.scale;
+    }
+
+    drawGrid();
+    renderLoop();
+  }
+
+  /** 캔버스를 래퍼 크기에 맞춰 재계산 (단일 사이징 권위; offset 유지) */
+  function fitCanvas() {
+    const w = canvasWrapper.clientWidth;
+    const h = canvasWrapper.clientHeight;
+    gridCanvas.width  = mainCanvas.width  = w;
+    gridCanvas.height = mainCanvas.height = h;
+    const canvasSize = Math.min(w, h);
+    CONFIG.cellSize = canvasSize / CONFIG.GRID_SIZE;
+    drawGrid();
+  }
+
+  window.addEventListener('resize', fitCanvas);
+
+  /* ================================================================
+     [GRID] — 격자 렌더링
+  ================================================================ */
+
+  /**
+   * gridCanvas에 GRID_SIZE×GRID_SIZE 격자 점 렌더
+   * FLOOR_DRAW 모드 시 그린 강조, pendingGridPoint 노란 강조
+   */
+  function drawGrid() {
+    const ctx = gridCtx;
+    const W = gridCanvas.width;
+    const H = gridCanvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+    applyViewport(ctx);
+
+    const s  = VIEWPORT.scale;
+    const GS = CONFIG.GRID_SIZE;
+    const cs = CONFIG.cellSize;
+
+    const isFloorMode = (STATE.interactionMode === 'FLOOR_DRAW');
+    // 기본 점 반지름: FLOOR_DRAW 시 3/s, 평상시 1.2/s
+    const r = isFloorMode ? 3 / s : 1.2 / s;
+
+    // 화면에 보이는 범위만 렌더 (컬링)
+    const topLeft     = screenToWorld(0, 0);
+    const bottomRight = screenToWorld(W, H);
+    const iMin = Math.max(0,  Math.floor(topLeft.x     / cs) - 1);
+    const iMax = Math.min(GS, Math.ceil (bottomRight.x / cs) + 1);
+    const jMin = Math.max(0,  Math.floor(topLeft.y     / cs) - 1);
+    const jMax = Math.min(GS, Math.ceil (bottomRight.y / cs) + 1);
+
+    for (let i = iMin; i <= iMax; i++) {
+      for (let j = jMin; j <= jMax; j++) {
+        // pendingGridPoint는 나중에 별도 강조
+        if (STATE.pendingGridPoint &&
+            STATE.pendingGridPoint.gridX === i &&
+            STATE.pendingGridPoint.gridY === j) continue;
+
+        ctx.fillStyle = isFloorMode
+          ? 'rgba(16,185,129,0.75)'   // #10b981
+          : 'rgba(100,100,100,0.35)';
+        ctx.beginPath();
+        ctx.arc(i * cs, j * cs, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 원점 강조
+    if (!isFloorMode) {
+      ctx.fillStyle = 'rgba(100,100,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(0, GS * cs, r * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // pendingGridPoint 노란 강조 (5/s 반지름)
+    if (STATE.pendingGridPoint) {
+      const px = STATE.pendingGridPoint.gridX * cs;
+      const py = STATE.pendingGridPoint.gridY * cs;
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(px, py, 5 / s, 0, Math.PI * 2);
+      ctx.fill();
+      // 바깥 링
+      ctx.strokeStyle = 'rgba(251,191,36,0.5)';
+      ctx.lineWidth   = 1.5 / s;
+      ctx.beginPath();
+      ctx.arc(px, py, 8 / s, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /* ================================================================
+     [RENDER LOOP] — rAF 기반 렌더링
+  ================================================================ */
+
+  let _rafId = null;
+  let _lastTs = 0;
+
+  function renderLoop(ts = 0) {
+    _rafId = requestAnimationFrame(renderLoop);
+
+    const elapsed = ts - _lastTs;
+    if (elapsed < 14 && _lastTs !== 0) return;
+    _lastTs = ts;
+
+    if (STATE.simMode === 'RUNNING') {
+      const rawDt = Math.min(elapsed / 1000, CONFIG.MAX_DT);
+      simStep(rawDt);
+    }
+    drawScene();
+  }
+
+  /** mainCanvas에 모든 요소 렌더 */
+  function drawScene() {
+    const ctx = mainCtx;
+    const W = mainCanvas.width;
+    const H = mainCanvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+    applyViewport(ctx);
+
+    drawElements(ctx);
+
+    // ROPE_DRAW 모드: 앵커 포인트 오버레이
+    if (STATE.interactionMode === 'ROPE_DRAW') {
+      drawAttachPoints(ctx);
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // 줌 인디케이터 갱신
+    zoomIndicator.textContent = Math.round(VIEWPORT.scale * 100) + '%';
+
+    // RUNNING 모드 표시
+    if (STATE.simMode === 'RUNNING' || STATE.simMode === 'PAUSED') {
+      ctx.fillStyle = STATE.simMode === 'RUNNING' ? 'rgba(16,185,129,0.18)' : 'rgba(251,191,36,0.12)';
+      ctx.fillRect(0, 0, 4, H);
+    }
+  }
+
+  /**
+   * ROPE_DRAW 모드 전용: 모든 RectBody/CircleBody/Pulley 앵커 포인트 렌더
+   * 반지름 6/scale, fill '#f59e0b', stroke '#fff' 1/scale
+   * pendingRopeAnchor 해당 포인트: fill '#3b82f6'
+   * pendingRopeAnchor → 현재 커서 예비 실선 렌더
+   */
+  function drawAttachPoints(ctx) {
+    const s = VIEWPORT.scale;
+    const r = 6 / s;
+
+    // ── Element 앵커 포인트 (원형) ──
+    for (const el of STATE.elements) {
+      if (!['rect', 'circle', 'pulley'].includes(el.type)) continue;
+      const pts = getAttachPoints(el);
+      for (const pt of pts) {
+        const isPending = (
+          STATE.pendingRopeAnchor &&
+          STATE.pendingRopeAnchor.elementId  === el.id &&
+          STATE.pendingRopeAnchor.attachPoint === pt.id
+        );
+        ctx.save();
+        ctx.fillStyle   = isPending ? '#3b82f6' : '#f59e0b';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth   = 1 / s;
+        ctx.beginPath();
+        ctx.arc(pt.worldX, pt.worldY, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // ── FloorSegment 끝점 앵커 (다이아몬드, 더 크게) ──
+    for (const seg of STATE.floorSegments) {
+      const pts = getFloorSegAttachPoints(seg);
+      for (const pt of pts) {
+        const isPending = (
+          STATE.pendingRopeAnchor &&
+          STATE.pendingRopeAnchor.elementId  === seg.id &&
+          STATE.pendingRopeAnchor.attachPoint === pt.id
+        );
+        const pr = isPending ? r * 1.4 : r;   // pending 시 더 크게
+
+        ctx.save();
+        ctx.fillStyle   = isPending ? '#3b82f6' : '#94a3b8';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth   = 1.5 / s;
+        ctx.beginPath();
+        ctx.moveTo(pt.worldX,      pt.worldY - pr);
+        ctx.lineTo(pt.worldX + pr, pt.worldY);
+        ctx.lineTo(pt.worldX,      pt.worldY + pr);
+        ctx.lineTo(pt.worldX - pr, pt.worldY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // "고정" 레이블
+        ctx.fillStyle    = isPending ? '#dbeafe' : '#e2e8f0';
+        ctx.font         = `${7 / s}px 'Courier New', monospace`;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('고정', pt.worldX, pt.worldY - pr - 1 / s);
+        ctx.restore();
+      }
+    }
+
+    // ── 예비 실선 ──
+    if (STATE.pendingRopeAnchor && STATE._ropePreviewWorld) {
+      // 앵커 월드 좌표 resolve (Element & FloorSegment 모두)
+      let aWorld = null;
+      const pA = STATE.pendingRopeAnchor;
+      const anchorEl  = STATE.elements.find(e => e.id === pA.elementId);
+      const anchorSeg = STATE.floorSegments.find(s => s.id === pA.elementId);
+      if (anchorEl)  aWorld = getAttachPointWorld(anchorEl, pA.attachPoint);
+      if (anchorSeg) aWorld = getFloorSegAttachWorld(anchorSeg, pA.attachPoint);
+
+      if (aWorld) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(245,158,11,0.5)';
+        ctx.lineWidth   = 1.5 / s;
+        ctx.setLineDash([4 / s, 4 / s]);
+        ctx.beginPath();
+        ctx.moveTo(aWorld.x, aWorld.y);
+        ctx.lineTo(STATE._ropePreviewWorld.x, STATE._ropePreviewWorld.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
+  }
+
+  /** elements, floorSegments, ropes 렌더 */
+  function drawElements(ctx) {
+    for (const el of STATE.elements) {
+      if (el.type === 'forceZone' && el.draw) el.draw(ctx);
+    }
+    for (const seg of STATE.floorSegments) {
+      if (seg.draw) seg.draw(ctx);
+    }
+    // FloorSegment 끝점 고정 핀 — 항상 표시 (ROPE_DRAW 아닐 때도)
+    if (STATE.interactionMode !== 'ROPE_DRAW') {
+      _drawFloorPins(ctx);
+    }
+    for (const rope of STATE.ropes) {
+      if (rope.draw) rope.draw(ctx);
+    }
+    for (const el of STATE.elements) {
+      if (el.type !== 'forceZone' && el.draw) el.draw(ctx);
+    }
+    if (STATE.selected && STATE.selected.drawSelection) {
+      STATE.selected.drawSelection(ctx);
+    }
+    _drawResizeHandles(ctx);    // 핸들 점 (선택 요소 위에)
+    _drawDeleteZone(ctx);       // 삭제 존 (롱프레스 시)
+    _drawRopeWireAnchors(ctx);  // 실 재연결 앵커 포인트
+  }
+
+  /** FloorSegment 끝점 고정 핀 렌더 (소형 회색 다이아몬드) */
+  function _drawFloorPins(ctx) {
+    const s = VIEWPORT.scale;
+    const r = 3.5 / s;
+    for (const seg of STATE.floorSegments) {
+      const pts = getFloorSegAttachPoints(seg);
+      for (const pt of pts) {
+        ctx.save();
+        ctx.fillStyle   = 'rgba(148,163,184,0.55)';   // slate-400
+        ctx.strokeStyle = 'rgba(100,116,139,0.8)';
+        ctx.lineWidth   = 1 / s;
+        ctx.beginPath();
+        ctx.moveTo(pt.worldX,     pt.worldY - r);
+        ctx.lineTo(pt.worldX + r, pt.worldY);
+        ctx.lineTo(pt.worldX,     pt.worldY + r);
+        ctx.lineTo(pt.worldX - r, pt.worldY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  /* ================================================================
+     [ELEMENTS] — 기반 클래스 + 7종 요소/Connection 클래스
+  ================================================================ */
+
+  /* ── 공통 헬퍼 ── */
+  function makeId() {
+    return Date.now() + '_' + Math.random().toString(36).slice(2);
+  }
+
+  /* ── 선택 외곽선 (파란 점선) 그리기 헬퍼 ── */
+  function drawSelectionBox(ctx, wx, wy, ww, wh) {
+    const s = VIEWPORT.scale;
+    ctx.save();
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth   = 2 / s;
+    ctx.setLineDash([4 / s, 3 / s]);
+    ctx.strokeRect(wx - 2 / s, wy - 2 / s, ww + 4 / s, wh + 4 / s);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  /* ── 화살표 그리기 헬퍼 ── */
+  function drawArrow(ctx, x1, y1, x2, y2, color) {
+    const s  = VIEWPORT.scale;
+    const lw = 1.5 / s;
+    const hw = 5  / s;  // 화살촉 크기
+    const hl = 8  / s;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) return;
+    const ux = dx / len, uy = dy / len;
+    const px = -uy, py = ux; // 수직
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle   = color;
+    ctx.lineWidth   = lw;
+
+    // 선
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2 - ux * hl, y2 - uy * hl);
+    ctx.stroke();
+
+    // 화살촉
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - ux * hl + px * hw, y2 - uy * hl + py * hw);
+    ctx.lineTo(x2 - ux * hl - px * hw, y2 - uy * hl - py * hw);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     기반 클래스 Element
+  ────────────────────────────────────────────────────────────── */
+  class Element {
+    constructor() {
+      this.id       = makeId();
+      this.type     = '';
+      this.gridX    = 49;
+      this.gridY    = 49;
+      this.gridW    = 1;
+      this.gridH    = 1;
+      this.rotation = 0;         // 디스플레이 회전 (degree)
+      this._snapRotation = null;  // 바닥면 스냅 임시 회전 (radian)
+      this.selected = false;
+    }
+
+    /** 월드 픽셀 bounding box { x, y, w, h } */
+    getBBox() {
+      const cs = CONFIG.cellSize;
+      return {
+        x: this.gridX * cs,
+        y: this.gridY * cs,
+        w: this.gridW * cs,
+        h: this.gridH * cs,
+      };
+    }
+
+    /** 순수 데이터 객체 */
+    serialize() {
+      return { ...this };
+    }
+
+    /** 깊은 복사 */
+    clone() {
+      const C = Object.create(Object.getPrototypeOf(this));
+      Object.assign(C, JSON.parse(JSON.stringify(this)));
+      C.id = makeId();
+      return C;
+    }
+
+    draw(ctx) {}
+
+    /** 선택 외곽선 — 기본 bbox 기준 */
+    drawSelection(ctx) {
+      const b = this.getBBox();
+      drawSelectionBox(ctx, b.x, b.y, b.w, b.h);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     RectBody — 네모 물체
+  ────────────────────────────────────────────────────────────── */
+  class RectBody extends Element {
+    constructor() {
+      super();
+      this.type  = 'rect';
+      this.gridW = 1;
+      this.gridH = 1;
+      this.mass  = 1.0;
+      this.vx0   = 0;
+      this.vy0   = 0;
+      this.e     = CONFIG.DEFAULT_E;
+      // 런타임 (시뮬레이션)
+      this.vx = 0; this.vy = 0;
+      this.ax = 0; this.ay = 0;
+      this.physX = 0; this.physY = 0;
+    }
+
+    draw(ctx) {
+      const cs = CONFIG.cellSize;
+      const s  = VIEWPORT.scale;
+      const bx = this.gridX * cs;
+      const by = this.gridY * cs;
+      const bw = this.gridW * cs;
+      const bh = this.gridH * cs;
+      const cx = bx + bw / 2;
+      const cy = by + bh / 2;
+
+      ctx.save();
+      // 스냅 회전(임시, radian) 또는 일반 회전(degree) 적용
+      const _rotRad = (this._snapRotation !== null)
+        ? this._snapRotation
+        : this.rotation * Math.PI / 180;
+      if (_rotRad !== 0) {
+        ctx.translate(cx, cy);
+        ctx.rotate(_rotRad);
+        ctx.translate(-cx, -cy);
+      }
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth   = 2 / s;
+      ctx.fillStyle   = 'rgba(226,232,240,0.08)';
+      ctx.beginPath();
+      ctx.rect(bx, by, bw, bh);
+      ctx.fill();
+      ctx.stroke();
+
+      // 질량 레이블
+      const fontSize = Math.max(8, Math.min(14, bh * 0.35));
+      ctx.fillStyle  = '#94a3b8';
+      ctx.font       = `${fontSize / s}px 'Courier New', monospace`;
+      ctx.textAlign  = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.mass + 'kg', cx, cy);
+
+      ctx.restore();
+
+      if (STATE.selected === this) this.drawSelection(ctx);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     CircleBody — 원 물체
+  ────────────────────────────────────────────────────────────── */
+  class CircleBody extends Element {
+    constructor() {
+      super();
+      this.type  = 'circle';
+      this.gridW = 1;
+      this.gridH = 1;
+      this.mass  = 1.0;
+      this.vx0   = 0;
+      this.vy0   = 0;
+      this.e     = CONFIG.DEFAULT_E;
+      this.vx = 0; this.vy = 0;
+      this.ax = 0; this.ay = 0;
+      this.physX = 0; this.physY = 0;
+      // 회전 물리량 (균일 원판: I = 1/2 m r²)
+      this.omega  = 0;   // 각속도 [rad/s] (반시계=양수)
+      this.theta  = 0;   // 누적 회전각 [rad] (렌더용)
+      this.alpha  = 0;   // 각가속도 [rad/s²]
+    }
+
+    draw(ctx) {
+      const cs = CONFIG.cellSize;
+      const s  = VIEWPORT.scale;
+      const bx = this.gridX * cs;
+      const by = this.gridY * cs;
+      const bw = this.gridW * cs;
+      const bh = this.gridH * cs;
+      const cx = bx + bw / 2;
+      const cy = by + bh / 2;
+      const r  = bw / 2;
+
+      ctx.save();
+      if (this.rotation !== 0) {
+        ctx.translate(cx, cy);
+        ctx.rotate(this.rotation * Math.PI / 180);
+        ctx.translate(-cx, -cy);
+      }
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth   = 2 / s;
+      ctx.fillStyle   = 'rgba(226,232,240,0.08)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // 질량 레이블 — theta만큼 회전하여 굴림 운동 시각화
+      const thetaRender = this.theta || 0;
+      const fontSize = Math.max(8, Math.min(14, r * 0.7));
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-thetaRender);   // 화면 y반전 보정: 물리 반시계 = 화면 시계
+      ctx.fillStyle    = '#94a3b8';
+      ctx.font         = `bold ${fontSize / s}px 'Courier New', monospace`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.mass + 'kg', 0, 0);
+      ctx.restore();
+
+      ctx.restore();
+
+      if (STATE.selected === this) this.drawSelection(ctx);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     ForceZone — 힘 구간 (회전 없음)
+  ────────────────────────────────────────────────────────────── */
+  class ForceZone extends Element {
+    constructor() {
+      super();
+      this.type  = 'forceZone';
+      this.gridW = 2;
+      this.gridH = 2;
+      this.fx    = 0;
+      this.fy    = 10;  // 기본: 위쪽 힘
+    }
+
+    draw(ctx) {
+      const cs = CONFIG.cellSize;
+      const s  = VIEWPORT.scale;
+      const bx = this.gridX * cs;
+      const by = this.gridY * cs;
+      const bw = this.gridW * cs;
+      const bh = this.gridH * cs;
+      const cx = bx + bw / 2;
+      const cy = by + bh / 2;
+
+      // 반투명 파란 채우기
+      ctx.save();
+      ctx.fillStyle   = 'rgba(59,130,246,0.12)';
+      ctx.strokeStyle = 'rgba(59,130,246,0.5)';
+      ctx.lineWidth   = 1.5 / s;
+      ctx.setLineDash([4 / s, 3 / s]);
+      ctx.beginPath();
+      ctx.rect(bx, by, bw, bh);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // "F" 레이블
+      ctx.fillStyle    = 'rgba(147,197,253,0.8)';
+      ctx.font         = `bold ${Math.max(10, bh * 0.25) / s}px 'Courier New', monospace`;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('F', bx + 3 / s, by + 3 / s);
+
+      // 힘 화살표 (fx, fy 방향)
+      const fxN = this.fx, fyN = this.fy;
+      const mag = Math.hypot(fxN, fyN);
+      if (mag > 0) {
+        const arrowLen = Math.min(bw, bh) * 0.35;
+        const ux = fxN / mag;
+        const uy = -fyN / mag;  // 화면 y축 반전 (fy 양수 = 위쪽 = 화면 -y)
+        drawArrow(ctx,
+          cx - ux * arrowLen * 0.3,
+          cy - uy * arrowLen * 0.3,
+          cx + ux * arrowLen * 0.7,
+          cy + uy * arrowLen * 0.7,
+          'rgba(147,197,253,0.9)'
+        );
+      }
+      ctx.restore();
+
+      if (STATE.selected === this) this.drawSelection(ctx);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     Pulley — 도르래
+  ────────────────────────────────────────────────────────────── */
+  class Pulley extends Element {
+    constructor() {
+      super();
+      this.type             = 'pulley';
+      this.gridW            = 2;   // 항상 정사각형 (gridW === gridH)
+      this.gridH            = 2;
+      this.mass             = 1.0;   // 도르래 질량 (중력 적용)
+      this.vx0              = 0;
+      this.vy0              = 0;
+      this.vx = 0; this.vy = 0;
+      this.ax = 0; this.ay = 0;
+      this.physX = 0; this.physY = 0;
+      this.connectedRopeIds = [];
+    }
+
+    draw(ctx) {
+      const cs = CONFIG.cellSize;
+      const s  = VIEWPORT.scale;
+      const bx = this.gridX * cs;
+      const by = this.gridY * cs;
+      const bw = this.gridW * cs;
+      const bh = this.gridH * cs;
+      const cx = bx + bw / 2;
+      const cy = by + bh / 2;
+      const r  = Math.min(bw, bh) * 0.45;
+
+      ctx.save();
+      if (this.rotation !== 0) {
+        ctx.translate(cx, cy);
+        ctx.rotate(this.rotation * Math.PI / 180);
+        ctx.translate(-cx, -cy);
+      }
+
+      // 외곽 원
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth   = 2 / s;
+      ctx.fillStyle   = 'rgba(251,191,36,0.1)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // 내부 링
+      ctx.strokeStyle = 'rgba(251,191,36,0.5)';
+      ctx.lineWidth   = 1 / s;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 중심 핀
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.5 / s, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+
+      if (STATE.selected === this) this.drawSelection(ctx);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     Spring — 용수철
+  ────────────────────────────────────────────────────────────── */
+  class Spring extends Element {
+    constructor() {
+      super();
+      this.type           = 'spring';
+      this.isVertical     = false;  // false=가로, true=세로
+      this.gridW          = 2;     // 가로 모드: 2칸 고정 / 세로 모드: 폭(1칸)
+      this.gridH          = 1;     // 가로 모드: 높이(1칸) / 세로 모드: 2칸 고정
+      this.k              = CONFIG.DEFAULT_K;
+      this.L0             = 2.0;
+      this.L              = 2.0;
+      this.leftElementId  = null;  // 가로: 왼쪽 / 세로: 위쪽
+      this.rightElementId = null;  // 가로: 오른쪽 / 세로: 아래쪽
+      this.leftLocked     = false; // 왼쪽/위쪽 물체와 체결 여부
+      this.rightLocked    = false; // 오른쪽/아래쪽 물체와 체결 여부
+    }
+
+    /**
+     * 연결된 물체의 현재 위치에서 렌더 영역을 동적 계산.
+     * 물체가 없으면 편집 시 배치된 gridX/Y/W/H 사용 (edit-time fallback).
+     */
+    _getRenderBounds() {
+      const cs = CONFIG.cellSize;
+
+      const topEl  = this.leftElementId
+        ? (STATE.elements.find(e => e.id === this.leftElementId)
+           || STATE.floorSegments.find(s => s.id === this.leftElementId))
+        : null;
+      const botEl  = this.rightElementId
+        ? (STATE.elements.find(e => e.id === this.rightElementId)
+           || STATE.floorSegments.find(s => s.id === this.rightElementId))
+        : null;
+
+      // ── fallback (연결 없음 or 편집 모드) ──
+      if (!topEl || !botEl) {
+        return {
+          x: this.gridX * cs,
+          y: this.gridY * cs,
+          w: this.gridW * cs,
+          h: this.gridH * cs,
+        };
+      }
+
+      // FloorSegment 접촉면 월드 좌표 헬퍼
+      const _segRightX = (seg) => Math.max(seg.x1, seg.x2) * cs;
+      const _segLeftX  = (seg) => Math.min(seg.x1, seg.x2) * cs;
+      const _segTopY   = (seg) => Math.min(seg.y1, seg.y2) * cs;  // world y: 작은값=위
+      const _segBotY   = (seg) => Math.max(seg.y1, seg.y2) * cs;
+      const _segMidY   = (seg) => ((seg.y1 + seg.y2) / 2) * cs;
+      const _segMidX   = (seg) => ((seg.x1 + seg.x2) / 2) * cs;
+
+      if (!this.isVertical) {
+        // ── 가로 모드 ──
+        const lAttachX = (topEl.type !== 'floorSegment')
+          ? (topEl.gridX + topEl.gridW) * cs
+          : _segRightX(topEl);   // 바닥면 오른쪽 끝 X
+        const rAttachX = (botEl.type !== 'floorSegment')
+          ? botEl.gridX * cs
+          : _segLeftX(botEl);    // 바닥면 왼쪽 끝 X
+
+        const w = Math.max(cs * 0.5, rAttachX - lAttachX);
+
+        // Y 중심: rect/circle은 그 중심, FloorSegment는 spring 자체 Y 중심 사용
+        const springCY = (this.gridY + this.gridH / 2) * cs;
+        const leftCY  = (topEl.type !== 'floorSegment')
+          ? (topEl.gridY + (topEl.gridH || this.gridH) / 2) * cs
+          : springCY;
+        const rightCY = (botEl.type !== 'floorSegment')
+          ? (botEl.gridY + (botEl.gridH || this.gridH) / 2) * cs
+          : springCY;
+        const cy = (leftCY + rightCY) / 2;
+        const h  = this.gridH * cs;
+        return { x: lAttachX, y: cy - h / 2, w, h };
+
+      } else {
+        // ── 세로 모드 ──
+        const tAttachY = (topEl.type !== 'floorSegment')
+          ? (topEl.gridY + topEl.gridH) * cs
+          : _segBotY(topEl);     // 바닥면 아래쪽 Y
+        const bAttachY = (botEl.type !== 'floorSegment')
+          ? botEl.gridY * cs
+          : _segTopY(botEl);     // 바닥면 위쪽 Y
+
+        const h = Math.max(cs * 0.5, bAttachY - tAttachY);
+
+        // X 중심: rect/circle은 그 중심, FloorSegment는 spring 자체 중심 사용
+        // (긴 바닥면의 midX를 쓰면 용수철이 옆으로 밀리는 버그 발생)
+        const springCX = (this.gridX + this.gridW / 2) * cs;
+        const topCX = (topEl.type !== 'floorSegment')
+          ? (topEl.gridX + (topEl.gridW || this.gridW) / 2) * cs
+          : springCX;
+        const botCX = (botEl.type !== 'floorSegment')
+          ? (botEl.gridX + (botEl.gridW || this.gridW) / 2) * cs
+          : springCX;
+        const cx = (topCX + botCX) / 2;
+        const w  = this.gridW * cs;
+        return { x: cx - w / 2, y: tAttachY, w, h };
+      }
+    }
+
+    draw(ctx) {
+      const cs  = CONFIG.cellSize;
+      const s   = VIEWPORT.scale;
+      const b   = this._getRenderBounds();
+      const bx  = b.x, by = b.y, bw = b.w, bh = b.h;
+      const cx  = bx + bw / 2;
+      const cy  = by + bh / 2;
+
+      // 압축/신장 색상
+      const stretched  = this.L > this.L0 * 1.05;
+      const compressed = this.L < this.L0 * 0.95;
+      const color = stretched  ? 'rgba(252,165,165,0.85)'
+                  : compressed ? 'rgba(134,239,172,0.85)'
+                  : '#a78bfa';
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 2 / s;
+
+      const coils = 6;
+
+      if (!this.isVertical) {
+        // ── 가로 지그재그 ──
+        const margin = Math.min(bw * 0.1, cs * 0.3);
+        const x0   = bx + margin;
+        const x1   = bx + bw - margin;
+        const span = Math.max(x1 - x0, 1);
+        const amp  = Math.max(bh * 0.30, 2 / s);
+        const step = span / (coils * 2);
+
+        ctx.beginPath();
+        ctx.moveTo(bx, cy); ctx.lineTo(x0, cy);
+        for (let i = 0; i < coils * 2; i++) {
+          ctx.lineTo(x0 + step * (i + 0.5), cy + (i % 2 === 0 ? -amp : amp));
+        }
+        ctx.lineTo(x1, cy); ctx.lineTo(bx + bw, cy);
+        ctx.stroke();
+
+        // k 레이블 (위쪽)
+        ctx.fillStyle    = color;
+        ctx.font         = `${Math.max(7, bh * 0.28) / s}px 'Courier New', monospace`;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`k=${this.k}`, cx, cy - Math.max(bh * 0.30, 2/s) - 4/s);
+      } else {
+        // ── 세로 지그재그 ──
+        const margin = Math.min(bh * 0.1, cs * 0.3);
+        const y0   = by + margin;
+        const y1   = by + bh - margin;
+        const span = Math.max(y1 - y0, 1);
+        const amp  = Math.max(bw * 0.30, 2 / s);
+        const step = span / (coils * 2);
+
+        ctx.beginPath();
+        ctx.moveTo(cx, by); ctx.lineTo(cx, y0);
+        for (let i = 0; i < coils * 2; i++) {
+          ctx.lineTo(cx + (i % 2 === 0 ? -amp : amp), y0 + step * (i + 0.5));
+        }
+        ctx.lineTo(cx, y1); ctx.lineTo(cx, by + bh);
+        ctx.stroke();
+
+        // k 레이블 (오른쪽)
+        ctx.fillStyle    = color;
+        ctx.font         = `${Math.max(7, bw * 0.28) / s}px 'Courier New', monospace`;
+        ctx.textAlign    = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`k=${this.k}`, cx + Math.max(bw * 0.30, 2/s) + 4/s, cy);
+      }
+
+      ctx.restore();
+
+      if (STATE.selected === this) {
+        drawSelectionBox(ctx, bx, by, bw, bh);
+      }
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     FloorSegment — 바닥면 (Connection)
+  ────────────────────────────────────────────────────────────── */
+  /**
+   * 곡률(수학적 정의 기반) → 원호의 반지름 R, 부채꼴 스윕 각도 θ
+   *
+   * curvature 값 = θ / π  (즉 θ = curvature * π, 라디안)
+   *   curvature → 0   : θ → 0     (거의 직선, R → ∞)
+   *   curvature = 1   : θ = π     (정확히 반원, R = d/2)
+   *   curvature → 2   : θ → 2π    (거의 닫힌 원, 반원보다 훨씬 굽은 오버행)
+   *
+   * 두 점 A,B(거리 d)를 지나는 원에서 반-현 c=d/2, 스윕각 θ일 때:
+   *   c = R sin(θ/2)  →  R = c / sin(θ/2)   (항상 R ≥ c, 등호는 θ=π일 때)
+   *   중심까지의 부호 있는 수직거리 h = R cos(θ/2)
+   *     θ<π → h>0 (중심이 돌출 반대쪽)
+   *     θ>π → h<0 (중심이 돌출 쪽으로 넘어감 → "major arc"/오버행)
+   */
+  function _arcRadiusFromCurvature(curvature, d) {
+    const c     = d / 2;
+    const t     = Math.max(0.01, Math.min(1.98, curvature));  // 0,2 근처 특이점 방지
+    const theta = t * Math.PI;
+    const R     = c / Math.sin(theta / 2);
+    const h     = R * Math.cos(theta / 2);   // 부호 있음
+    return { R, theta, h };
+  }
+
+  class FloorSegment {
+    constructor(x1, y1, x2, y2) {
+      this.id         = makeId();
+      this.type       = 'floorSegment';
+      this.isFixed    = true;    // 절대 고정 — 시뮬레이션 중 위치 불변
+      this.x1         = x1;
+      this.y1         = y1;
+      this.x2         = x2;
+      this.y2         = y2;
+      this.pathType   = 'LINE';
+      this.curvature  = 0.3;   // 굽음 정도 (0~1, 1=완전 반원)
+      this.isFriction = false;
+      this.muS        = CONFIG.DEFAULT_MU;   // 정지 마찰계수
+      this.muK        = CONFIG.DEFAULT_MU * 0.8;  // 운동 마찰계수 (≤ muS)
+      this.selected   = false;
+    }
+
+    draw(ctx) {
+      const cs = CONFIG.cellSize;
+      const s  = VIEWPORT.scale;
+      const isSelected = (STATE.selected === this);
+
+      const ax = this.x1 * cs, ay = this.y1 * cs;
+      const bx = this.x2 * cs, by = this.y2 * cs;
+
+      ctx.save();
+
+      // ── 본선 ──
+      ctx.strokeStyle = isSelected ? '#3b82f6' : '#555555';
+      ctx.lineWidth   = (isSelected ? 3 : 2.5) / s;
+
+      ctx.beginPath();
+      this._tracePath(ctx, ax, ay, bx, by);
+      ctx.stroke();
+
+      // ── 마찰 해치 오버레이 ──
+      if (this.isFriction) {
+        this._drawFrictionHatch(ctx, ax, ay, bx, by, s);
+      }
+
+      ctx.restore();
+    }
+
+    /** 경로 타입에 따라 ctx에 path를 쌓는 헬퍼 (beginPath/stroke 없음) */
+    _tracePath(ctx, ax, ay, bx, by) {
+      switch (this.pathType) {
+        case 'LINE':
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          break;
+        case 'ELBOW_H':
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, ay);
+          ctx.lineTo(bx, by);
+          break;
+        case 'ELBOW_V':
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(ax, by);
+          ctx.lineTo(bx, by);
+          break;
+        case 'ARC_UP':
+        case 'ARC_DOWN':
+          this._drawArc(ctx, ax, ay, bx, by);
+          break;
+      }
+    }
+
+    /**
+     * 마찰 해치: 경로를 따라 5/scale px 간격으로 수직 단선 (길이 4/scale px)
+     * strokeStyle '#ef4444', lineWidth 1/scale
+     */
+    _drawFrictionHatch(ctx, ax, ay, bx, by, s) {
+      const spacing = 5 / s;
+      const halfLen = 2 / s;   // 단선 절반 길이 (총 4/s)
+
+      // 경로 샘플 포인트 생성
+      const pts = this._samplePath(ax, ay, bx, by, spacing);
+
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth   = 1 / s;
+
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        // 진행 방향 tangent
+        const tx = p.tx, ty = p.ty;
+        // 수직 벡터
+        const nx = -ty, ny = tx;
+
+        ctx.beginPath();
+        ctx.moveTo(p.x + nx * halfLen, p.y + ny * halfLen);
+        ctx.lineTo(p.x - nx * halfLen, p.y - ny * halfLen);
+        ctx.stroke();
+      }
+    }
+
+    /**
+     * 경로를 spacing 간격으로 샘플링 → [{x, y, tx, ty}]
+     * tx/ty: 진행 방향 단위벡터
+     */
+    _samplePath(ax, ay, bx, by, spacing) {
+      const pts = [];
+
+      if (this.pathType === 'LINE') {
+        const dx = bx - ax, dy = by - ay;
+        const d  = Math.hypot(dx, dy);
+        if (d < 1e-6) return pts;
+        const ux = dx / d, uy = dy / d;
+        let t = spacing;
+        while (t < d) {
+          pts.push({ x: ax + ux * t, y: ay + uy * t, tx: ux, ty: uy });
+          t += spacing;
+        }
+      } else if (this.pathType === 'ELBOW_H') {
+        // 세그먼트1: (ax,ay)→(bx,ay)
+        const d1 = Math.abs(bx - ax);
+        const sx1 = bx > ax ? 1 : -1;
+        let t = spacing;
+        while (t < d1) {
+          pts.push({ x: ax + sx1 * t, y: ay, tx: sx1, ty: 0 });
+          t += spacing;
+        }
+        // 세그먼트2: (bx,ay)→(bx,by)
+        const d2 = Math.abs(by - ay);
+        const sy2 = by > ay ? 1 : -1;
+        t = spacing;
+        while (t < d2) {
+          pts.push({ x: bx, y: ay + sy2 * t, tx: 0, ty: sy2 });
+          t += spacing;
+        }
+      } else if (this.pathType === 'ELBOW_V') {
+        const d1 = Math.abs(by - ay);
+        const sy1 = by > ay ? 1 : -1;
+        let t = spacing;
+        while (t < d1) {
+          pts.push({ x: ax, y: ay + sy1 * t, tx: 0, ty: sy1 });
+          t += spacing;
+        }
+        const d2 = Math.abs(bx - ax);
+        const sx2 = bx > ax ? 1 : -1;
+        t = spacing;
+        while (t < d2) {
+          pts.push({ x: ax + sx2 * t, y: by, tx: sx2, ty: 0 });
+          t += spacing;
+        }
+      } else {
+        // ARC: _arcSamplePoints 재사용
+        const raw = _arcSamplePoints(this, ax, ay, bx, by, 40);
+        if (raw.length < 2) return pts;
+        // 총 호 길이 계산
+        let arcLen = 0;
+        for (let i = 1; i < raw.length; i++) {
+          arcLen += Math.hypot(raw[i].x - raw[i-1].x, raw[i].y - raw[i-1].y);
+        }
+        // spacing 간격으로 재샘플
+        let accumulated = 0;
+        let nextMark = spacing;
+        for (let i = 1; i < raw.length; i++) {
+          const dx = raw[i].x - raw[i-1].x;
+          const dy = raw[i].y - raw[i-1].y;
+          const seg = Math.hypot(dx, dy);
+          if (seg < 1e-8) continue;
+          const ux = dx / seg, uy = dy / seg;
+          while (nextMark <= accumulated + seg) {
+            const dt = nextMark - accumulated;
+            pts.push({
+              x: raw[i-1].x + ux * dt,
+              y: raw[i-1].y + uy * dt,
+              tx: ux, ty: uy,
+            });
+            nextMark += spacing;
+          }
+          accumulated += seg;
+        }
+      }
+      return pts;
+    }
+
+    _drawArc(ctx, ax, ay, bx, by) {
+      const dx  = bx - ax, dy = by - ay;
+      const d   = Math.hypot(dx, dy);
+      if (d < 1e-6) return;
+      const { R: R_px, h } = _arcRadiusFromCurvature(this.curvature, d);  // h: 부호 있음
+
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      const ux = dx / d, uy = dy / d;
+      const nx = -uy, ny = ux;  // 수직 단위벡터
+
+      let cX, cY;
+      if (this.pathType === 'ARC_UP') {
+        cX = mx + nx * h; cY = my + ny * h;
+      } else {
+        cX = mx - nx * h; cY = my - ny * h;
+      }
+
+      const startAngle = Math.atan2(ay - cY, ax - cX);
+      const endAngle   = Math.atan2(by - cY, bx - cX);
+      // ARC_UP = hill (chord 위로 돌출) → 단호(cw, ccw=false)
+      // ARC_DOWN = valley (chord 아래로 돌출) → 장호(ccw=true)
+      // 기존에 반전되어 있던 버그 수정
+      const ccw = this.pathType !== 'ARC_UP';
+
+      // 캔버스 네이티브 arc()가 ccw 방향으로 startAngle→endAngle까지 자동 스윕
+      // (theta>π인 major arc도 h의 부호 반전으로 center가 이동하여 자동으로 긴 호를 그림)
+      ctx.arc(cX, cY, R_px, startAngle, endAngle, ccw);
+    }
+
+    drawSelection(ctx) {
+      // FloorSegment 선택은 draw()에서 색으로 처리
+    }
+
+    serialize() { return { ...this }; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     Rope — 실 (Connection)
+  ────────────────────────────────────────────────────────────── */
+  class Rope {
+    constructor(anchorA, anchorB, ropeLength) {
+      this.id              = makeId();
+      this.type            = 'rope';
+      this.anchorA         = anchorA;  // { elementId, attachPoint }
+      this.anchorB         = anchorB;
+      this.ropeLength      = ropeLength;
+      this.calibratedLength = null;  // 시뮬 시작 시 실제 물리 거리로 보정
+      this.selected        = false;
+    }
+
+    /** 앵커 월드 좌표 반환 (Element & FloorSegment 모두 지원) */
+    _getAnchorWorld(anchor) {
+      // Element에서 먼저 검색
+      const el = STATE.elements.find(e => e.id === anchor.elementId);
+      if (el) return getAttachPointWorld(el, anchor.attachPoint);
+      // FloorSegment에서 검색
+      const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
+      if (seg) return getFloorSegAttachWorld(seg, anchor.attachPoint);
+      return null;
+    }
+
+    draw(ctx) {
+      const wA = this._getAnchorWorld(this.anchorA);
+      const wB = this._getAnchorWorld(this.anchorB);
+      if (!wA || !wB) return;
+
+      const s = VIEWPORT.scale;
+      ctx.save();
+      ctx.strokeStyle = this.selected ? '#3b82f6' : '#f59e0b';
+      ctx.lineWidth   = 1.5 / s;
+      ctx.beginPath();
+      ctx.moveTo(wA.x, wA.y);
+      ctx.lineTo(wB.x, wB.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawSelection(ctx) {}
+    serialize() { return { ...this }; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     앵커 포인트 헬퍼
+  ────────────────────────────────────────────────────────────── */
+  function getAttachPointWorld(el, pointId) {
+    const cs = CONFIG.cellSize;
+    const bx = el.gridX * cs, by = el.gridY * cs;
+    const bw = el.gridW * cs, bh = el.gridH * cs;
+    switch (pointId) {
+      case 'top':    return { x: bx + bw / 2, y: by };
+      case 'bottom': return { x: bx + bw / 2, y: by + bh };
+      case 'left':   return { x: bx,           y: by + bh / 2 };
+      case 'right':  return { x: bx + bw,      y: by + bh / 2 };
+      case 'center': return { x: bx + bw / 2,  y: by + bh / 2 };
+      default:       return { x: bx + bw / 2,  y: by + bh / 2 };
+    }
+  }
+
+  function getAttachPoints(el) {
+    const cs = CONFIG.cellSize;
+    const bx = el.gridX * cs, by = el.gridY * cs;
+    const bw = el.gridW * cs, bh = el.gridH * cs;
+    const cx = bx + bw / 2, cy = by + bh / 2;
+    if (el.type === 'circle') {
+      return [{ id: 'center', worldX: cx, worldY: cy }];
+    }
+    if (el.type === 'pulley') {
+      // center: 도르래를 바닥/천장/물체에 고정하는 앵커
+      // top/bottom/left/right: 실 연결용 앵커 (도르래 가장자리)
+      return [
+        { id: 'center', worldX: cx,      worldY: cy },
+        { id: 'top',    worldX: cx,      worldY: by },
+        { id: 'bottom', worldX: cx,      worldY: by + bh },
+        { id: 'left',   worldX: bx,      worldY: cy },
+        { id: 'right',  worldX: bx + bw, worldY: cy },
+      ];
+    }
+    // Spring: 방향에 따라 양 끝단에만 앵커 (가로=left/right, 세로=top/bottom)
+    if (el.type === 'spring') {
+      if (!el.isVertical) {
+        // 가로 모드: 왼쪽 끝 / 오른쪽 끝
+        return [
+          { id: 'left',  worldX: bx,      worldY: cy },
+          { id: 'right', worldX: bx + bw, worldY: cy },
+        ];
+      } else {
+        // 세로 모드: 위쪽 끝 / 아래쪽 끝
+        return [
+          { id: 'top',    worldX: cx, worldY: by },
+          { id: 'bottom', worldX: cx, worldY: by + bh },
+        ];
+      }
+    }
+    return [
+      { id: 'top',    worldX: cx,      worldY: by },
+      { id: 'bottom', worldX: cx,      worldY: by + bh },
+      { id: 'left',   worldX: bx,      worldY: cy },
+      { id: 'right',  worldX: bx + bw, worldY: cy },
+    ];
+  }
+
+  /** FloorSegment 끝점 월드 좌표 반환 */
+  function getFloorSegAttachWorld(seg, pointId) {
+    const cs = CONFIG.cellSize;
+    if (pointId === 'p1') return { x: seg.x1 * cs, y: seg.y1 * cs };
+    if (pointId === 'p2') return { x: seg.x2 * cs, y: seg.y2 * cs };
+    return { x: seg.x1 * cs, y: seg.y1 * cs };
+  }
+
+  /** FloorSegment의 앵커 포인트 목록 [{id, worldX, worldY}] */
+  function getFloorSegAttachPoints(seg) {
+    const cs = CONFIG.cellSize;
+    return [
+      { id: 'p1', worldX: seg.x1 * cs, worldY: seg.y1 * cs },
+      { id: 'p2', worldX: seg.x2 * cs, worldY: seg.y2 * cs },
+    ];
+  }
+
+  /**
+   * 앵커가 고정점인지 반환
+   * - FloorSegment 끝점: true (절대 고정)
+   * - Element 앵커: false (시뮬레이션에 따라 이동)
+   */
+  function getAnchorIsFixed(anchor) {
+    const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
+    return !!(seg && seg.isFixed);
+  }
+
+  /**
+   * 앵커의 물리 상태 반환 — Sprint 6 로프 제약 연산에서 사용
+   * 고정 앵커: { worldX, worldY, vx:0, vy:0, isFixed:true, mass:Infinity }
+   * 이동 앵커: { worldX, worldY, vx, vy, isFixed:false, mass, body }
+   */
+  function getAnchorPhysState(anchor) {
+    // FloorSegment 고정 앵커
+    const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
+    if (seg) {
+      const w = getFloorSegAttachWorld(seg, anchor.attachPoint);
+      return { worldX: w.x, worldY: w.y, vx: 0, vy: 0, isFixed: true, mass: Infinity };
+    }
+    // Element 이동 앵커
+    const el = STATE.elements.find(e => e.id === anchor.elementId);
+    if (el) {
+      const w = getAttachPointWorld(el, anchor.attachPoint);
+      return {
+        worldX:  w.x,
+        worldY:  w.y,
+        vx:      el.vx  || 0,
+        vy:      el.vy  || 0,
+        isFixed: false,
+        mass:    el.mass || 1,
+        body:    el,
+      };
+    }
+    return null;
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     [HIT TESTS] — 5종 히트 테스트
+  ────────────────────────────────────────────────────────────── */
+
+  /** Element bbox 판정 (역순 순회) */
+  function hitTestElement(worldX, worldY) {
+    for (let i = STATE.elements.length - 1; i >= 0; i--) {
+      const el  = STATE.elements[i];
+      if (!el.getBBox) continue;
+      const box = el.getBBox();
+      if (worldX >= box.x && worldX <= box.x + box.w &&
+          worldY >= box.y && worldY <= box.y + box.h) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  /** FloorSegment 선 근접 판정 (threshold: 8/scale px) */
+  function hitTestFloorSegment(worldX, worldY) {
+    const thresh = 8 / VIEWPORT.scale;
+    const cs = CONFIG.cellSize;
+
+    for (let i = STATE.floorSegments.length - 1; i >= 0; i--) {
+      const seg = STATE.floorSegments[i];
+      const ax = seg.x1 * cs, ay = seg.y1 * cs;
+      const bx = seg.x2 * cs, by = seg.y2 * cs;
+
+      let dist = Infinity;
+      switch (seg.pathType) {
+        case 'LINE':
+          dist = pointToSegmentDist(worldX, worldY, ax, ay, bx, by);
+          break;
+        case 'ELBOW_H': {
+          const mx = bx, my = ay;
+          dist = Math.min(
+            pointToSegmentDist(worldX, worldY, ax, ay, mx, my),
+            pointToSegmentDist(worldX, worldY, mx, my, bx, by)
+          );
+          break;
+        }
+        case 'ELBOW_V': {
+          const mx = ax, my = by;
+          dist = Math.min(
+            pointToSegmentDist(worldX, worldY, ax, ay, mx, my),
+            pointToSegmentDist(worldX, worldY, mx, my, bx, by)
+          );
+          break;
+        }
+        case 'ARC_UP':
+        case 'ARC_DOWN': {
+          // 원호를 20개 점으로 근사
+          const pts = _arcSamplePoints(seg, ax, ay, bx, by, 20);
+          for (let k = 0; k < pts.length - 1; k++) {
+            dist = Math.min(dist,
+              pointToSegmentDist(worldX, worldY,
+                pts[k].x, pts[k].y, pts[k+1].x, pts[k+1].y));
+          }
+          break;
+        }
+      }
+      if (dist < thresh) return seg;
+    }
+    return null;
+  }
+
+  /** ARC 경로를 n개 점으로 샘플링 */
+  function _arcSamplePoints(seg, ax, ay, bx, by, n) {
+    const dx = bx - ax, dy = by - ay;
+    const d  = Math.hypot(dx, dy);
+    if (d < 1e-6) return [];
+    const { R: R_px, theta, h } = _arcRadiusFromCurvature(seg.curvature, d);
+
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const ux = dx / d, uy = dy / d;
+    const nx = -uy, ny = ux;
+
+    let cX, cY;
+    if (seg.pathType === 'ARC_UP') { cX = mx + nx * h; cY = my + ny * h; }
+    else                           { cX = mx - nx * h; cY = my - ny * h; }
+
+    const sa = Math.atan2(ay - cY, ax - cX);
+    const ea = Math.atan2(by - cY, bx - cX);
+    let diff = ea - sa;
+    while (diff >  Math.PI) diff -= 2*Math.PI;
+    while (diff < -Math.PI) diff += 2*Math.PI;
+    const shortSign = Math.sign(diff) || 1;
+    // θ≤π: 짧은 호 그대로 / θ>π: 반대 방향으로 돌아 긴 호(major arc) 사용
+    const sweepSign = (theta <= Math.PI) ? shortSign : -shortSign;
+    const sweep = sweepSign * theta;
+
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const a = sa + sweep * t;
+      pts.push({ x: cX + R_px * Math.cos(a), y: cY + R_px * Math.sin(a) });
+    }
+    return pts;
+  }
+
+  /** Rope 선 근접 판정 (threshold: 6/scale px) */
+  function hitTestRope(worldX, worldY) {
+    const thresh = 6 / VIEWPORT.scale;
+    for (let i = STATE.ropes.length - 1; i >= 0; i--) {
+      const rope = STATE.ropes[i];
+      const wA   = rope._getAnchorWorld(rope.anchorA);
+      const wB   = rope._getAnchorWorld(rope.anchorB);
+      if (!wA || !wB) continue;
+      if (pointToSegmentDist(worldX, worldY, wA.x, wA.y, wB.x, wB.y) < thresh) {
+        return rope;
+      }
+    }
+    return null;
+  }
+
+  /** 격자 점 근접 판정 → {gridX, gridY} | null (10/scale px) */
+  function hitTestGridPoint(worldX, worldY) {
+    const thresh = 10 / VIEWPORT.scale;
+    const cs = CONFIG.cellSize;
+    const GS = CONFIG.GRID_SIZE;
+    const gi = snapToGridIndex(worldX);
+    const gj = snapToGridIndex(worldY);
+    const ci = clamp(gi, 0, GS);
+    const cj = clamp(gj, 0, GS);
+    const wx = ci * cs, wy = cj * cs;
+    if (Math.hypot(worldX - wx, worldY - wy) < thresh) {
+      return { gridX: ci, gridY: cj };
+    }
+    return null;
+  }
+
+  /** 앵커 포인트 근접 판정 → {elementId, attachPoint} | null (10/scale px) */
+  function hitTestAttachPoint(worldX, worldY) {
+    const thresh = 10 / VIEWPORT.scale;
+    // Element 앵커 포인트
+    for (const el of STATE.elements) {
+      if (!['rect','circle','pulley'].includes(el.type)) continue;
+      for (const pt of getAttachPoints(el)) {
+        if (Math.hypot(worldX - pt.worldX, worldY - pt.worldY) < thresh) {
+          return { elementId: el.id, attachPoint: pt.id };
+        }
+      }
+    }
+    // FloorSegment 끝점 앵커
+    for (const seg of STATE.floorSegments) {
+      for (const pt of getFloorSegAttachPoints(seg)) {
+        if (Math.hypot(worldX - pt.worldX, worldY - pt.worldY) < thresh) {
+          return { elementId: seg.id, attachPoint: pt.id };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * anchor { elementId, attachPoint } 의 월드 좌표를
+   * Element와 FloorSegment 모두에서 찾아 반환
+   */
+  function _resolveAnchorWorld(anchor) {
+    const el = STATE.elements.find(e => e.id === anchor.elementId);
+    if (el) return getAttachPointWorld(el, anchor.attachPoint);
+    const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
+    if (seg) return getFloorSegAttachWorld(seg, anchor.attachPoint);
+    return null;
+  }
+
+  /** 토스트 메시지 (2초 표시 후 validateAll로 복구) */
+  let _toastTimer = null;
+  function _showToast(msg) {
+    warningBar.textContent   = msg;
+    warningBar.style.display = 'block';
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => { validateAll(); }, 2000);
+  }
+
+    /* ================================================================
+     [UI EVENTS] — 포인터 이벤트 (줌 + 팬 + 드래그 + 선택)
+  ================================================================ */
+
+  let _panStart = null;   // { screenX, screenY, offsetX, offsetY }
+  let _dragEl   = null;   // 드래그 중인 Element 참조
+
+  /* ── 더블탭 감지 변수 ── */
+  let _lastTapTime = 0;
+  let _lastTapEl   = null;
+
+  /* ── 리사이즈 핸들 상태 ── */
+  let _resizeHandle   = null;   // { type: 'br'|'right'|'bottom'|'p1'|'p2', target }
+  let _longPressTimer = null;   // 롱프레스 타이머
+  let _longPressEl    = null;   // 롱프레스 중인 요소
+  let _ropeRewireMode = null;   // { rope, side:'p1'|'p2' } — 실 앵커 재연결 모드
+  let _deleteZoneVis  = false;  // 삭제 존 표시 여부
+  let _contextMenu    = null;   // 컨텍스트 메뉴 DOM 요소
+  let _lastClickPos   = null;   // 레이어 순환용 마지막 클릭 위치
+  let _layerCycleIdx  = 0;      // 레이어 순환 인덱스
+
+  /** 실 앵커 재연결 모드: 연결 가능한 모든 포인트 시각화 */
+  function _drawRopeWireAnchors(ctx) {
+    if (!_ropeRewireMode) return;
+    const cs = CONFIG.cellSize, s = VIEWPORT.scale;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (const el of STATE.elements) {
+      if (el.type === 'rope') continue;
+      const pts = getAttachPoints(el);
+      for (const pt of pts) {
+        const sx = pt.worldX * s + VIEWPORT.offsetX;
+        const sy = pt.worldY * s + VIEWPORT.offsetY;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 7, 0, Math.PI*2);
+        ctx.fillStyle   = 'rgba(34,197,94,0.85)';   // 초록
+        ctx.fill();
+        ctx.strokeStyle = '#14532d';
+        ctx.lineWidth   = 2;
+        ctx.stroke();
+      }
+    }
+    for (const seg of STATE.floorSegments) {
+      const pts = getFloorSegAttachPoints(seg);
+      for (const pt of pts) {
+        const sx = pt.worldX * s + VIEWPORT.offsetX;
+        const sy = pt.worldY * s + VIEWPORT.offsetY;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 7, 0, Math.PI*2);
+        ctx.fillStyle   = 'rgba(34,197,94,0.85)';
+        ctx.fill();
+        ctx.strokeStyle = '#14532d';
+        ctx.lineWidth   = 2;
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** 선택된 요소의 핸들 화면 위치 목록을 반환
+   *  반환: [{ type, screenX, screenY, worldX, worldY }, ...]
+   */
+  function _getHandlePositions(sel) {
+    if (!sel) return [];
+    const cs = CONFIG.cellSize;
+    const s  = VIEWPORT.scale;
+
+    function ws(wx, wy) {   // world → screen
+      return { sx: wx * s + VIEWPORT.offsetX, sy: wy * s + VIEWPORT.offsetY };
+    }
+
+    // FloorSegment
+    if (sel.type === 'floorSegment') {
+      const p1s = ws(sel.x1 * cs, sel.y1 * cs);
+      const p2s = ws(sel.x2 * cs, sel.y2 * cs);
+      return [
+        { type: 'p1', sx: p1s.sx, sy: p1s.sy },
+        { type: 'p2', sx: p2s.sx, sy: p2s.sy },
+      ];
+    }
+    // Rope: 앵커 위치에 핸들 (시각화만, 이동은 앵커 연결 변경 필요)
+    if (sel.type === 'rope') {
+      const wA = _resolveAnchorWorld(sel.anchorA);
+      const wB = _resolveAnchorWorld(sel.anchorB);
+      if (!wA || !wB) return [];
+      const sA = ws(wA.x, wA.y), sB = ws(wB.x, wB.y);
+      return [
+        { type: 'p1', sx: sA.sx, sy: sA.sy },
+        { type: 'p2', sx: sB.sx, sy: sB.sy },
+      ];
+    }
+    // Spring: 방향에 따라 한쪽 끝만
+    if (sel.type === 'spring') {
+      if (!sel.isVertical) {
+        // 가로: 오른쪽 끝 (gridX+gridW, gridY+gridH/2)
+        const p = ws((sel.gridX + sel.gridW) * cs, (sel.gridY + sel.gridH / 2) * cs);
+        return [{ type: 'right', sx: p.sx, sy: p.sy }];
+      } else {
+        // 세로: 아래쪽 끝 (gridX+gridW/2, gridY+gridH)
+        const p = ws((sel.gridX + sel.gridW / 2) * cs, (sel.gridY + sel.gridH) * cs);
+        return [{ type: 'bottom', sx: p.sx, sy: p.sy }];
+      }
+    }
+    // 나머지 (rect, circle, pulley, forceZone): 우측 하단
+    if (['rect','circle','pulley','forceZone'].includes(sel.type)) {
+      const p = ws((sel.gridX + sel.gridW) * cs, (sel.gridY + sel.gridH) * cs);
+      return [{ type: 'br', sx: p.sx, sy: p.sy }];
+    }
+    return [];
+  }
+
+  /** 핸들 점 렌더 */
+  function _drawResizeHandles(ctx) {
+    const sel = STATE.selected;
+    if (!sel || STATE.simMode !== 'EDIT') return;
+    const handles = _getHandlePositions(sel);
+    const s = VIEWPORT.scale;
+    for (const h of handles) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);  // 스크린 좌표계 직접 사용
+      ctx.beginPath();
+      ctx.arc(h.sx, h.sy, 7, 0, Math.PI * 2);
+      ctx.fillStyle   = '#4f8ef7';
+      ctx.fill();
+      ctx.strokeStyle = '#1e3a8a';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /* ══════════════════════════════════════
+     컨텍스트 메뉴 / 클론 / 삭제존 유틸
+  ══════════════════════════════════════ */
+
+  /** 컨텍스트 메뉴 닫기 */
+  function _closeContextMenu() {
+    if (_contextMenu) { _contextMenu.remove(); _contextMenu = null; }
+  }
+
+  /** 요소 복제 */
+  function _cloneElement(el) {
+    const data = JSON.parse(JSON.stringify(el));   // deep copy
+    data.id = makeId();
+    data.gridX = (data.gridX || 0) + 1;
+    data.gridY = (data.gridY || 0) + 1;
+    let clone;
+    switch (el.type) {
+      case 'rect':      clone = Object.assign(new RectBody(),    data); break;
+      case 'circle':    clone = Object.assign(new CircleBody(),  data); break;
+      case 'forceZone': clone = Object.assign(new ForceZone(),   data); break;
+      case 'pulley':    clone = Object.assign(new Pulley(),      data); break;
+      case 'spring':    clone = Object.assign(new Spring(),      data); break;
+      default: return null;
+    }
+    STATE.elements.push(clone);
+    _selectObject(clone);
+    validateAll();
+    return clone;
+  }
+
+  /** 컨텍스트 메뉴 표시 */
+  function _showContextMenu(el, screenX, screenY) {
+    _closeContextMenu();
+    const menu = document.createElement('div');
+    menu.style.cssText = `
+      position:fixed;left:${screenX}px;top:${screenY}px;
+      background:var(--bg-ctx);border:1px solid var(--border-active);border-radius:8px;
+      padding:4px 0;z-index:9999;min-width:110px;box-shadow:0 4px 16px rgba(0,0,0,.5);
+    `;
+    const items = [];
+    // 복제: FloorSegment/Rope 제외
+    if (el.type && el.type !== 'floorSegment' && el.type !== 'rope')
+      items.push(['복제', () => { _cloneElement(el); _closeContextMenu(); }]);
+    // 회전: spring·rect·forceZone
+    if (['spring','rect','forceZone'].includes(el.type))
+      items.push(['방향 전환', () => { _handleDoubleTap(el); _closeContextMenu(); }]);
+    // 삭제: 항상
+    items.push(['삭제', () => { _deleteSelected(el); _closeContextMenu(); }]);
+
+    for (const [label, cb] of items) {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText = `
+        display:block;width:100%;padding:8px 16px;background:none;border:none;
+        color:${label==='삭제'?'var(--danger-text)':'var(--text)'};font-size:13px;text-align:left;
+        cursor:pointer;
+      `;
+      btn.onmouseover = () => btn.style.background = 'rgba(60,100,160,0.35)';
+      btn.onmouseleave = () => btn.style.background = 'none';
+      btn.onclick = cb;
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+    _contextMenu = menu;
+  }
+
+  /** 선택 요소 삭제 헬퍼 */
+  function _deleteSelected(target) {
+    if (!target) return;
+    if (target.type === 'floorSegment') {
+      STATE.floorSegments = STATE.floorSegments.filter(s => s !== target);
+    } else if (target.type === 'rope') {
+      STATE.ropes = STATE.ropes.filter(r => r !== target);
+    } else {
+      STATE.elements = STATE.elements.filter(e => e !== target);
+    }
+    _selectObject(null);
+    validateAll();
+  }
+
+  /** 삭제 존 렌더 */
+  function _drawDeleteZone(ctx) {
+    if (!_deleteZoneVis) return;
+    const W = mainCanvas.width, H = mainCanvas.height;
+    const zW = 120, zH = 60, pad = 14;
+    const zx = pad, zy = H - zH - pad;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle   = 'rgba(239,68,68,0.85)';
+    ctx.strokeStyle = '#fca5a5';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.roundRect(zx, zy, zW, zH, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle   = '#fff';
+    ctx.font        = 'bold 15px sans-serif';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🗑  삭제', zx + zW/2, zy + zH/2);
+    ctx.restore();
+  }
+
+  /** 스크린 좌표가 삭제 존 위에 있는지 */
+  function _isOnDeleteZone(sx, sy) {
+    const H = mainCanvas.height, pad = 14, zW = 120, zH = 60;
+    return sx >= pad && sx <= pad+zW && sy >= H-zH-pad && sy <= H-pad;
+  }
+
+  /** 주어진 world 좌표에 겹치는 모든 요소 목록 */
+  function _hitAllAtWorld(wx, wy) {
+    const hits = [];
+    for (let i = STATE.elements.length - 1; i >= 0; i--) {
+      const el = STATE.elements[i];
+      const box = el.getBBox ? el.getBBox() : null;
+      if (!box) continue;
+      const cs = CONFIG.cellSize;
+      if (wx >= box.x && wx <= box.x+box.w && wy >= box.y && wy <= box.y+box.h) hits.push(el);
+    }
+    // FloorSegment와 Rope도 포함
+    const cs = CONFIG.cellSize;
+    // FloorSegment/Rope는 별도 hitTest 핸들러(hitTestFloorSegment, hitTestRope)에서 처리
+    // 레이어 순환은 STATE.elements(getBBox 있는 물체)만 대상
+    return hits;
+  }
+
+  /* ════════════════════════════════
+     바닥면 스냅 유틸
+  ════════════════════════════════ */
+  const SNAP_DIST_CELLS = 1.5;   // 스냅 활성화 거리 (격자 단위)
+
+  /** 점(px,py)에서 선분[(x1,y1)-(x2,y2)]까지 수직 거리 및 발(foot) */
+  function _distPointToSeg(px, py, x1, y1, x2, y2) {
+    const dx = x2-x1, dy = y2-y1, lenSq = dx*dx+dy*dy;
+    if (lenSq < 1e-12) return { dist: Math.hypot(px-x1,py-y1), t:0, fx:x1, fy:y1 };
+    const t  = Math.max(0, Math.min(1, ((px-x1)*dx+(py-y1)*dy)/lenSq));
+    const fx = x1+t*dx, fy = y1+t*dy;
+    return { dist: Math.hypot(px-fx,py-fy), t, fx, fy };
+  }
+
+  /** 드래그 중 가장 가까운 바닥면 스냅 정보 반환 */
+  function _computeFloorSnap(el, worldX, worldY) {
+    const cs       = CONFIG.cellSize;
+    const snapDist = SNAP_DIST_CELLS * cs;
+    const hh       = el.gridH / 2;
+    let best = null;
+    for (const seg of STATE.floorSegments) {
+      const x1 = seg.x1*cs, y1 = seg.y1*cs, x2 = seg.x2*cs, y2 = seg.y2*cs;
+      const { dist, t, fx, fy } = _distPointToSeg(worldX, worldY, x1, y1, x2, y2);
+      if (dist < snapDist && (!best || dist < best.dist)) {
+        const dx = x2-x1, dy = y2-y1, len = Math.hypot(dx,dy);
+        if (len < 1e-9) continue;
+        const tx = dx/len, ty = dy/len;
+        let nx = -ty, ny = tx;
+        if ((worldX-fx)*nx+(worldY-fy)*ny < 0) { nx=-nx; ny=-ny; }
+        best = { dist, seg, angle: Math.atan2(dy,dx), nx, ny };
+      }
+    }
+    if (!best) return { snapped: false };
+    return { snapped: true, ...best, rotRad: best.angle };
+  }
+
+  /** 더블탭 → 요소별 방향 전환
+   * spring    : 가로↔세로 (isVertical 토글 + gridW↔gridH 교환)
+   * rect      : 90° 회전 (gridW↔gridH 교환)
+   * forceZone : 힘 방향 반시계 90° 회전 (fx,fy) → (-fy, fx)
+   * circle/pulley: 무시 (대칭)
+   */
+  function _handleDoubleTap(el) {
+    if (!el) return;
+    if (el.type === 'spring') {
+      el.isVertical = !el.isVertical;
+      const tmp = el.gridW; el.gridW = el.gridH; el.gridH = tmp;
+      validateAll();
+      renderPanel();
+    } else if (el.type === 'rect') {
+      // gridW ↔ gridH (좌상단 고정, 우하단 이동)
+      const tmp = el.gridW; el.gridW = el.gridH; el.gridH = tmp;
+      validateAll();
+      renderPanel();
+    } else if (el.type === 'forceZone') {
+      // 힘 방향 반시계 90° 회전: (fx, fy) → (-fy, fx)
+      const tmpFx = el.fx;
+      el.fx = -el.fy;
+      el.fy =  tmpFx;
+      renderPanel();
+    }
+    // circle, pulley: 대칭이므로 동작 없음
+  }
+
+  /** 실 재연결 완료: 가장 가까운 앵커에 스냅 */
+  function _finishRopeRewire(worldX, worldY) {
+    if (!_ropeRewireMode) return;
+    const { rope, side } = _ropeRewireMode;
+    const cs = CONFIG.cellSize;
+    let best = null, bestDist = Infinity;
+
+    // 모든 요소 앵커 탐색
+    for (const el of STATE.elements) {
+      if (el.type === 'rope') continue;
+      for (const pt of getAttachPoints(el)) {
+        const d = Math.hypot(worldX - pt.worldX, worldY - pt.worldY);
+        if (d < cs * 1.2 && d < bestDist) {
+          bestDist = d;
+          best = { elementId: el.id, attachPoint: pt.id };
+        }
+      }
+    }
+    for (const seg of STATE.floorSegments) {
+      for (const pt of getFloorSegAttachPoints(seg)) {
+        const d = Math.hypot(worldX - pt.worldX, worldY - pt.worldY);
+        if (d < cs * 1.2 && d < bestDist) {
+          bestDist = d;
+          best = { elementId: seg.id, attachPoint: pt.id };
+        }
+      }
+    }
+
+    if (best) {
+      if (side === 'p1') rope.anchorA = best;
+      else               rope.anchorB = best;
+      // ropeLength 재계산
+      const wA = _resolveAnchorWorld(rope.anchorA);
+      const wB = _resolveAnchorWorld(rope.anchorB);
+      if (wA && wB) {
+        rope.ropeLength = Math.hypot(wB.x-wA.x, wB.y-wA.y) / CONFIG.cellSize;
+        rope.calibratedLength = null;
+      }
+      validateAll();
+    }
+    _ropeRewireMode = null;
+    STATE.interactionMode = 'IDLE';
+  }
+
+  /* ── pointerdown ── */
+  // 우클릭 컨텍스트 메뉴
+  mainCanvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (STATE.simMode !== 'EDIT') return;
+    const world = screenToWorld(e.offsetX, e.offsetY);
+    const allHits = _hitAllAtWorld(world.x, world.y);
+    const target = allHits.length > 0 ? allHits[0] : STATE.selected;
+    if (target) {
+      _selectObject(target);
+      _showContextMenu(target, e.clientX, e.clientY);
+    }
+  });
+
+  // 다른 곳 클릭 시 컨텍스트 메뉴 닫기
+  document.addEventListener('pointerdown', (e) => {
+    if (_contextMenu && !_contextMenu.contains(e.target)) _closeContextMenu();
+  }, { capture: true });
+
+  mainCanvas.addEventListener('pointerdown', (e) => {
+    mainCanvas.setPointerCapture(e.pointerId);
+    STATE.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // 2포인터 핀치: 드래그/팬 취소
+    if (STATE.activePointers.size === 2) {
+      _panStart = null;
+      _dragEl   = null;
+      STATE.interactionMode = 'IDLE';
+      STATE.prevPinchDist   = getPinchDist();
+      return;
+    }
+
+    if (STATE.simMode !== 'EDIT') return;
+
+    // 1포인터 처리
+    if (STATE.activePointers.size === 1 && STATE.interactionMode === 'IDLE') {
+      const world = screenToWorld(e.offsetX, e.offsetY);
+
+      // ① 핸들 히트 검사 (가장 우선)
+      if (STATE.selected) {
+        const handles = _getHandlePositions(STATE.selected);
+        for (const h of handles) {
+          const dx = e.clientX - (mainCanvas.getBoundingClientRect().left + h.sx);
+          const dy = e.clientY - (mainCanvas.getBoundingClientRect().top  + h.sy);
+          if (Math.hypot(dx, dy) <= 10) {   // 10px 이내 히트
+            const tgt = STATE.selected;
+            if (tgt.type === 'rope') {
+              // 실 앵커 재연결 모드
+              _ropeRewireMode = { rope: tgt, side: h.type };
+              STATE.interactionMode = 'ROPE_REWIRE';
+            } else {
+              _resizeHandle = { type: h.type, target: tgt };
+              STATE.interactionMode = 'RESIZING';
+            }
+            return;
+          }
+        }
+      }
+
+      // ② 레이어 순환: 같은 위치 반복 클릭 시 다음 요소 선택
+      const allHits = _hitAllAtWorld(world.x, world.y);
+      let elHit = null;
+      if (allHits.length > 0) {
+        const SAME_R = CONFIG.cellSize * 1.5;
+        const isSamePos = _lastClickPos &&
+          Math.hypot(world.x - _lastClickPos.x, world.y - _lastClickPos.y) < SAME_R;
+        if (isSamePos && allHits.length > 1) {
+          _layerCycleIdx = (_layerCycleIdx + 1) % allHits.length;
+        } else {
+          _layerCycleIdx = 0;
+        }
+        _lastClickPos = { x: world.x, y: world.y };
+        elHit = allHits[_layerCycleIdx];
+      } else {
+        _lastClickPos = null;
+        _layerCycleIdx = 0;
+      }
+
+      if (elHit) {
+        // 더블탭
+        const now = Date.now();
+        if (now - _lastTapTime < 300 && _lastTapEl === elHit) {
+          _handleDoubleTap(elHit);
+          _lastTapTime = 0;
+          _lastTapEl   = null;
+          return;
+        }
+        _lastTapTime = now;
+        _lastTapEl   = elHit;
+        _selectObject(elHit);
+
+        // 롱프레스 타이머 시작 (600ms)
+        _longPressEl = elHit;
+        _longPressTimer = setTimeout(() => {
+          _deleteZoneVis = true;
+          _longPressEl   = elHit;
+        }, 600);
+        // dragOffset: 클릭 위치 - 요소 좌상단 월드 좌표
+        if (!elHit.getBBox) return;   // getBBox 없는 요소(FloorSeg 등)는 드래그 불가
+        const box = elHit.getBBox();
+        STATE.dragOffset.x = world.x - box.x;
+        STATE.dragOffset.y = world.y - box.y;
+        _dragEl = elHit;
+        STATE.interactionMode = 'DRAGGING';
+        return;
+      }
+
+      // ② FloorSegment 히트 → 선택
+      const segHit = hitTestFloorSegment(world.x, world.y);
+      if (segHit) {
+        _selectObject(segHit);
+        return;
+      }
+
+      // ③ Rope 히트 → 선택
+      const ropeHit = hitTestRope(world.x, world.y);
+      if (ropeHit) {
+        _selectObject(ropeHit);
+        return;
+      }
+
+      // ④ 빈 공간 → 선택 해제 + PANNING
+      _selectObject(null);
+      STATE.interactionMode = 'PANNING';
+      _panStart = {
+        screenX: e.clientX,
+        screenY: e.clientY,
+        offsetX: VIEWPORT.offsetX,
+        offsetY: VIEWPORT.offsetY,
+      };
+    }
+
+    // ── FLOOR_DRAW 모드 ──
+    if (STATE.activePointers.size === 1 && STATE.interactionMode === 'FLOOR_DRAW') {
+      const world = screenToWorld(e.offsetX, e.offsetY);
+      const gp    = hitTestGridPoint(world.x, world.y);
+      if (!gp) return;
+
+      if (!STATE.pendingGridPoint) {
+        STATE.pendingGridPoint = { gridX: gp.gridX, gridY: gp.gridY };
+        drawGrid();
+      } else {
+        const px = STATE.pendingGridPoint.gridX;
+        const py = STATE.pendingGridPoint.gridY;
+        if (gp.gridX === px && gp.gridY === py) {
+          STATE.pendingGridPoint = null;
+          drawGrid();
+        } else {
+          const seg = new FloorSegment(px, py, gp.gridX, gp.gridY);
+          STATE.floorSegments.push(seg);
+          STATE.pendingGridPoint = null;
+          drawGrid();
+          validateAll();
+        }
+      }
+    }
+
+    // ── ROPE_DRAW 모드 ──
+    if (STATE.activePointers.size === 1 && STATE.interactionMode === 'ROPE_DRAW') {
+      const world = screenToWorld(e.offsetX, e.offsetY);
+      const ap    = hitTestAttachPoint(world.x, world.y);
+
+      if (!ap) {
+        // 빈 공간 클릭 → pending 초기화
+        STATE.pendingRopeAnchor = null;
+        STATE._ropePreviewWorld = null;
+        return;
+      }
+
+      if (!STATE.pendingRopeAnchor) {
+        // 첫 번째 앵커 저장
+        STATE.pendingRopeAnchor = { elementId: ap.elementId, attachPoint: ap.attachPoint };
+        STATE._ropePreviewWorld = { x: world.x, y: world.y };
+        return;
+      }
+
+      const pA = STATE.pendingRopeAnchor;
+
+      // 같은 앵커 포인트 재클릭 → 취소
+      if (pA.elementId === ap.elementId && pA.attachPoint === ap.attachPoint) {
+        STATE.pendingRopeAnchor = null;
+        STATE._ropePreviewWorld = null;
+        return;
+      }
+
+      // 같은 물체(element)의 다른 앵커 → 불가
+      if (pA.elementId === ap.elementId) {
+        _showToast('같은 물체의 앵커끼리는 실로 연결할 수 없습니다.');
+        return;
+      }
+
+      // 양쪽 앵커의 월드 좌표 resolve (Element & FloorSegment 통합)
+      const wA = _resolveAnchorWorld(pA);
+      const wB = _resolveAnchorWorld(ap);
+
+      if (!wA || !wB) {
+        STATE.pendingRopeAnchor = null;
+        STATE._ropePreviewWorld = null;
+        return;
+      }
+
+      // Rope 생성
+      const dist        = Math.hypot(wB.x - wA.x, wB.y - wA.y);
+      const ropeLengthM = dist / CONFIG.cellSize;
+
+      const rope = new Rope(
+        { elementId: pA.elementId, attachPoint: pA.attachPoint },
+        { elementId: ap.elementId, attachPoint: ap.attachPoint },
+        ropeLengthM
+      );
+      STATE.ropes.push(rope);
+
+      // Pulley.connectedRopeIds 갱신
+      [pA.elementId, ap.elementId].forEach(eid => {
+        const el = STATE.elements.find(e => e.id === eid);
+        if (el && el.type === 'pulley') {
+          if (!el.connectedRopeIds.includes(rope.id)) {
+            el.connectedRopeIds.push(rope.id);
+          }
+        }
+      });
+
+      STATE.pendingRopeAnchor = null;
+      STATE._ropePreviewWorld = null;
+      validateAll();
+    }
+  });
+
+  /* ── pointermove ── */
+  mainCanvas.addEventListener('pointermove', (e) => {
+    STATE.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // 2포인터 핀치 줌
+    if (STATE.activePointers.size === 2) {
+      const currDist = getPinchDist();
+      if (STATE.prevPinchDist === null || STATE.prevPinchDist === 0) {
+        STATE.prevPinchDist = currDist;
+        return;
+      }
+      const factor = currDist / STATE.prevPinchDist;
+      STATE.prevPinchDist = currDist;
+
+      const pointers    = [...STATE.activePointers.values()];
+      const pivotScreenX = (pointers[0].x + pointers[1].x) / 2;
+      const pivotScreenY = (pointers[0].y + pointers[1].y) / 2;
+      const rect   = mainCanvas.getBoundingClientRect();
+      const pivotSX = pivotScreenX - rect.left;
+      const pivotSY = pivotScreenY - rect.top;
+      const pivot   = screenToWorld(pivotSX, pivotSY);
+
+      const newScale    = clamp(VIEWPORT.scale * factor, VIEWPORT.minScale, VIEWPORT.maxScale);
+      VIEWPORT.offsetX  = pivotSX - pivot.x * newScale;
+      VIEWPORT.offsetY  = pivotSY - pivot.y * newScale;
+      VIEWPORT.scale    = newScale;
+      drawGrid();
+      return;
+    }
+
+    // 롱프레스 취소 (손가락이 움직이면 취소)
+    if (_longPressTimer) {
+      const p0 = STATE.activePointers.get(e.pointerId);
+      if (p0 && Math.hypot(e.clientX-p0.x, e.clientY-p0.y) > 8) {
+        clearTimeout(_longPressTimer); _longPressTimer = null;
+      }
+    }
+
+    // ROPE_REWIRE: 드래그 중 아무것도 안 해도 됨 (렌더에서 앵커 점 표시)
+    if (STATE.interactionMode === 'ROPE_REWIRE') return;
+
+    // RESIZING: 핸들 드래그로 크기 조절
+    if (STATE.interactionMode === 'RESIZING' && _resizeHandle) {
+      const world = screenToWorld(e.offsetX, e.offsetY);
+      const cs  = CONFIG.cellSize;
+      const GS  = CONFIG.GRID_SIZE;
+      const tgt = _resizeHandle.target;
+      const ht  = _resizeHandle.type;
+      const gx  = Math.round(world.x / cs);  // 격자 좌표
+      const gy  = Math.round(world.y / cs);
+
+      if (tgt.type === 'floorSegment' || tgt.type === 'rope') {
+        // FloorSegment / Rope: 끝점 이동
+        if (tgt.type === 'floorSegment') {
+          if (ht === 'p1') { tgt.x1 = clamp(gx,0,GS); tgt.y1 = clamp(gy,0,GS); }
+          else             { tgt.x2 = clamp(gx,0,GS); tgt.y2 = clamp(gy,0,GS); }
+          validateAll();
+        }
+        // Rope의 경우 앵커는 element에 붙어 있어 직접 이동 불가 → 무시
+      } else if (tgt.type === 'spring') {
+        if (ht === 'right') {
+          // 가로: 너비만 조절
+          const newW = clamp(Math.round(gx - tgt.gridX), 1, GS - tgt.gridX);
+          tgt.gridW  = newW;
+          validateAll();
+        } else if (ht === 'bottom') {
+          // 세로: 높이만 조절
+          const newH = clamp(Math.round(gy - tgt.gridY), 1, GS - tgt.gridY);
+          tgt.gridH  = newH;
+          validateAll();
+        }
+      } else if (tgt.type === 'circle' || tgt.type === 'pulley') {
+        // 정사각형 유지: 가로 세로 중 더 큰 값으로 동일하게
+        const newW = clamp(Math.round(gx - tgt.gridX), 1, GS - tgt.gridX);
+        const newH = clamp(Math.round(gy - tgt.gridY), 1, GS - tgt.gridY);
+        const size = Math.max(newW, newH);
+        tgt.gridW  = size;
+        tgt.gridH  = size;
+        if (tgt.type === 'pulley') syncPulleyPhys();
+        validateAll();
+      } else {
+        // rect, forceZone: 자유 크기
+        tgt.gridW = clamp(Math.round(gx - tgt.gridX), 1, GS - tgt.gridX);
+        tgt.gridH = clamp(Math.round(gy - tgt.gridY), 1, GS - tgt.gridY);
+        validateAll();
+      }
+      renderPanel();
+      return;
+    }
+
+    // 드래그: 요소 격자 스냅 이동 (바닥면 스냅 포함)
+    if (STATE.interactionMode === 'DRAGGING' && _dragEl) {
+      const world = screenToWorld(e.offsetX, e.offsetY);
+      const cs    = CONFIG.cellSize;
+      const GS    = CONFIG.GRID_SIZE;
+
+      // ── 바닥면 스냅 (rect·circle·forceZone 대상) ──
+      if (['rect','circle','forceZone'].includes(_dragEl.type)) {
+        const snap = _computeFloorSnap(_dragEl, world.x, world.y);
+        if (snap.snapped) {
+          // 마우스 위치를 바닥면에 투영하여 평행 방향 슬라이드
+          const { seg, nx, ny, rotRad } = snap;
+          const x1 = seg.x1*cs, y1 = seg.y1*cs;
+          const x2 = seg.x2*cs, y2 = seg.y2*cs;
+          const { fx, fy } = _distPointToSeg(world.x, world.y, x1, y1, x2, y2);
+          const hh = _dragEl.gridH / 2, hw = _dragEl.gridW / 2;
+          // 스냅 중심 위치 = 발 + 법선방향 * 반높이
+          const snapCX = fx + nx * hh * cs;
+          const snapCY = fy + ny * hh * cs;
+          _dragEl.gridX = clamp(snapCX/cs - hw, 0, GS - _dragEl.gridW);
+          _dragEl.gridY = clamp(snapCY/cs - hh, 0, GS - _dragEl.gridH);
+          _dragEl._snapRotation = rotRad;   // 바닥면 각도로 회전
+          if (_dragEl.type === 'pulley') syncPulleyPhys();
+          validateAll();
+          return;
+        }
+      }
+
+      // ── 일반 드래그 (스냅 해제) ──
+      if (_dragEl._snapRotation !== null) _dragEl._snapRotation = null;
+
+      const newWX = world.x - STATE.dragOffset.x;
+      const newWY = world.y - STATE.dragOffset.y;
+      const newGX = clamp(snapToGridIndex(newWX / cs * cs), 0, GS - _dragEl.gridW);
+      const newGY = clamp(snapToGridIndex(newWY / cs * cs), 0, GS - _dragEl.gridH);
+      _dragEl.gridX = newGX;
+      _dragEl.gridY = newGY;
+      if (_dragEl.type === 'pulley') syncPulleyPhys();
+      validateAll();
+      return;
+    }
+
+    // ROPE_DRAW: 커서 위치 갱신 (예비 실선 렌더용)
+    if (STATE.interactionMode === 'ROPE_DRAW' && STATE.pendingRopeAnchor) {
+      const world = screenToWorld(e.offsetX, e.offsetY);
+      STATE._ropePreviewWorld = { x: world.x, y: world.y };
+    }
+
+    // 팬
+    if (STATE.interactionMode === 'PANNING' && _panStart) {
+      VIEWPORT.offsetX = _panStart.offsetX + (e.clientX - _panStart.screenX);
+      VIEWPORT.offsetY = _panStart.offsetY + (e.clientY - _panStart.screenY);
+      drawGrid();
+    }
+  });
+
+  /* ── pointerup / pointercancel ── */
+  function onPointerEnd(e) {
+    STATE.activePointers.delete(e.pointerId);
+
+    if (STATE.activePointers.size < 2) STATE.prevPinchDist = null;
+
+    if (STATE.activePointers.size === 0) {
+      // 롱프레스 타이머 취소
+      if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
+
+      // 삭제 존 드롭 처리
+      if (_deleteZoneVis) {
+        if (_isOnDeleteZone(e.offsetX, e.offsetY) && _longPressEl) {
+          _deleteSelected(_longPressEl);
+        }
+        _deleteZoneVis = false;
+        _longPressEl   = null;
+      }
+
+      if (STATE.interactionMode === 'DRAGGING') { _dragEl = null; }
+      if (STATE.interactionMode === 'RESIZING') { _resizeHandle = null; }
+
+      // 실 재연결 모드 종료: 앵커에 스냅
+      if (_ropeRewireMode) {
+        const world = screenToWorld(e.offsetX, e.offsetY);
+        _finishRopeRewire(world.x, world.y);
+      }
+
+      if (['PANNING','DRAGGING','RESIZING','ROPE_REWIRE'].includes(STATE.interactionMode)) {
+        STATE.interactionMode = 'IDLE';
+      }
+      _panStart = null;
+    }
+  }
+  mainCanvas.addEventListener('pointerup',     onPointerEnd);
+  mainCanvas.addEventListener('pointercancel', onPointerEnd);
+
+  /* ── 데스크톱 마우스 휠 줌 ── */
+  mainCanvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor  = e.deltaY < 0 ? 1.1 : 0.9;
+    const pivot   = screenToWorld(e.offsetX, e.offsetY);
+    const newScale = clamp(VIEWPORT.scale * factor, VIEWPORT.minScale, VIEWPORT.maxScale);
+    VIEWPORT.offsetX = e.offsetX - pivot.x * newScale;
+    VIEWPORT.offsetY = e.offsetY - pivot.y * newScale;
+    VIEWPORT.scale   = newScale;
+    drawGrid();
+  }, { passive: false });
+
+  /* ── 핀치 거리 계산 헬퍼 ── */
+  function getPinchDist() {
+    const pts = [...STATE.activePointers.values()];
+    if (pts.length < 2) return 0;
+    return Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+  }
+
+  /* 캔버스 기본 터치 스크롤 차단 */
+  mainCanvas.style.touchAction = 'none';
+  gridCanvas.style.touchAction = 'none';
+
+  /* ── ESC: 모드 초기화 ── */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      STATE.interactionMode   = 'IDLE';
+      STATE.pendingGridPoint  = null;
+      STATE.pendingRopeAnchor = null;
+      STATE._ropePreviewWorld = null;
+      _dragEl = null;
+      document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active-mode'));
+      drawGrid();
+    }
+  });
+
+  /* ── 선택 오브젝트 설정 + 패널 표시/숨김 ── */
+  function _selectObject(obj) {
+    STATE.selected = obj;
+    renderPanel();
+  }
+
+  /* ================================================================
+     [UI BUTTONS] — 팔레트 + 하단 버튼
+  ================================================================ */
+
+  /* 팔레트 아이템 클릭 */
+  document.querySelectorAll('.palette-item').forEach(item => {
+    item.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    });
+    item.addEventListener('click', (e) => {
+      const type = item.dataset.type;
+      const mode = item.dataset.mode;
+
+      if (STATE.simMode === 'RUNNING') return;
+
+      // 모드 버튼: 토글
+      if (mode) {
+        const targetMode = mode.toUpperCase();
+        if (STATE.interactionMode === targetMode) {
+          STATE.interactionMode = 'IDLE';
+          item.classList.remove('active-mode');
+        } else {
+          STATE.interactionMode = targetMode;
+          document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active-mode'));
+          item.classList.add('active-mode');
+        }
+        STATE.pendingGridPoint  = null;
+        STATE.pendingRopeAnchor = null;
+        STATE._ropePreviewWorld = null;
+        drawGrid();   // FLOOR_DRAW 강조 갱신
+        return;
+      }
+
+      // 요소 추가 (Sprint 2에서 구현)
+      if (type) {
+        // 다른 팔레트 버튼 클릭 시 모드 초기화
+        STATE.interactionMode = 'IDLE';
+        document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active-mode'));
+        addElement(type);
+      }
+    });
+  });
+
+  /** 요소 생성 팩토리 — 현재 화면 중앙 격자 좌표에 추가 */
+  function addElement(type) {
+    let el;
+    switch (type) {
+      case 'rect':      el = new RectBody();    break;
+      case 'circle':    el = new CircleBody();  break;
+      case 'forceZone': el = new ForceZone();   break;
+      case 'pulley':    el = new Pulley();      break;
+      case 'spring':    el = new Spring();      break;
+      default: return;
+    }
+
+    // 현재 화면 중앙의 월드 좌표 → 격자 인덱스
+    const screenCX = mainCanvas.width  / 2;
+    const screenCY = mainCanvas.height / 2;
+    const world    = screenToWorld(screenCX, screenCY);
+    const cs       = CONFIG.cellSize;
+    const GS       = CONFIG.GRID_SIZE;
+
+    // 격자 스냅 + 경계 클램프 (요소가 그리드 밖으로 나가지 않도록)
+    const gx = clamp(snapToGridIndex(world.x / cs * cs), 0, GS - el.gridW);
+    const gy = clamp(snapToGridIndex(world.y / cs * cs), 0, GS - el.gridH);
+    el.gridX = gx;
+    el.gridY = gy;
+
+    STATE.elements.push(el);
+    _selectObject(el);
+    validateAll();
+  }
+
+  /* 하단 버튼 */
+  btnRun.addEventListener('click', () => {
+    if (STATE.simMode === 'EDIT') {
+      startSimulation();
+    } else if (STATE.simMode === 'RUNNING') {
+      pauseSimulation();
+    } else if (STATE.simMode === 'PAUSED') {
+      resumeSimulation();
+    }
+  });
+
+  btnReset.addEventListener('click', () => {
+    stopSimulation();
+    restoreSnapshot();          // t=0 상태 완전 복원
+    STATE.simMode = 'EDIT';
+    STATE.interactionMode = 'IDLE';
+    STATE.pendingGridPoint = null;
+    STATE.pendingRopeAnchor = null;
+    STATE._ropePreviewWorld = null;
+    document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active-mode'));
+    btnRun.textContent = '▶ 실행';
+    btnRun.disabled = false;
+    btnRun.style.opacity = '1';
+    _selectObject(null);        // 패널 닫기
+    drawGrid();
+    validateAll();
+  });
+
+  btnCapture.addEventListener('click', () => {
+    captureImage();
+  });
+
+  btnGravity.addEventListener('click', () => {
+    STATE.gravityOn = !STATE.gravityOn;
+    if (!STATE.gravityOn) {
+      btnGravity.textContent = '중력 OFF';
+      btnGravity.classList.add('active');
+    } else {
+      btnGravity.textContent = '⊙ 무중력';
+      btnGravity.classList.remove('active');
+    }
+  });
+
+  /* ================================================================
+     [SIMULATION] — Sprint 6 완성
+  ================================================================ */
+
+  /* ── 시뮬 제어 ── */
+  function startSimulation() {
+    saveSnapshot();
+    initPhysics();
+    STATE.simMode = 'RUNNING';
+    btnRun.textContent = '⏸ 일시정지';
+    document.getElementById('sidebar-left').style.pointerEvents = 'none';
+    document.getElementById('sidebar-left').style.opacity = '0.4';
+    _selectObject(null);
+  }
+
+  function pauseSimulation() {
+    STATE.simMode = 'PAUSED';
+    btnRun.textContent = '▶ 재개';
+  }
+
+  function resumeSimulation() {
+    STATE.simMode = 'RUNNING';
+    btnRun.textContent = '⏸ 일시정지';
+  }
+
+  function stopSimulation() {
+    // rAF는 renderLoop에서 계속 돌아야 하므로 취소하지 않음
+    document.getElementById('sidebar-left').style.pointerEvents = '';
+    document.getElementById('sidebar-left').style.opacity = '';
+  }
+
+  /* ── 스냅샷 ── */
+  function saveSnapshot() {
+    STATE.snapshot = JSON.stringify({
+      elements:      STATE.elements.map(e => e.serialize()),
+      floorSegments: STATE.floorSegments.map(s => s.serialize()),
+      ropes:         STATE.ropes.map(r => r.serialize()),
+    });
+  }
+
+  function restoreSnapshot() {
+    if (!STATE.snapshot) return;
+    const data = JSON.parse(STATE.snapshot);
+
+    // elements 재생성
+    STATE.elements = data.elements.map(d => {
+      let el;
+      switch (d.type) {
+        case 'rect':      el = new RectBody();    break;
+        case 'circle':    el = new CircleBody();  break;
+        case 'forceZone': el = new ForceZone();   break;
+        case 'pulley':    el = new Pulley();      break;
+        case 'spring':    el = new Spring();      break;
+        default: return null;
+      }
+      Object.assign(el, d);
+      return el;
+    }).filter(Boolean);
+
+    // floorSegments 재생성
+    STATE.floorSegments = data.floorSegments.map(d => {
+      const seg = new FloorSegment(d.x1, d.y1, d.x2, d.y2);
+      Object.assign(seg, d);
+      return seg;
+    });
+
+    // ropes 재생성
+    STATE.ropes = data.ropes.map(d => {
+      const rope = new Rope(d.anchorA, d.anchorB, d.ropeLength);
+      Object.assign(rope, d);
+      return rope;
+    });
+
+    STATE.selected = null;
+    validateAll();
+  }
+
+  /* ================================================================
+     [PHYSICS] — Sprint 6: 중력 + 바닥 충돌
+  ================================================================ */
+
+  /* ── 6-2. 물리 초기화 ── */
+  function initPhysics() {
+    const GS = CONFIG.GRID_SIZE;
+    for (const el of STATE.elements) {
+      if (el.type === 'rect') {
+        el.physX = el.gridX;                          // 좌하단 x [m]
+        el.physY = GS - el.gridY - el.gridH;          // 좌하단 y [m] (y축 반전)
+        el.vx = el.vx0 || 0;
+        el.vy = el.vy0 || 0;
+        el.ax = 0; el.ay = 0;
+      }
+      if (el.type === 'circle') {
+        el.physX = el.gridX + el.gridW / 2;
+        el.physY = GS - el.gridY - el.gridH / 2;
+        el.vx = el.vx0 || 0;
+        el.vy = el.vy0 || 0;
+        el.ax = 0; el.ay = 0;
+        el.omega = 0;   // 각속도 초기화
+        el.theta = 0;   // 회전각 초기화
+        el.alpha = 0;
+      }
+      if (el.type === 'pulley') {
+        el.physX = el.gridX + el.gridW / 2;
+        el.physY = GS - el.gridY - el.gridH / 2;
+        el.vx = el.vx0 || 0;
+        el.vy = el.vy0 || 0;
+        el.ax = 0; el.ay = 0;
+      }
+    }
+    // 시뮬 시작 시점 실제 물리 거리로 보정
+    calibrateRopeLengths();
+  }
+
+  /**
+   * calibrateRopeLengths
+   * 시뮬 시작 직후 각 Rope의 calibratedLength를 실제 물리 거리로 고정.
+   * Atwood: 두 실의 거리 합을 L_total로 저장.
+   * 단순 실: 현재 물리 거리를 저장.
+   */
+  function calibrateRopeLengths() {
+    const cs = CONFIG.cellSize;
+    const GS = CONFIG.GRID_SIZE;
+
+    // 도르래 그룹 파악
+    const pulleyGroups = new Map();
+    for (const el of STATE.elements) {
+      if (el.type === 'pulley') pulleyGroups.set(el.id, []);
+    }
+    const pulleyRopeIds = new Set();
+    for (const rope of STATE.ropes) {
+      const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
+      const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
+      const aIsRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
+      const bIsRim = elB && elB.type === 'pulley' && rope.anchorB.attachPoint !== 'center';
+      if (aIsRim) {
+        pulleyGroups.get(elA.id).push({ rope, bodyAnchor: rope.anchorB, pulleyAnchor: rope.anchorA });
+        pulleyRopeIds.add(rope.id);
+      } else if (bIsRim) {
+        pulleyGroups.get(elB.id).push({ rope, bodyAnchor: rope.anchorA, pulleyAnchor: rope.anchorB });
+        pulleyRopeIds.add(rope.id);
+      }
+    }
+
+    // 도르래 그룹: 각 실의 실제 물리 거리(림→body)를 calibratedLength로 저장
+    for (const [pulleyId, group] of pulleyGroups) {
+      const pulley = STATE.elements.find(e => e.id === pulleyId);
+      if (!pulley) continue;
+      for (const g of group) {
+        const rim = getAttachPhysPos(g.pulleyAnchor);
+        const pos = getAttachPhysPos(g.bodyAnchor);
+        if (!rim || !pos) continue;
+        g.rope.calibratedLength = Math.hypot(pos.x - rim.x, pos.y - rim.y);
+      }
+    }
+
+    // 단순 실: 현재 물리 거리를 calibratedLength로 저장
+    for (const rope of STATE.ropes) {
+      if (pulleyRopeIds.has(rope.id)) continue;
+      const A = getAttachPhysPos(rope.anchorA);
+      const B = getAttachPhysPos(rope.anchorB);
+      if (!A || !B) continue;
+      rope.calibratedLength = Math.hypot(B.x - A.x, B.y - A.y);
+    }
+  }
+
+  /* ── 6-3. 시뮬 스텝 (4 서브스텝) ── */
+  function simStep(dt) {
+    const sub = CONFIG.SUBSTEPS;
+    const subDt = dt / sub;
+    for (let i = 0; i < sub; i++) {
+      applyForces(subDt);
+      integrate(subDt);
+      resolveFloorCollisions();
+      resolveBodyCollisions();
+      resolveRopeConstraints();
+    }
+  }
+
+  /* ── 힘 적용 (중력 + ForceZone + 용수철) ── */
+  function applyForces(dt) {
+    for (const el of STATE.elements) {
+      if (!['rect', 'circle', 'pulley'].includes(el.type)) continue;
+
+      // 중력 (Pulley도 중력 받음 — 고정 실이 없으면 자유낙하)
+      if (STATE.gravityOn) {
+        el.ay -= CONFIG.G;
+      }
+
+      // ForceZone
+      if (el.type !== 'pulley') {
+        for (const zone of STATE.elements) {
+          if (zone.type !== 'forceZone') continue;
+          if (_bboxOverlap(el, zone)) {
+            el.ax += zone.fx / el.mass;
+            el.ay += zone.fy / el.mass;
+          }
+        }
+      }
+    }
+
+    // 용수철 힘
+    applySpringForces();
+  }
+
+  /* bbox 겹침 (격자 인덱스 기준) */
+  function _bboxOverlap(a, b) {
+    return a.gridX < b.gridX + b.gridW && a.gridX + a.gridW > b.gridX &&
+           a.gridY < b.gridY + b.gridH && a.gridY + a.gridH > b.gridY;
+  }
+
+  /* ── 6-4. Semi-implicit Euler 적분 ── */
+  function integrate(dt) {
+    const GS = CONFIG.GRID_SIZE;
+    for (const el of STATE.elements) {
+      if (!['rect', 'circle', 'pulley'].includes(el.type)) continue;
+
+      el.vx += el.ax * dt;
+      el.vy += el.ay * dt;
+      el.physX += el.vx * dt;
+      el.physY += el.vy * dt;
+      el.ax = 0;
+      el.ay = 0;
+
+      if (el.type === 'rect') {
+        el.gridX = el.physX;
+        el.gridY = GS - el.physY - el.gridH;
+      } else {
+        el.gridX = el.physX - el.gridW / 2;
+        el.gridY = GS - el.physY - el.gridH / 2;
+      }
+      // 원형 물체 회전 적분
+      if (el.type === 'circle') {
+        el.omega += el.alpha * dt;
+        el.theta += el.omega * dt;
+        el.alpha  = 0;
+      }
+    }
+  }
+
+  /* ── 6-5. FloorSegment 물리 선분 추출 ── */
+  /**
+   * 격자 좌표 → 물리 좌표(m)
+   * gridX → physX = gridX
+   * gridY → physY = GRID_SIZE - gridY  (y 반전)
+   */
+  function getPhysicsSegments(seg) {
+    const GS = CONFIG.GRID_SIZE;
+    const gToP = (gx, gy) => ({ x: gx, y: GS - gy });  // 격자→물리
+
+    const A = gToP(seg.x1, seg.y1);
+    const B = gToP(seg.x2, seg.y2);
+    const mu = seg.isFriction ? seg.mu : 0;
+
+    const segs = [];
+
+    const _makeSeg = (ax,ay,bx,by) => {
+      const dx = bx-ax, dy = by-ay;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-9) return null;
+      // 법선: 반시계 90° (왼쪽 수직)
+      // 강제 뒤집기 없음 - 단면 충돌 (물체가 법선 방향 위에 있을 때만 충돌)
+      const nx = -dy/len, ny = dx/len;
+      const muS = seg.isFriction ? (seg.muS ?? seg.mu ?? 0) : 0;
+      const muK = seg.isFriction ? (seg.muK ?? muS * 0.8) : 0;
+      return { x1:ax, y1:ay, x2:bx, y2:by, mu: muS, muS, muK, isFriction: seg.isFriction, normalX:nx, normalY:ny };
+    };
+
+    switch (seg.pathType) {
+      case 'LINE': {
+        const s = _makeSeg(A.x,A.y,B.x,B.y);
+        if (s) segs.push(s);
+        break;
+      }
+      case 'ELBOW_H': {
+        const M = { x: B.x, y: A.y };
+        const s1 = _makeSeg(A.x,A.y,M.x,M.y);
+        const s2 = _makeSeg(M.x,M.y,B.x,B.y);
+        if (s1) segs.push(s1);
+        if (s2) segs.push(s2);
+        break;
+      }
+      case 'ELBOW_V': {
+        const M = { x: A.x, y: B.y };
+        const s1 = _makeSeg(A.x,A.y,M.x,M.y);
+        const s2 = _makeSeg(M.x,M.y,B.x,B.y);
+        if (s1) segs.push(s1);
+        if (s2) segs.push(s2);
+        break;
+      }
+      case 'ARC_UP':
+      case 'ARC_DOWN': {
+        // 원호를 20개 미세 선분으로 근사 (물리 좌표계)
+        const pts = _arcPhysPoints(seg, A, B, 20);
+        for (let i = 0; i < pts.length - 1; i++) {
+          const s = _makeSeg(pts[i].x, pts[i].y, pts[i+1].x, pts[i+1].y);
+          if (s) segs.push(s);
+        }
+        break;
+      }
+    }
+    return segs;
+  }
+
+  /** 물리 좌표계에서 ARC를 n+1 개 점으로 샘플링 */
+  function _arcPhysPoints(seg, A, B, n) {
+    // 물리 좌표계에서는 y가 위쪽이 양수 → ARC_UP/DOWN 의미가 화면과 반대
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const d  = Math.hypot(dx, dy);
+    const { R, theta, h } = _arcRadiusFromCurvature(seg.curvature, d);
+
+    const mx = (A.x + B.x)/2, my = (A.y + B.y)/2;
+    const ux = dx/d, uy = dy/d;
+    const nx = -uy, ny = ux;
+
+    let cX, cY;
+    // 물리 좌표계 y 반전 보정: ARC_DOWN 화면 = 물리 ARC_UP
+    if (seg.pathType === 'ARC_DOWN') { cX = mx + nx*h; cY = my + ny*h; }
+    else                             { cX = mx - nx*h; cY = my - ny*h; }
+
+    const sa = Math.atan2(A.y - cY, A.x - cX);
+    const ea = Math.atan2(B.y - cY, B.x - cX);
+    let diff = ea - sa;
+    while (diff >  Math.PI) diff -= 2*Math.PI;
+    while (diff < -Math.PI) diff += 2*Math.PI;
+    const shortSign = Math.sign(diff) || 1;
+    // θ≤π: 짧은 호 그대로 / θ>π: 반대 방향으로 돌아 긴 호(major arc) 사용
+    const sweepSign = (theta <= Math.PI) ? shortSign : -shortSign;
+    const sweep = sweepSign * theta;
+
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const a = sa + sweep * t;
+      pts.push({ x: cX + R*Math.cos(a), y: cY + R*Math.sin(a) });
+    }
+    return pts;
+  }
+
+  /* ── 6-5. FloorSegment 충돌 처리 ── */
+  function resolveFloorCollisions() {
+    const allSegs = [];
+    for (const fseg of STATE.floorSegments) {
+      allSegs.push(...getPhysicsSegments(fseg));
+    }
+    if (allSegs.length === 0) return;
+
+    for (const el of STATE.elements) {
+      if (el.type === 'circle') _resolveCircleFloor(el, allSegs);
+      if (el.type === 'rect')   _resolveRectFloor(el, allSegs);
+    }
+  }
+
+  /** CircleBody — 원-선분 최근접점 거리 충돌 */
+  function _resolveCircleFloor(el, segs) {
+    const r   = el.gridW / 2;
+    const m   = el.mass;
+    const I   = 0.5 * m * r * r;   // 균일 원판 관성 모멘트
+
+    // ── 1단계: 모든 세그먼트 중 가장 깊은 침투 1건만 탐색 ──
+    //   ⚠ 법선은 (dx/dist,dy/dist)가 아닌 세그먼트의 고정 법선(seg.normalX/Y)을
+    //     사용해야 함. 인접 미세 세그먼트의 경계(joint)에서 원의 중심이
+    //     표면 반대쪽으로 살짝 넘어가면 (dx,dy) 기반 방향이 뒤집혀
+    //     반대 방향으로 밀어버리는 버그가 있었음.
+    let maxPen = -Infinity, bestNx = 0, bestNy = 0, bestSeg = null;
+
+    for (const seg of segs) {
+      const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
+      const lenSq = sdx*sdx + sdy*sdy;
+      if (lenSq < 1e-12) continue;
+
+      const t = ((el.physX - seg.x1)*sdx + (el.physY - seg.y1)*sdy) / lenSq;
+      if (t < 0 || t > 1) continue;
+
+      const footX = seg.x1 + t*sdx;
+      const footY = seg.y1 + t*sdy;
+      const dx = el.physX - footX;
+      const dy = el.physY - footY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > r) continue;   // 원의 반지름보다 멀면 무관
+
+      // 세그먼트의 고정 법선 방향으로의 부호 있는 거리
+      const signedDist = dx*seg.normalX + dy*seg.normalY;
+      if (signedDist < -(el.gridW + el.gridH)) continue;  // 너무 깊은 반대쪽(처음부터 반대편)
+
+      // 침투 깊이: 법선 방향 성분이 r보다 작으면(혹은 음수) 침투
+      const pen = r - signedDist;
+      if (pen > maxPen) {
+        maxPen = pen;
+        bestNx = seg.normalX;
+        bestNy = seg.normalY;
+        bestSeg = seg;
+      }
+    }
+
+    // ── 1-2단계: 정점(미세 선분들의 연결점) 보정 ──
+    //   ARC는 여러 미세 선분으로 나뉘는데, 원의 중심이 정확히 두 선분의
+    //   경계(joint)에 위치하면 위의 엣지 검사가 불안정해질 수 있음
+    //   (인접 두 선분의 법선이 서로 다른 방향이라 매 프레임 다른 쪽이
+    //   선택되며 미세하게 새는 현상 방지). 정점 자체는 "둥근 모서리"처럼
+    //   원-점 거리로 처리하고, 방향은 점→중심(라디얼)을 사용 — 정점은
+    //   엣지와 달리 고정 법선이 없으므로 이 방식이 기하학적으로 올바름.
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i];
+      const candidates = (i === 0) ? [{x:seg.x1,y:seg.y1}, {x:seg.x2,y:seg.y2}] : [{x:seg.x2,y:seg.y2}];
+      for (const v of candidates) {
+        const dx = el.physX - v.x, dy = el.physY - v.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > r || dist < 1e-9) continue;
+        const pen = r - dist;
+        if (pen > maxPen) {
+          maxPen = pen;
+          bestNx = dx / dist;
+          bestNy = dy / dist;
+          bestSeg = seg;
+        }
+      }
+    }
+
+    if (!bestSeg || maxPen <= 0) return;
+
+    // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
+    const nx = bestNx, ny = bestNy;
+    el.physX += nx * maxPen;
+    el.physY += ny * maxPen;
+    el.gridX  = el.physX - el.gridW/2;
+    el.gridY  = CONFIG.GRID_SIZE - el.physY - el.gridH/2;
+
+    const tx = -ny, ty = nx;
+
+    const vn = el.vx*nx + el.vy*ny;
+    if (vn >= 0) return;
+
+    const e_c = Math.sqrt(el.e);
+    const jn  = -(1 + e_c) * vn / (1/m);
+
+    el.vx += jn/m * nx;
+    el.vy += jn/m * ny;
+
+    const mu_s = bestSeg.isFriction ? (bestSeg.muS ?? (bestSeg.mu > 0 ? bestSeg.mu : 0.4)) : 0;
+    const mu_k = bestSeg.isFriction ? (bestSeg.muK ?? mu_s * 0.8)                          : 0;
+
+    if (mu_s <= 0) {
+      // 마찰 없음: 각속도 변화 없음
+    } else {
+      const vt     = el.vx*tx + el.vy*ty;
+      const v_slip = vt - r * el.omega;
+
+      const denom   = 1/m + r*r/I;
+      const jt_roll = -v_slip / denom;
+      const jt_max  = mu_s * Math.abs(jn);
+
+      let jt;
+      if (Math.abs(jt_roll) <= jt_max) {
+        jt = jt_roll;
+      } else {
+        jt = -Math.sign(v_slip) * mu_k * Math.abs(jn);
+      }
+
+      el.vx    += jt/m * tx;
+      el.vy    += jt/m * ty;
+      el.omega -= r * jt / I;
+    }
+  }
+
+  /** RectBody — 단면 충돌: 법선 방향 위의 물체만 처리 */
+  function _resolveRectFloor(el, segs) {
+    const corners = [
+      { x: el.physX,           y: el.physY },
+      { x: el.physX+el.gridW,  y: el.physY },
+      { x: el.physX,           y: el.physY+el.gridH },
+      { x: el.physX+el.gridW,  y: el.physY+el.gridH },
+    ];
+
+    // ── 1단계: 모든 세그먼트(ARC는 20개 미세 선분)를 스캔하여
+    //          가장 깊은 침투 1건만 찾는다.
+    //          (per-segment 즉시보정 시 ARC의 인접 미세선분들이
+    //           중복 보정을 일으켜 물체가 튕겨나가는 버그 방지) ──
+    let maxPen = 0, bestNx = 0, bestNy = 0, bestSeg = null;
+
+    for (const seg of segs) {
+      const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
+      const lenSq = sdx*sdx + sdy*sdy;
+      if (lenSq < 1e-12) continue;
+
+      const snx = seg.normalX, sny = seg.normalY;
+
+      for (const c of corners) {
+        const t = ((c.x - seg.x1)*sdx + (c.y - seg.y1)*sdy) / lenSq;
+        if (t < 0 || t > 1) continue;
+
+        const footX = seg.x1 + t*sdx;
+        const footY = seg.y1 + t*sdy;
+        const fx = c.x - footX, fy = c.y - footY;
+        const signed = fx*snx + fy*sny;
+
+        const maxAllowedPen = el.gridW + el.gridH;
+        if (signed < 0 && Math.abs(signed) > maxPen && Math.abs(signed) < maxAllowedPen) {
+          maxPen = Math.abs(signed);
+          bestNx = snx;
+          bestNy = sny;
+          bestSeg = seg;
+        }
+      }
+    }
+
+    if (maxPen < 1e-9 || !bestSeg) return;
+
+    // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
+    el.physX += bestNx * maxPen;
+    el.physY += bestNy * maxPen;
+    el.gridX  = el.physX;
+    el.gridY  = CONFIG.GRID_SIZE - el.physY - el.gridH;
+
+    const e_c = Math.sqrt(el.e * 1.0);
+    const vn  = el.vx*bestNx + el.vy*bestNy;
+    if (vn < 0) {
+      const jn = -(1 + e_c) * vn * el.mass;
+      el.vx += (jn / el.mass) * bestNx;
+      el.vy += (jn / el.mass) * bestNy;
+
+      const vn2  = el.vx*bestNx + el.vy*bestNy;
+      const vt_x = el.vx - vn2*bestNx;
+      const vt_y = el.vy - vn2*bestNy;
+      const vt_mag = Math.hypot(vt_x, vt_y);
+      const muS  = bestSeg.isFriction ? (bestSeg.muS ?? bestSeg.mu ?? 0) : 0;
+      const muK  = bestSeg.isFriction ? (bestSeg.muK ?? muS * 0.8)     : 0;
+
+      if (muS > 0 && vt_mag > 1e-9) {
+        const jt_stop   = el.mass * vt_mag;
+        const jt_static = muS * jn;
+        let jt;
+        if (jt_stop <= jt_static) {
+          jt = jt_stop;
+        } else {
+          jt = muK * jn;
+        }
+        el.vx -= jt / el.mass * (vt_x / vt_mag);
+        el.vy -= jt / el.mass * (vt_y / vt_mag);
+      }
+    }
+  }
+
+  /** 물리 좌표계 점 → 선분 최근접점 */
+  function _closestPointOnSegPhys(px, py, seg) {
+    const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1;
+    const lenSq = dx*dx + dy*dy;
+    if (lenSq < 1e-12) return { x: seg.x1, y: seg.y1 };
+    const t = Math.max(0, Math.min(1, ((px-seg.x1)*dx + (py-seg.y1)*dy)/lenSq));
+    return { x: seg.x1+t*dx, y: seg.y1+t*dy };
+  }
+
+  /* ================================================================
+     [PHYSICS Sprint 7] — 물체 충돌 + 용수철 힘 + 실 제약
+  ================================================================ */
+
+  /* ── 헬퍼: 앵커 물리 위치 (m) ── */
+  function getAttachPhysPos(anchor) {
+    // FloorSegment 고정 앵커
+    const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
+    if (seg) {
+      const GS = CONFIG.GRID_SIZE;
+      if (anchor.attachPoint === 'p1') return { x: seg.x1, y: GS - seg.y1 };
+      if (anchor.attachPoint === 'p2') return { x: seg.x2, y: GS - seg.y2 };
+      return { x: seg.x1, y: GS - seg.y1 };
+    }
+    // Element
+    const el = STATE.elements.find(e => e.id === anchor.elementId);
+    if (!el) return null;
+    return _getElPhysAnchor(el, anchor.attachPoint);
+  }
+
+  /** 요소의 특정 앵커 포인트 물리 좌표 */
+  function _getElPhysAnchor(el, pt) {
+    if (el.type === 'rect') {
+      // physX/Y = 좌하단 기준
+      switch (pt) {
+        case 'top':    return { x: el.physX + el.gridW/2, y: el.physY + el.gridH };
+        case 'bottom': return { x: el.physX + el.gridW/2, y: el.physY };
+        case 'left':   return { x: el.physX,              y: el.physY + el.gridH/2 };
+        case 'right':  return { x: el.physX + el.gridW,   y: el.physY + el.gridH/2 };
+        default:       return { x: el.physX + el.gridW/2, y: el.physY + el.gridH/2 };
+      }
+    }
+    if (el.type === 'circle') {
+      // physX/Y = 중심 기준
+      return { x: el.physX, y: el.physY };
+    }
+    if (el.type === 'pulley') {
+      const r = Math.min(el.gridW, el.gridH) / 2;
+      switch (pt) {
+        case 'top':    return { x: el.physX,     y: el.physY + r };
+        case 'bottom': return { x: el.physX,     y: el.physY - r };
+        case 'left':   return { x: el.physX - r, y: el.physY };
+        case 'right':  return { x: el.physX + r, y: el.physY };
+        default:       return { x: el.physX,     y: el.physY };
+      }
+    }
+    if (el.type === 'spring') {
+      // Spring은 물리 적분 없음 → gridX/Y 기반으로 끝점 좌표 반환
+      const GS = CONFIG.GRID_SIZE;
+      const cx = el.gridX + el.gridW / 2;
+      const cy_phys = GS - el.gridY - el.gridH / 2;  // 중심 y (y-up)
+      if (!el.isVertical) {
+        // 가로: 왼쪽 끝=gridX, 오른쪽 끝=gridX+gridW
+        if (pt === 'left')  return { x: el.gridX,            y: cy_phys };
+        if (pt === 'right') return { x: el.gridX + el.gridW, y: cy_phys };
+      } else {
+        // 세로: 위쪽=y-up 큰 값, 아래쪽=작은 값
+        if (pt === 'top')    return { x: cx, y: GS - el.gridY };
+        if (pt === 'bottom') return { x: cx, y: GS - el.gridY - el.gridH };
+      }
+      return { x: cx, y: cy_phys };  // fallback: 중심
+    }
+    return null;
+  }
+
+  /** 앵커의 질량
+   * FloorSegment → Infinity (고정)
+   * Pulley       → 0 (massless: 실 제약이 100% 이동시킴)
+   * 기타         → el.mass
+   */
+  function getMass(elementId) {
+    const seg = STATE.floorSegments.find(s => s.id === elementId);
+    if (seg) return Infinity;
+    const el = STATE.elements.find(e => e.id === elementId);
+    if (!el) return Infinity;
+    if (el.type === 'pulley') return 0;  // massless: inv = Infinity
+    return el.mass || 1;
+  }
+
+  /** 물리 좌표로 요소 위치를 직접 이동 (Rope 제약 후 역산) */
+  function _applyPhysDelta(elementId, dx, dy) {
+    const el = STATE.elements.find(e => e.id === elementId);
+    if (!el) return;
+    if (!['rect','circle','pulley'].includes(el.type)) return;
+    el.physX += dx;
+    el.physY += dy;
+    const GS = CONFIG.GRID_SIZE;
+    if (el.type === 'rect') {
+      el.gridX = el.physX;
+      el.gridY = GS - el.physY - el.gridH;
+    } else {
+      // circle & pulley: 중심 기준
+      el.gridX = el.physX - el.gridW / 2;
+      el.gridY = GS - el.physY - el.gridH / 2;
+    }
+  }
+
+  /* ================================================================
+     [ROPE & PULLEY CONSTRAINTS — 재설계]
+     실: 최대 길이 제한만 (이완 시 힘 없음, 팽팽 시 장력)
+     도르래: 연결된 두 실의 길이 합 = 상수 (Atwood 제약)
+  ================================================================ */
+
+  function resolveRopeConstraints() {
+    /* ── 1. 도르래별 연결 실 그룹화 ── */
+    // pulleyId → [ { rope, bodyAnchor } ]
+    const pulleyGroups = new Map();
+    for (const el of STATE.elements) {
+      if (el.type === 'pulley') pulleyGroups.set(el.id, []);
+    }
+
+    const pulleyRopeIds = new Set();
+
+    for (const rope of STATE.ropes) {
+      const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
+      const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
+
+      // center 앵커 = 도르래 고정용 → 단순 실로 처리 (Atwood 그룹에 넣지 않음)
+      const aIsPulleyRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
+      const bIsPulleyRim = elB && elB.type === 'pulley' && rope.anchorB.attachPoint !== 'center';
+
+      if (aIsPulleyRim) {
+        // pulleyAnchor: 도르래 쪽 앵커 (실제 연결 포인트 저장)
+        pulleyGroups.get(elA.id).push({ rope, bodyAnchor: rope.anchorB, pulleyAnchor: rope.anchorA });
+        pulleyRopeIds.add(rope.id);
+      } else if (bIsPulleyRim) {
+        pulleyGroups.get(elB.id).push({ rope, bodyAnchor: rope.anchorA, pulleyAnchor: rope.anchorB });
+        pulleyRopeIds.add(rope.id);
+      }
+      // center 앵커 실: pulleyRopeIds에 추가 안 함 → simpleRopes로 자동 분류
+    }
+
+    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id));
+
+    /* ── 2. 반복 제약 해소 ── */
+    for (let iter = 0; iter < 8; iter++) {
+      // 단순 실
+      for (const rope of simpleRopes) {
+        _simpleRopeConstraint(rope);
+      }
+      // 도르래 Atwood 제약
+      for (const [pulleyId, group] of pulleyGroups) {
+        if (group.length === 2) {
+          _atwoodConstraint(pulleyId, group[0], group[1]);
+        } else if (group.length === 1) {
+          // 도르래 한쪽만 연결 → 도르래를 고정점으로 하는 단순 실
+          _simpleRopeConstraint(group[0].rope);
+        }
+      }
+    }
+  }
+
+  /* ── 단순 실 제약 ──
+   * 거리 > ropeLength 일 때만 장력 작용 (이완 시 완전 무시)
+   * vRel > 0: 두 앵커가 서로 멀어지고 있는 상황 → 속도 보정
+   */
+  function _simpleRopeConstraint(rope) {
+    const A = getAttachPhysPos(rope.anchorA);
+    const B = getAttachPhysPos(rope.anchorB);
+    if (!A || !B) return;
+
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const dist = Math.hypot(dx, dy);
+    // calibratedLength: 시뮬 시작 시 실측된 거리 (없으면 ropeLength 폴백)
+    const maxLen = rope.calibratedLength ?? rope.ropeLength;
+    if (dist <= maxLen + 1e-6 || dist < 1e-9) return;
+
+    const excess = dist - maxLen;
+    const nx = dx / dist, ny = dy / dist;
+
+    const m1 = getMass(rope.anchorA.elementId);
+    const m2 = getMass(rope.anchorB.elementId);
+
+    // mass=0 (pulley) → inv=Infinity, 해당 끝이 100% 이동
+    const inv1 = (m1 === 0) ? Infinity : (isFinite(m1) ? 1/m1 : 0);
+    const inv2 = (m2 === 0) ? Infinity : (isFinite(m2) ? 1/m2 : 0);
+
+    // 양쪽 모두 Infinity인 경우는 없어야 하지만 방어
+    const bothInf = !isFinite(inv1) && !isFinite(inv2);
+    if (bothInf) return;
+
+    let w1, w2;
+    if (!isFinite(inv1)) { w1 = 1; w2 = 0; }
+    else if (!isFinite(inv2)) { w1 = 0; w2 = 1; }
+    else {
+      const invSum = inv1 + inv2;
+      if (invSum < 1e-12) return;
+      w1 = inv1 / invSum;
+      w2 = inv2 / invSum;
+    }
+
+    // 위치 보정
+    _applyPhysDelta(rope.anchorA.elementId, +nx * excess * w1, +ny * excess * w1);
+    _applyPhysDelta(rope.anchorB.elementId, -nx * excess * w2, -ny * excess * w2);
+
+    // ── 속도 보정 (뉴턴 3법칙: 동일 충격량 J를 양쪽에 등방향 적용) ──
+    const elAObj = STATE.elements.find(e => e.id === rope.anchorA.elementId);
+    const elBObj = STATE.elements.find(e => e.id === rope.anchorB.elementId);
+    const vAx = elAObj ? (elAObj.vx||0) : 0, vAy = elAObj ? (elAObj.vy||0) : 0;
+    const vBx = elBObj ? (elBObj.vx||0) : 0, vBy = elBObj ? (elBObj.vy||0) : 0;
+    const vRel = (vBx - vAx)*nx + (vBy - vAy)*ny;
+
+    if (vRel > 1e-9) {
+      // 충격량: J = vRel / (1/mA + 1/mB) — 뉴턴 3법칙으로 양쪽 동일 크기
+      const effInvSum = (isFinite(inv1) ? inv1 : 0) + (isFinite(inv2) ? inv2 : 0);
+      if (effInvSum < 1e-12) { /* 양쪽 고정: 보정 불필요 */ }
+      else {
+        const J = vRel / effInvSum;   // 충격량 크기 (scalar)
+
+        // A: +n 방향으로 J/mA 만큼 속도 변화
+        if (elAObj && ['rect','circle','pulley'].includes(elAObj.type) && isFinite(inv1)) {
+          elAObj.vx += nx * J * inv1;
+          elAObj.vy += ny * J * inv1;
+        }
+        // B: -n 방향으로 J/mB 만큼 속도 변화 (작용-반작용)
+        if (elBObj && ['rect','circle','pulley'].includes(elBObj.type) && isFinite(inv2)) {
+          elBObj.vx -= nx * J * inv2;
+          elBObj.vy -= ny * J * inv2;
+        }
+      }
+    }
+  }
+
+  /* ── Atwood 도르래 제약 ──
+   * d1 + d2 = L1 + L2 (일정)
+   * 마찰 없는 도르래: 양쪽 장력 T 동일
+   * ḋ1 + ḋ2 = 0 (한쪽이 늘어나면 다른쪽이 줄어듦)
+   *
+   * group0/1: { rope, bodyAnchor }
+   *   bodyAnchor: 도르래가 아닌 쪽 앵커
+   */
+  /**
+   * _atwoodConstraint — 실제 연결 앵커 포인트 기반 Atwood 제약
+   *
+   * 핵심: 사용자가 연결한 도르래의 앵커 포인트(left/right/top/bottom)를
+   *       그대로 실의 기준점으로 사용.
+   * 예: 왼쪽 앵커에 연결 → 기준점 = 도르래 왼쪽 림 → 물체가 정확히 아래면 n=(0,-1)
+   */
+  function _atwoodConstraint(pulleyId, g0, g1) {
+    const pulley = STATE.elements.find(e => e.id === pulleyId);
+    if (!pulley) return;
+
+    const vpx = pulley.vx || 0, vpy = pulley.vy || 0;
+
+    // ── 기준점: 사용자가 연결한 실제 앵커 포인트(림 위치) ──
+    // g0/g1.pulleyAnchor = { elementId: pulleyId, attachPoint: 'left'/'right'/... }
+    // getAttachPhysPos가 physX/Y 기준 실제 림 좌표를 반환
+    const anchor0 = g0.pulleyAnchor || { elementId: pulleyId, attachPoint: 'center' };
+    const anchor1 = g1.pulleyAnchor || { elementId: pulleyId, attachPoint: 'center' };
+    const rim0 = getAttachPhysPos(anchor0);
+    const rim1 = getAttachPhysPos(anchor1);
+    if (!rim0 || !rim1) return;
+
+    const pos0 = getAttachPhysPos(g0.bodyAnchor);
+    const pos1 = getAttachPhysPos(g1.bodyAnchor);
+    if (!pos0 || !pos1) return;
+
+    // 장력 방향: 림 포인트 → body 방향
+    const d0  = Math.hypot(pos0.x - rim0.x, pos0.y - rim0.y);
+    const d1  = Math.hypot(pos1.x - rim1.x, pos1.y - rim1.y);
+    if (d0 < 1e-9 || d1 < 1e-9) return;
+
+    const n0x = (pos0.x - rim0.x) / d0, n0y = (pos0.y - rim0.y) / d0;
+    const n1x = (pos1.x - rim1.x) / d1, n1y = (pos1.y - rim1.y) / d1;
+
+    // calibratedLength: 시뮬 시작 시 실제 물리 거리로 보정된 값 (없으면 ropeLength 폴백)
+    const L0 = g0.rope.calibratedLength ?? g0.rope.ropeLength;
+    const L1 = g1.rope.calibratedLength ?? g1.rope.ropeLength;
+    const L_total = L0 + L1;
+    const excess  = (d0 + d1) - L_total;
+
+    const el0 = STATE.elements.find(e => e.id === g0.bodyAnchor.elementId);
+    const el1 = STATE.elements.find(e => e.id === g1.bodyAnchor.elementId);
+
+    const m0  = getMass(g0.bodyAnchor.elementId);
+    const m1m = getMass(g1.bodyAnchor.elementId);
+    const inv0 = isFinite(m0)  && m0 > 0 ? 1 / m0  : 0;
+    const inv1 = isFinite(m1m) && m1m > 0 ? 1 / m1m : 0;
+    const invSum = inv0 + inv1;
+    if (invSum < 1e-12) return;
+
+    // ── 위치 보정 ──
+    if (excess > 1e-6) {
+      const share0 = excess * inv0 / invSum;
+      const share1 = excess * inv1 / invSum;
+      _applyPhysDelta(g0.bodyAnchor.elementId, -n0x * share0, -n0y * share0);
+      _applyPhysDelta(g1.bodyAnchor.elementId, -n1x * share1, -n1y * share1);
+    }
+
+    // ── 속도 보정: 팽팽 상태에서 ḋ0 + ḋ1 = 0 ──
+    if (d0 + d1 < L_total - 1e-4) return;
+
+    const v0x = el0 ? (el0.vx||0) : 0, v0y = el0 ? (el0.vy||0) : 0;
+    const v1x = el1 ? (el1.vx||0) : 0, v1y = el1 ? (el1.vy||0) : 0;
+
+    // ḋ_i = (v_body_i - v_pulley) · n_i
+    const dDot0 = (v0x - vpx)*n0x + (v0y - vpy)*n0y;
+    const dDot1 = (v1x - vpx)*n1x + (v1y - vpy)*n1y;
+    const violation = dDot0 + dDot1;
+    if (Math.abs(violation) < 1e-9) return;
+
+    const lambda = violation / invSum;
+
+    if (el0 && ['rect','circle'].includes(el0.type)) {
+      el0.vx -= lambda * inv0 * n0x;
+      el0.vy -= lambda * inv0 * n0y;
+    }
+    if (el1 && ['rect','circle'].includes(el1.type)) {
+      el1.vx -= lambda * inv1 * n1x;
+      el1.vy -= lambda * inv1 * n1y;
+    }
+  }
+
+  /* ── 7-2. 용수철 힘 applySpringForces() ── */
+  function applySpringForces() {
+    for (const spring of STATE.elements) {
+      if (spring.type !== 'spring') continue;
+      if (!spring.leftElementId || !spring.rightElementId) continue;
+
+      const leftEl  = STATE.elements.find(e => e.id === spring.leftElementId)
+                   || STATE.floorSegments.find(s => s.id === spring.leftElementId);
+      const rightEl = STATE.elements.find(e => e.id === spring.rightElementId)
+                   || STATE.floorSegments.find(s => s.id === spring.rightElementId);
+      if (!leftEl || !rightEl) continue;
+
+      if (!spring.isVertical) {
+        // ── 가로 모드: X축 방향 ──
+        let leftEdgeX, rightEdgeX;
+        if      (leftEl.type === 'rect')           leftEdgeX = leftEl.physX + leftEl.gridW;
+        else if (leftEl.type === 'circle')         leftEdgeX = leftEl.physX + leftEl.gridW / 2;
+        else if (leftEl.type === 'floorSegment')   leftEdgeX = Math.max(leftEl.x1, leftEl.x2);  // 바닥면 오른쪽 끝
+        else                                        leftEdgeX = spring.gridX;
+
+        if      (rightEl.type === 'rect')           rightEdgeX = rightEl.physX;
+        else if (rightEl.type === 'circle')         rightEdgeX = rightEl.physX - rightEl.gridW / 2;
+        else if (rightEl.type === 'floorSegment')   rightEdgeX = Math.min(rightEl.x1, rightEl.x2);  // 바닥면 왼쪽 끝
+        else                                         rightEdgeX = spring.gridX + spring.gridW;
+
+        const L_current = rightEdgeX - leftEdgeX;
+        const F = -spring.k * (L_current - spring.L0);
+
+        // 체결 여부에 따른 힘 적용:
+        // locked=true:  인장/압축 모두 전달 (체결)
+        // locked=false: 압축(밀어내는 힘)만 전달, 인장 시(F<0 = 늘어남) 분리
+        const pushLeft  = spring.leftLocked  ? true : F > 0;  // F>0: 압축 = 밀어냄
+        const pushRight = spring.rightLocked ? true : F > 0;
+        if (pushLeft  && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) leftEl.ax  -= F / leftEl.mass;
+        if (pushRight && (rightEl.type === 'rect' || rightEl.type === 'circle')) rightEl.ax += F / rightEl.mass;
+        // 미체결 + 인장(F<0): 미체결 쪽만 분리 (체결된 쪽 leftLocked/rightLocked=true는 조건에서 제외)
+        if (!spring.leftLocked  && F < 0) spring.leftElementId  = null;
+        if (!spring.rightLocked && F < 0) spring.rightElementId = null;
+
+        spring.L = Math.max(0.01, L_current);
+
+        // gridX/W 동기화 (렌더 fallback용)
+        if (leftEl.type !== 'floorSegment' || rightEl.type !== 'floorSegment') {
+          spring.gridX = leftEdgeX;
+          spring.gridW = Math.max(0.5, L_current);
+          const lCY = leftEl.gridY  != null ? leftEl.gridY  + (leftEl.gridH  || 1) / 2 : spring.gridY + spring.gridH / 2;
+          const rCY = rightEl.gridY != null ? rightEl.gridY + (rightEl.gridH || 1) / 2 : spring.gridY + spring.gridH / 2;
+          spring.gridY = (lCY + rCY) / 2 - spring.gridH / 2;
+        }
+      } else {
+        // ── 세로 모드: Y축 방향 (물리 좌표 y: 위=양수) ──
+        // 위쪽(leftEl): 아래쪽 끝 physY (rect: physY 자체, circle: physY - r)
+        let topEdgeY, botEdgeY;
+        const GS = CONFIG.GRID_SIZE;
+
+        if      (leftEl.type === 'rect')           topEdgeY = leftEl.physY;
+        else if (leftEl.type === 'circle')         topEdgeY = leftEl.physY - leftEl.gridH / 2;
+        else if (leftEl.type === 'floorSegment')   topEdgeY = GS - Math.max(leftEl.y1, leftEl.y2);  // 물리 y (y-up)
+        else                                        topEdgeY = GS - spring.gridY - spring.gridH;
+
+        if      (rightEl.type === 'rect')           botEdgeY = rightEl.physY + rightEl.gridH;
+        else if (rightEl.type === 'circle')         botEdgeY = rightEl.physY + rightEl.gridH / 2;
+        else if (rightEl.type === 'floorSegment')   botEdgeY = GS - Math.min(rightEl.y1, rightEl.y2);  // 물리 y (y-up)
+        else                                         botEdgeY = GS - spring.gridY;
+
+        // 물리 Y: 위쪽이 큰 값. 위쪽 물체 하단 - 아래쪽 물체 상단 = gap
+        // L_current = 두 물체 사이의 간격 (물리 y-up 좌표계)
+        // topEdgeY = 위 물체의 하단(physY), botEdgeY = 아래 물체의 상단(physY + gridH)
+        const L_current = topEdgeY - botEdgeY;
+        // F_restore > 0: 늘어남 → 서로 당김 / F_restore < 0: 압축 → 서로 밀어냄
+        const F_restore = spring.k * (L_current - spring.L0);
+
+        // 위 물체(leftEl): 늘어나면 아래로(ay -=), 압축이면 위로(ay +=)
+        // F_restore > 0: 늘어남(당김) / F_restore < 0: 압축(밀어냄)
+        // 세로: 위 물체는 F_restore>0이면 아래로 당겨짐, F_restore<0이면 위로 밀려남
+        // 압축(F_restore<0) = 밀어내는 힘 → 미체결에도 전달
+        const pushUp   = spring.leftLocked  ? true : F_restore < 0;  // 압축: 위 물체를 위로 밀어냄
+        const pushDown = spring.rightLocked ? true : F_restore < 0;  // 압축: 아래 물체를 아래로 밀어냄
+        if (pushUp   && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) leftEl.ay  -= F_restore / leftEl.mass;
+        if (pushDown && (rightEl.type === 'rect' || rightEl.type === 'circle')) rightEl.ay += F_restore / rightEl.mass;
+        // 미체결 + 인장(F_restore>0): 미체결 쪽만 분리 (체결된 쪽은 !locked 조건에서 제외)
+        if (!spring.leftLocked  && F_restore > 0) spring.leftElementId  = null;
+        if (!spring.rightLocked && F_restore > 0) spring.rightElementId = null;
+
+        spring.L = Math.max(0.01, L_current);
+
+        // gridY/H 동기화
+        if (leftEl.type !== 'floorSegment' || rightEl.type !== 'floorSegment') {
+          // 위쪽 물체의 아래쪽 gridY
+          const tGridY = (leftEl.gridY != null)  ? leftEl.gridY  + leftEl.gridH  : spring.gridY;
+          const bGridY = (rightEl.gridY != null) ? rightEl.gridY                 : spring.gridY + spring.gridH;
+          spring.gridY = tGridY;
+          spring.gridH = Math.max(0.5, bGridY - tGridY);
+          const lCX = leftEl.gridX  != null ? leftEl.gridX  + (leftEl.gridW  || 1) / 2 : spring.gridX + spring.gridW / 2;
+          const rCX = rightEl.gridX != null ? rightEl.gridX + (rightEl.gridW || 1) / 2 : spring.gridX + spring.gridW / 2;
+          spring.gridX = (lCX + rCX) / 2 - spring.gridW / 2;
+        }
+      }
+    }
+  }
+
+  /* ── 7-1. 물체 간 충돌 resolveBodyCollisions() ── */
+  function resolveBodyCollisions() {
+    const bodies = STATE.elements.filter(e => e.type === 'rect' || e.type === 'circle');
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const a = bodies[i], b = bodies[j];
+        if (a.type === 'rect'   && b.type === 'rect')   _resolveRectRect(a, b);
+        if (a.type === 'circle' && b.type === 'circle') _resolveCircleCircle(a, b);
+        if (a.type === 'rect'   && b.type === 'circle') _resolveRectCircle(a, b);
+        if (a.type === 'circle' && b.type === 'rect')   _resolveRectCircle(b, a);
+      }
+    }
+  }
+
+  const GS_PHYS = () => CONFIG.GRID_SIZE;
+
+  /** RectBody ↔ RectBody AABB */
+  function _resolveRectRect(a, b) {
+    // AABB 겹침 검사 (물리 좌표)
+    const ox = Math.min(a.physX+a.gridW, b.physX+b.gridW) - Math.max(a.physX, b.physX);
+    const oy = Math.min(a.physY+a.gridH, b.physY+b.gridH) - Math.max(a.physY, b.physY);
+    if (ox <= 0 || oy <= 0) return;
+
+    // 최소 관통축 (MTV): 법선은 a → b 방향
+    // a_cx < b_cx 이면 a가 왼쪽 → a→b 는 +x (nx=+1)
+    let nx, ny, pen;
+    if (ox < oy) {
+      pen = ox;
+      nx  = (a.physX + a.gridW/2 < b.physX + b.gridW/2) ? 1 : -1;
+      ny  = 0;
+    } else {
+      pen = oy;
+      nx  = 0;
+      ny  = (a.physY + a.gridH/2 < b.physY + b.gridH/2) ? 1 : -1;
+    }
+
+    const e_c  = Math.sqrt(a.e * b.e);
+    const m1   = a.mass, m2 = b.mass;
+    const invM = 1/m1 + 1/m2;
+
+    // 위치 분리: a는 -nx 방향(b의 반대쪽), b는 +nx 방향(a의 반대쪽)
+    a.physX -= nx * pen * (1/m1)/invM;
+    a.physY -= ny * pen * (1/m1)/invM;
+    b.physX += nx * pen * (1/m2)/invM;
+    b.physY += ny * pen * (1/m2)/invM;
+    _syncGrid(a); _syncGrid(b);
+
+    // 충격량: vRel < 0 이면 서로 접근 중
+    const vRel = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny;
+    if (vRel >= 0) return;
+    const J = -(1 + e_c) * vRel / invM;
+    a.vx -= J/m1 * nx;  a.vy -= J/m1 * ny;
+    b.vx += J/m2 * nx;  b.vy += J/m2 * ny;
+  }
+
+  /** CircleBody ↔ CircleBody */
+  function _resolveCircleCircle(a, b) {
+    const dx   = b.physX - a.physX, dy = b.physY - a.physY;
+    const dist = Math.hypot(dx, dy);
+    const rSum = a.gridW/2 + b.gridW/2;
+    if (dist >= rSum || dist < 1e-9) return;
+
+    const nx = dx/dist, ny = dy/dist;
+    const pen = rSum - dist;
+    const e_c = Math.sqrt(a.e * b.e);
+    const m1  = a.mass, m2 = b.mass;
+    const invM = 1/m1 + 1/m2;
+
+    a.physX -= nx * pen * (1/m1)/invM;
+    a.physY -= ny * pen * (1/m1)/invM;
+    b.physX += nx * pen * (1/m2)/invM;
+    b.physY += ny * pen * (1/m2)/invM;
+    _syncGrid(a); _syncGrid(b);
+
+    const vRel = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny;
+    if (vRel >= 0) return;
+    const J = -(1 + e_c) * vRel / invM;
+    a.vx -= J/m1 * nx;  a.vy -= J/m1 * ny;
+    b.vx += J/m2 * nx;  b.vy += J/m2 * ny;
+  }
+
+  /** RectBody ↔ CircleBody (원-AABB) */
+  function _resolveRectCircle(rect, circ) {
+    const cx = circ.physX, cy = circ.physY;
+    const r  = circ.gridW / 2;
+    // AABB 최근접점
+    const clampedX = Math.max(rect.physX, Math.min(cx, rect.physX + rect.gridW));
+    const clampedY = Math.max(rect.physY, Math.min(cy, rect.physY + rect.gridH));
+    const dx = cx - clampedX, dy = cy - clampedY;
+    const dist = Math.hypot(dx, dy);
+    if (dist >= r || dist < 1e-9) return;
+
+    const nx  = dx/dist, ny = dy/dist;
+    const pen = r - dist;
+    const e_c = Math.sqrt(rect.e * circ.e);
+    const m1  = rect.mass, m2 = circ.mass;
+    const invM = 1/m1 + 1/m2;
+
+    rect.physX -= nx * pen * (1/m1)/invM;
+    rect.physY -= ny * pen * (1/m1)/invM;
+    circ.physX += nx * pen * (1/m2)/invM;
+    circ.physY += ny * pen * (1/m2)/invM;
+    _syncGrid(rect); _syncGrid(circ);
+
+    const vRel = (circ.vx-rect.vx)*nx + (circ.vy-rect.vy)*ny;
+    if (vRel >= 0) return;
+    const J = -(1 + e_c) * vRel / invM;
+    rect.vx -= J/m1 * nx;  rect.vy -= J/m1 * ny;
+    circ.vx += J/m2 * nx;  circ.vy += J/m2 * ny;
+  }
+
+  /** physX/Y → gridX/Y 역산 헬퍼 */
+  function _syncGrid(el) {
+    const GS = CONFIG.GRID_SIZE;
+    if (el.type === 'rect') {
+      el.gridX = el.physX;
+      el.gridY = GS - el.physY - el.gridH;
+    } else if (el.type === 'circle') {
+      el.gridX = el.physX - el.gridW / 2;
+      el.gridY = GS - el.physY - el.gridH / 2;
+    }
+  }
+
+  /* ================================================================
+     [SPRING NEIGHBOR DETECTION] — 용수철 이웃 감지
+  ================================================================ */
+
+  /**
+   * Spring 양단에 인접한 요소/FloorSegment를 감지
+   * 반환: { leftId: string|null, rightId: string|null }
+   */
+  function detectSpringNeighbors(spring) {
+    const leftX  = spring.gridX;
+    const rightX = spring.gridX + spring.gridW;
+    const topY   = spring.gridY;
+    const botY   = spring.gridY + spring.gridH;
+
+    let leftId  = null;
+    let rightId = null;
+
+    if (!spring.isVertical) {
+      // ── 가로 모드: 왼쪽/오른쪽 이웃 ──
+      for (const el of STATE.elements) {
+        if (el === spring) continue;
+        if (!['rect', 'circle'].includes(el.type)) continue;
+        if (el.gridX + el.gridW === leftX && el.gridY < botY && el.gridY + el.gridH > topY)
+          leftId = el.id;
+        if (el.gridX === rightX && el.gridY < botY && el.gridY + el.gridH > topY)
+          rightId = el.id;
+      }
+      for (const seg of STATE.floorSegments) {
+        // 끝점 기준
+        if (!leftId  && ((seg.x1 === leftX  && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === leftX  && seg.y2 >= topY && seg.y2 <= botY))) leftId  = seg.id;
+        if (!rightId && ((seg.x1 === rightX && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === rightX && seg.y2 >= topY && seg.y2 <= botY))) rightId = seg.id;
+        // 수평 선분이 용수철 좌측/우측 면에 걸쳐 있는 경우
+        if (!leftId && seg.pathType === 'LINE') {
+          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
+          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
+          if (maxX >= leftX && minX <= leftX && minY <= botY && maxY >= topY) leftId = seg.id;
+        }
+        if (!rightId && seg.pathType === 'LINE') {
+          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
+          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
+          if (maxX >= rightX && minX <= rightX && minY <= botY && maxY >= topY) rightId = seg.id;
+        }
+      }
+    } else {
+      // ── 세로 모드: 위/아래 이웃 ──
+      for (const el of STATE.elements) {
+        if (el === spring) continue;
+        if (!['rect', 'circle'].includes(el.type)) continue;
+        if (el.gridY + el.gridH === topY && el.gridX < rightX && el.gridX + el.gridW > leftX)
+          leftId = el.id;
+        if (el.gridY === botY && el.gridX < rightX && el.gridX + el.gridW > leftX)
+          rightId = el.id;
+      }
+      for (const seg of STATE.floorSegments) {
+        // 끝점 기준
+        if (!leftId  && ((seg.y1 === topY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === topY && seg.x2 >= leftX && seg.x2 <= rightX))) leftId  = seg.id;
+        if (!rightId && ((seg.y1 === botY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === botY && seg.x2 >= leftX && seg.x2 <= rightX))) rightId = seg.id;
+        // 수평 선분이 용수철 위쪽/아래쪽 면에 걸쳐 있는 경우
+        if (!leftId && seg.pathType === 'LINE') {
+          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
+          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
+          if (maxY >= topY && minY <= topY && minX <= rightX && maxX >= leftX) leftId = seg.id;
+        }
+        if (!rightId && seg.pathType === 'LINE') {
+          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
+          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
+          if (maxY >= botY && minY <= botY && minX <= rightX && maxX >= leftX) rightId = seg.id;
+        }
+      }
+    }
+
+    return { leftId, rightId };
+  }
+
+  /* ================================================================
+     [VALIDATION] — 유효성 검사 (섹션 12-2 전체)
+  ================================================================ */
+
+  function validateAll() {
+    const warnings = [];
+
+    // 1. 용수철 이웃 감지 (경고 없음 — 체결 여부는 패널에서 사용자가 설정)
+    STATE.elements.filter(e => e.type === 'spring').forEach(s => {
+      const nb = detectSpringNeighbors(s);
+      s.leftElementId  = nb.leftId;
+      s.rightElementId = nb.rightId;
+    });
+
+    // 2. 도르래 실 연결 검사
+    STATE.elements.filter(e => e.type === 'pulley').forEach(p => {
+      const cnt = STATE.ropes.filter(
+        r => r.anchorA.elementId === p.id || r.anchorB.elementId === p.id
+      ).length;
+      if (cnt === 1) {
+        warnings.push('도르래의 반대편도 실이 연결되어야 합니다.');
+      }
+    });
+
+    const unique = [...new Set(warnings)];
+    if (unique.length > 0) {
+      warningBar.textContent = unique.join('  |  ');
+      warningBar.style.display = 'block';
+      btnRun.disabled = true;
+      btnRun.style.opacity = '0.4';
+    } else {
+      warningBar.style.display = 'none';
+      btnRun.disabled = false;
+      btnRun.style.opacity = '1';
+    }
+
+    // 패널도 갱신 (Spring 연결 상태 변화 반영)
+    if (STATE.selected && STATE.selected.type === 'spring') renderPanel();
+  }
+
+  /** Pulley physX/Y 동기화 (편집 모드에서 격자 이동 시 반영) */
+  function syncPulleyPhys() {
+    const GS = CONFIG.GRID_SIZE;
+    for (const el of STATE.elements) {
+      if (el.type !== 'pulley') continue;
+      el.physX = el.gridX + el.gridW / 2;
+      el.physY = GS - el.gridY - el.gridH / 2;
+    }
+  }
+
+  /* ================================================================
+     [CAPTURE] — PNG 저장
+  ================================================================ */
+
+  /* ================================================================
+     [CAPTURE] — PNG 선화 저장
+  ================================================================ */
+
+  function captureImage() {
+    const tmp = document.createElement('canvas');
+    tmp.width  = mainCanvas.width;
+    tmp.height = mainCanvas.height;
+    const tc   = tmp.getContext('2d');
+    const s    = VIEWPORT.scale;
+
+    // 배경: 투명 (clearRect만)
+    tc.clearRect(0, 0, tmp.width, tmp.height);
+    applyViewport(tc);
+
+    const lw = 2 / s;
+
+    // ── FloorSegment 선화 ──
+    for (const seg of STATE.floorSegments) {
+      const cs = CONFIG.cellSize;
+      const ax = seg.x1 * cs, ay = seg.y1 * cs;
+      const bx = seg.x2 * cs, by = seg.y2 * cs;
+      tc.save();
+      tc.strokeStyle = '#000000';
+      tc.lineWidth   = lw;
+      tc.fillStyle   = 'transparent';
+      tc.beginPath();
+      seg._tracePath(tc, ax, ay, bx, by);
+      tc.stroke();
+      tc.restore();
+    }
+
+    // ── Rope 선화 ──
+    for (const rope of STATE.ropes) {
+      const wA = rope._getAnchorWorld(rope.anchorA);
+      const wB = rope._getAnchorWorld(rope.anchorB);
+      if (!wA || !wB) continue;
+      tc.save();
+      tc.strokeStyle = '#000000';
+      tc.lineWidth   = lw;
+      tc.beginPath();
+      tc.moveTo(wA.x, wA.y);
+      tc.lineTo(wB.x, wB.y);
+      tc.stroke();
+      tc.restore();
+    }
+
+    // ── Element 선화 ──
+    for (const el of STATE.elements) {
+      const cs = CONFIG.cellSize;
+      tc.save();
+      tc.strokeStyle = '#000000';
+      tc.lineWidth   = lw;
+      tc.fillStyle   = 'transparent';
+
+      switch (el.type) {
+        case 'rect': {
+          const bx = el.gridX * cs, by = el.gridY * cs;
+          const bw = el.gridW * cs, bh = el.gridH * cs;
+          tc.beginPath();
+          tc.rect(bx, by, bw, bh);
+          tc.stroke();
+          // 질량 텍스트
+          tc.fillStyle = '#000000';
+          tc.font = `${Math.max(8, Math.min(14, bh * 0.35)) / s}px 'Courier New', monospace`;
+          tc.textAlign = 'center';
+          tc.textBaseline = 'middle';
+          tc.fillText(el.mass + 'kg', bx + bw/2, by + bh/2);
+          break;
+        }
+        case 'circle': {
+          const bx = el.gridX * cs, by = el.gridY * cs;
+          const bw = el.gridW * cs, bh = el.gridH * cs;
+          const cx = bx + bw/2, cy = by + bh/2, r = bw/2;
+          tc.beginPath();
+          tc.arc(cx, cy, r, 0, Math.PI * 2);
+          tc.stroke();
+          tc.fillStyle = '#000000';
+          tc.font = `${Math.max(8, Math.min(14, r * 0.7)) / s}px 'Courier New', monospace`;
+          tc.textAlign = 'center';
+          tc.textBaseline = 'middle';
+          tc.fillText(el.mass + 'kg', cx, cy);
+          break;
+        }
+        case 'forceZone': {
+          const bx = el.gridX * cs, by = el.gridY * cs;
+          const bw = el.gridW * cs, bh = el.gridH * cs;
+          tc.strokeStyle = '#555555';
+          tc.setLineDash([4/s, 3/s]);
+          tc.beginPath();
+          tc.rect(bx, by, bw, bh);
+          tc.stroke();
+          tc.setLineDash([]);
+          // 힘 화살표
+          const mag = Math.hypot(el.fx, el.fy);
+          if (mag > 0) {
+            const arrowLen = Math.min(bw, bh) * 0.35;
+            const ux = el.fx/mag, uy = -el.fy/mag;
+            const cx = bx+bw/2, cy = by+bh/2;
+            drawArrow(tc,
+              cx - ux*arrowLen*0.3, cy - uy*arrowLen*0.3,
+              cx + ux*arrowLen*0.7, cy + uy*arrowLen*0.7,
+              '#333333');
+          }
+          break;
+        }
+        case 'pulley': {
+          const bx = el.gridX * cs, by = el.gridY * cs;
+          const bw = el.gridW * cs, bh = el.gridH * cs;
+          const cx = bx + bw/2, cy = by + bh/2;
+          const r  = Math.min(bw, bh) * 0.45;
+          tc.beginPath();
+          tc.arc(cx, cy, r, 0, Math.PI * 2);
+          tc.stroke();
+          tc.beginPath();
+          tc.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+          tc.stroke();
+          break;
+        }
+        case 'spring': {
+          const b2  = el._getRenderBounds();
+          const bx  = b2.x, by = b2.y, bw = b2.w, bh = b2.h;
+          const coils = 6;
+          if (!el.isVertical) {
+            const margin = Math.min(bw * 0.1, cs * 0.3);
+            const x0 = bx + margin, x1 = bx + bw - margin;
+            const cy = by + bh / 2;
+            const amp  = Math.max(bh * 0.30, 2 / s);
+            const step = Math.max(x1 - x0, 1) / (coils * 2);
+            tc.beginPath();
+            tc.moveTo(bx, cy); tc.lineTo(x0, cy);
+            for (let i = 0; i < coils * 2; i++)
+              tc.lineTo(x0 + step*(i+0.5), cy + (i%2===0 ? -amp : amp));
+            tc.lineTo(x1, cy); tc.lineTo(bx + bw, cy);
+            tc.stroke();
+          } else {
+            const margin = Math.min(bh * 0.1, cs * 0.3);
+            const y0 = by + margin, y1 = by + bh - margin;
+            const cx = bx + bw / 2;
+            const amp  = Math.max(bw * 0.30, 2 / s);
+            const step = Math.max(y1 - y0, 1) / (coils * 2);
+            tc.beginPath();
+            tc.moveTo(cx, by); tc.lineTo(cx, y0);
+            for (let i = 0; i < coils * 2; i++)
+              tc.lineTo(cx + (i%2===0 ? -amp : amp), y0 + step*(i+0.5));
+            tc.lineTo(cx, y1); tc.lineTo(cx, by + bh);
+            tc.stroke();
+          }
+          break;
+        }
+      }
+      tc.restore();
+    }
+
+    tc.setTransform(1, 0, 0, 1, 0, 0);
+
+    tmp.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'mechanics_sim.png';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }, 'image/png');
+  }
+
+  /* ================================================================
+     [PANEL] — 속성 패널 renderPanel()
+  ================================================================ */
+
+  /* 패널 내부에 행 하나 생성 헬퍼 */
+  function _row(label, inputEl) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+    const lbl = document.createElement('div');
+    lbl.className   = 'panel-label';
+    lbl.textContent = label;
+    wrap.appendChild(lbl);
+    wrap.appendChild(inputEl);
+    return wrap;
+  }
+
+  function _numInput(val, min, max, step, onChange) {
+    const inp = document.createElement('input');
+    inp.type      = 'number';
+    inp.className = 'panel-input';
+    inp.value     = val;
+    if (min  !== undefined) inp.min  = min;
+    if (max  !== undefined) inp.max  = max;
+    if (step !== undefined) inp.step = step;
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value);
+      if (!isNaN(v)) onChange(v);
+    });
+    return inp;
+  }
+
+  function _slider(val, min, max, step, onChange) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;align-items:center;gap:4px;';
+    const sl = document.createElement('input');
+    sl.type      = 'range';
+    sl.className = 'panel-input';
+    sl.style.flex = '1';
+    sl.min   = min;  sl.max  = max;
+    sl.step  = step; sl.value = val;
+    const disp = document.createElement('span');
+    disp.style.cssText = 'min-width:28px;color:var(--text-dim);font-size:10px;';
+    disp.textContent   = val;
+    sl.addEventListener('input', () => {
+      disp.textContent = sl.value;
+      onChange(parseFloat(sl.value));
+    });
+    wrap.appendChild(sl);
+    wrap.appendChild(disp);
+    return wrap;
+  }
+
+  function _btn(label, cls, onClick) {
+    const b = document.createElement('button');
+    b.className   = 'panel-btn' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  /* ── 메인 renderPanel() ── */
+  function renderPanel() {
+    const sel = STATE.selected;
+    panelRight.innerHTML = '';
+
+    if (!sel) {
+      panelRight.style.display = 'none';
+      return;
+    }
+
+    panelRight.style.display = 'flex';
+
+    /* ── 공통 헤더 ── */
+    const header = document.createElement('div');
+    header.className   = 'panel-label';
+    header.textContent = _typeLabel(sel.type || sel.constructor.name);
+    header.style.cssText = 'font-size:11px;color:var(--text);text-transform:none;margin-bottom:2px;border-bottom:1px solid var(--border);padding-bottom:4px;';
+    panelRight.appendChild(header);
+
+    /* ─────────────────────────
+       FloorSegment 전용 패널
+    ───────────────────────── */
+    if (sel.type === 'floorSegment') {
+      const PATH_TYPES = ['LINE','ELBOW_H','ELBOW_V','ARC_UP','ARC_DOWN'];
+      const pathBtn = _btn('변경: ' + sel.pathType, '', () => {
+        const idx  = PATH_TYPES.indexOf(sel.pathType);
+        sel.pathType = PATH_TYPES[(idx + 1) % PATH_TYPES.length];
+        pathBtn.textContent = '변경: ' + sel.pathType;
+        renderPanel();   // ARC 관련 행 표시/숨김
+      });
+      panelRight.appendChild(_row('경로 타입', pathBtn));
+
+      // ARC일 때만 곡률
+      if (sel.pathType.startsWith('ARC')) {
+        panelRight.appendChild(_row('곡률 (θ=curvature×π)',
+          _numInput(sel.curvature, 0.02, 1.98, 0.02, v => {
+            sel.curvature = clamp(v, 0.02, 1.98);
+          })));
+        const curvHint = document.createElement('div');
+        curvHint.style.cssText = 'color:var(--text-dim);font-size:10px;margin-top:1px;margin-bottom:3px;';
+        curvHint.textContent   = '0=직선, 1=정확히 반원, 2에 가까울수록 반원보다 더 굽은 오버행';
+        panelRight.appendChild(curvHint);
+      }
+
+      // 마찰 토글
+      const frBtn = _btn(sel.isFriction ? '마찰 ON' : '마찰 OFF', '', () => {
+        sel.isFriction = !sel.isFriction;
+        frBtn.textContent = sel.isFriction ? '마찰 ON' : '마찰 OFF';
+        renderPanel();
+      });
+      panelRight.appendChild(_row('마찰 구간', frBtn));
+
+      // 마찰 활성 시 μ 슬라이더
+      if (sel.isFriction) {
+        // 정지 마찰계수 μs
+        panelRight.appendChild(_row('정지 마찰계수 μs',
+          _slider(sel.muS ?? sel.mu ?? 0, 0.0, 1.5, 0.01, v => {
+            sel.muS = v;
+            if ((sel.muK ?? 0) > v) { sel.muK = v; renderPanel(); }
+          })));
+        // 운동 마찰계수 μk (μk ≤ μs 강제)
+        panelRight.appendChild(_row('운동 마찰계수 μk',
+          _slider(sel.muK ?? (sel.muS ?? sel.mu ?? 0) * 0.8, 0.0, 1.5, 0.01, v => {
+            sel.muS = sel.muS ?? sel.mu ?? 0;
+            sel.muK = Math.min(v, sel.muS);
+            renderPanel();
+          })));
+        const muHint = document.createElement('div');
+        muHint.style.cssText = 'color:var(--text-dim);font-size:10px;margin-top:1px;margin-bottom:3px;';
+        muHint.textContent   = 'μk ≤ μs (운동 ≤ 정지)';
+        panelRight.appendChild(muHint);
+      }
+
+      panelRight.appendChild(_btn('🗑 삭제', 'danger', () => deleteSelected()));
+      return;
+    }
+
+    /* ─────────────────────────
+       Rope 전용 패널
+    ───────────────────────── */
+    if (sel.type === 'rope') {
+      const len = sel.ropeLength != null ? sel.ropeLength.toFixed(2) : '?';
+
+      // 앵커 A 정보
+      const infoA = document.createElement('div');
+      infoA.style.cssText = 'color:var(--text-dim);font-size:10px;';
+      const fixedA = getAnchorIsFixed(sel.anchorA);
+      const nameA  = _anchorLabel(sel.anchorA);
+      infoA.textContent = `A: ${nameA} ${fixedA ? '🔒고정' : ''}`;
+      panelRight.appendChild(infoA);
+
+      // 앵커 B 정보
+      const infoB = document.createElement('div');
+      infoB.style.cssText = 'color:var(--text-dim);font-size:10px;';
+      const fixedB = getAnchorIsFixed(sel.anchorB);
+      const nameB  = _anchorLabel(sel.anchorB);
+      infoB.textContent = `B: ${nameB} ${fixedB ? '🔒고정' : ''}`;
+      panelRight.appendChild(infoB);
+
+      // 길이
+      const infoL = document.createElement('div');
+      infoL.style.cssText = 'color:var(--text-dim);font-size:10px;margin-top:2px;';
+      infoL.textContent   = `길이: ${len} m`;
+      panelRight.appendChild(infoL);
+
+      panelRight.appendChild(_btn('🗑 삭제', 'danger', () => deleteSelected()));
+      return;
+    }
+
+    /* ─────────────────────────
+       Element 공통 속성
+    ───────────────────────── */
+
+    // 가로 칸수 — Spring·Pulley·Circle 제외
+    if (sel.type !== 'spring' && sel.type !== 'pulley' && sel.type !== 'circle') {
+      panelRight.appendChild(_row('가로 칸수',
+        _numInput(sel.gridW, 1, 20, 1, v => {
+          sel.gridW = Math.max(1, Math.round(v));
+          validateAll();
+        })));
+    }
+
+    // 세로 칸수 — Spring·Pulley·Circle 제외
+    if (sel.type !== 'spring' && sel.type !== 'pulley' && sel.type !== 'circle') {
+      panelRight.appendChild(_row('세로 칸수',
+        _numInput(sel.gridH, 1, 20, 1, v => {
+          sel.gridH = Math.max(1, Math.round(v));
+          validateAll();
+        })));
+    }
+
+    // 더블탭으로 회전 가능 안내 (spring/rect/forceZone)
+    if (['spring','rect','forceZone'].includes(sel.type)) {
+      const hint = document.createElement('div');
+      hint.style.cssText = 'color:var(--accent);font-size:10px;margin-bottom:4px;';
+      hint.textContent   = '💡 더블탭: 방향 전환';
+      panelRight.appendChild(hint);
+    }
+
+    /* ─────────────────────────
+       Pulley
+    ───────────────────────── */
+    if (sel.type === 'pulley') {
+      // 한 변 길이 (가로 = 세로 항상 동일)
+      panelRight.appendChild(_row('한 변 길이 (칸)',
+        _numInput(sel.gridW, 1, 20, 1, v => {
+          const size = Math.max(1, Math.round(v));
+          sel.gridW = size;
+          sel.gridH = size;   // 항상 정사각형
+          syncPulleyPhys();   // physX/Y 동기화
+          validateAll();
+        })));
+
+      panelRight.appendChild(_row('질량 (kg)',
+        _numInput(sel.mass, 0.1, undefined, 0.1, v => { sel.mass = v; })));
+
+      const fixInfo = document.createElement('div');
+      fixInfo.style.cssText = 'color:var(--text-dim);font-size:10px;margin-top:2px;';
+      fixInfo.textContent   = '중심(center) 앵커로 고정 가능';
+      panelRight.appendChild(fixInfo);
+    }
+
+    /* ─────────────────────────
+       RectBody / CircleBody
+    ───────────────────────── */
+    // ── Circle: 한 변 길이 (정사각형 유지) ──
+    if (sel.type === 'circle') {
+      panelRight.appendChild(_row('지름 (칸)',
+        _numInput(sel.gridW, 1, 20, 1, v => {
+          const size = Math.max(1, Math.round(v));
+          sel.gridW = size;
+          sel.gridH = size;   // 항상 정사각형
+          validateAll();
+        })));
+    }
+
+    if (sel.type === 'rect' || sel.type === 'circle') {
+      panelRight.appendChild(_row('질량 (kg)',
+        _numInput(sel.mass, 0.1, undefined, 0.1, v => { sel.mass = v; })));
+      panelRight.appendChild(_row('초기 vx (m/s)',
+        _numInput(sel.vx0, undefined, undefined, 0.1, v => { sel.vx0 = v; })));
+      panelRight.appendChild(_row('초기 vy (m/s)',
+        _numInput(sel.vy0, undefined, undefined, 0.1, v => { sel.vy0 = v; })));
+      panelRight.appendChild(_row('반발계수 e',
+        _slider(sel.e, 0.0, 1.0, 0.01, v => { sel.e = v; })));
+    }
+
+    /* ─────────────────────────
+       Spring
+    ───────────────────────── */
+    if (sel.type === 'spring') {
+      // 방향 표시
+      const dirInfo = document.createElement('div');
+      dirInfo.style.cssText = 'color:var(--text-dim);font-size:10px;margin-bottom:2px;';
+      dirInfo.textContent   = sel.isVertical ? '방향: 세로 (고정 2칸)' : '방향: 가로 (고정 2칸)';
+      panelRight.appendChild(dirInfo);
+
+      // 용수철 상수
+      panelRight.appendChild(_row('용수철 상수 k (N/m)',
+        _numInput(sel.k, 0.1, undefined, 0.1, v => { sel.k = v; })));
+
+      // 자연 길이 L0
+      panelRight.appendChild(_row('자연 길이 L₀ (m)',
+        _numInput(sel.L0, 0.1, undefined, 0.1, v => { sel.L0 = v; })));
+
+      // 현재 길이 L
+      const curLenVal = sel.isVertical ? sel.gridH : sel.gridW;
+      panelRight.appendChild(_row('현재 길이 L (m)',
+        _numInput(curLenVal, 1, 30, 1, v => {
+          const rounded = Math.max(1, Math.round(v));
+          if (sel.isVertical) sel.gridH = rounded;
+          else                sel.gridW = rounded;
+          sel.L = rounded;
+          validateAll();
+        })));
+
+      // ── 체결 체크박스 ──
+      const leftLabel  = sel.isVertical ? '위쪽' : '왼쪽';
+      const rightLabel = sel.isVertical ? '아래쪽' : '오른쪽';
+      const leftName   = sel.leftElementId
+        ? _typeLabel((STATE.elements.find(e=>e.id===sel.leftElementId)||STATE.floorSegments.find(s=>s.id===sel.leftElementId)||{type:'?'}).type)
+        : '없음';
+      const rightName  = sel.rightElementId
+        ? _typeLabel((STATE.elements.find(e=>e.id===sel.rightElementId)||STATE.floorSegments.find(s=>s.id===sel.rightElementId)||{type:'?'}).type)
+        : '없음';
+
+      const lockSection = document.createElement('div');
+      lockSection.style.cssText = 'margin-top:4px;border-top:1px solid var(--border);padding-top:4px;';
+
+      const lockTitle = document.createElement('div');
+      lockTitle.className   = 'panel-label';
+      lockTitle.textContent = '체결 (힘 전달)';
+      lockSection.appendChild(lockTitle);
+
+      function _checkbox(label, checked, onChange) {
+        const wrap = document.createElement('label');
+        wrap.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--text);font-size:11px;margin:3px 0;';
+        const cb = document.createElement('input');
+        cb.type    = 'checkbox';
+        cb.checked = checked;
+        cb.style.cssText = 'accent-color:var(--accent);width:13px;height:13px;cursor:pointer;';
+        cb.addEventListener('change', () => onChange(cb.checked));
+        wrap.appendChild(cb);
+        wrap.appendChild(document.createTextNode(label));
+        return wrap;
+      }
+
+      lockSection.appendChild(_checkbox(
+        leftLabel  + ': ' + leftName,
+        sel.leftLocked,
+        v => { sel.leftLocked = v; }
+      ));
+      lockSection.appendChild(_checkbox(
+        rightLabel + ': ' + rightName,
+        sel.rightLocked,
+        v => { sel.rightLocked = v; }
+      ));
+      panelRight.appendChild(lockSection);
+    }
+
+    /* ─────────────────────────
+       ForceZone
+    ───────────────────────── */
+    if (sel.type === 'forceZone') {
+      panelRight.appendChild(_row('Fx (N)',
+        _numInput(sel.fx, undefined, undefined, 0.1, v => { sel.fx = v; })));
+      panelRight.appendChild(_row('Fy (N)',
+        _numInput(sel.fy, undefined, undefined, 0.1, v => { sel.fy = v; })));
+    }
+
+    /* ── 공통: 삭제 버튼 ── */
+    panelRight.appendChild(_btn('🗑 삭제', 'danger', () => deleteSelected()));
+  }
+
+  /* 타입 → 한국어 레이블 */
+  function _typeLabel(type) {
+    return { rect:'네모 물체', circle:'원 물체', forceZone:'힘 구간',
+             pulley:'도르래', spring:'용수철',
+             floorSegment:'바닥면', rope:'실' }[type] || type;
+  }
+
+  /* 앵커 → 레이블 (요소 타입 + 포인트) */
+  function _anchorLabel(anchor) {
+    const el  = STATE.elements.find(e => e.id === anchor.elementId);
+    if (el)  return _typeLabel(el.type) + ' (' + anchor.attachPoint + ')';
+    const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
+    if (seg) return '바닥면 (' + (anchor.attachPoint === 'p1' ? '끝점1' : '끝점2') + ')';
+    return '?';
+  }
+
+  /* ================================================================
+     [DELETE] — 선택 오브젝트 삭제
+  ================================================================ */
+
+  function deleteSelected() {
+    const sel = STATE.selected;
+    if (!sel) return;
+
+    if (sel.type === 'floorSegment') {
+      // FloorSegment를 앵커로 삼는 Rope 제거
+      STATE.ropes = STATE.ropes.filter(r =>
+        r.anchorA?.elementId !== sel.id && r.anchorB?.elementId !== sel.id
+      );
+      STATE.floorSegments = STATE.floorSegments.filter(s => s !== sel);
+
+    } else if (sel.type === 'rope') {
+      // Rope 삭제: 연결된 Pulley.connectedRopeIds 갱신
+      STATE.ropes = STATE.ropes.filter(r => r !== sel);
+      STATE.elements.forEach(el => {
+        if (el.type === 'pulley' && el.connectedRopeIds) {
+          el.connectedRopeIds = el.connectedRopeIds.filter(id => id !== sel.id);
+        }
+      });
+
+    } else {
+      // Element 삭제: 참조하는 Rope, Spring 정리
+      const id = sel.id;
+      // 해당 요소를 참조하는 Rope 제거
+      STATE.ropes = STATE.ropes.filter(r =>
+        r.anchorA?.elementId !== id && r.anchorB?.elementId !== id
+      );
+      // Spring의 leftElementId / rightElementId 참조 초기화
+      STATE.elements.forEach(el => {
+        if (el.type === 'spring') {
+          if (el.leftElementId  === id) el.leftElementId  = null;
+          if (el.rightElementId === id) el.rightElementId = null;
+        }
+      });
+      STATE.elements = STATE.elements.filter(e => e !== sel);
+    }
+
+    STATE.selected = null;
+    renderPanel();
+    validateAll();
+  }
+
+  /* ================================================================
+     [BOOT] — 앱 시작
+  ================================================================ */
+
+  /* 모바일 사이드바 토글 (햄버거 오버레이) — 신규 핸들러는 햄버거/오버레이/팔레트에만 바인딩 */
+  (function initSidebarToggle() {
+    const hamburger = document.getElementById('hamburger-btn');
+    const overlay   = document.getElementById('sidebar-overlay');
+    const sidebar   = document.getElementById('sidebar-left');
+    if (!hamburger || !overlay || !sidebar) return;
+    const open  = () => { sidebar.classList.add('mobile-open');    overlay.classList.add('visible'); };
+    const close = () => { sidebar.classList.remove('mobile-open'); overlay.classList.remove('visible'); };
+    hamburger.addEventListener('click', () => {
+      if (sidebar.classList.contains('mobile-open')) close(); else open();
+    });
+    overlay.addEventListener('click', close);
+    // 모바일 편의: 팔레트 아이템을 누르면 사이드바 자동 닫기 (데스크톱에선 overlay 미표시라 무해)
+    sidebar.querySelectorAll('.palette-item').forEach(it => it.addEventListener('click', close));
+  })();
+
+  // DOMContentLoaded 이후 초기화
+  window.addEventListener('load', () => {
+    initCanvas();
+    // 떠있는 pill로의 재배치로 캔버스 래퍼 크기가 확정된 뒤 한 번 더 맞춤 (필수 안전장치)
+    requestAnimationFrame(fitCanvas);
+    validateAll();
+  });
+
+  </script>
+</body>
+</html>
