@@ -846,7 +846,15 @@
     return { J, C: sumd - c.L, taut: sumd >= c.L - 1e-6 };
   }
 
-  /** 움직도르래 성분의 위치('pos')/속도('vel') KKT 선형해를 1회 풀어 적용 */
+  // 움직도르래를 "매우 가벼운 유한 노드"로 취급해 제약행렬 A에 접는다.
+  // 순수 무질량 힘평형(Bᵀλ=0) 행은 완전 수직 배치에서 도르래 횡DOF가
+  // 미약하게만 제약돼(연 스티프) 위치 투영이 발산한다. 유한 물체가 A의
+  // 기저(+1/m 대각)를 제공하므로 도르래를 큰-유한 역질량으로 넣으면 계가
+  // 어떤 기하에서도 잘 조건화되고(det>0), 질량이 아주 작아(1/W) 사실상
+  // 무질량 역학(2:1 등)을 ~0.1% 오차로 재현한다.
+  const PULLEY_KKT_INVMASS = 1e3;
+
+  /** 움직도르래 성분의 위치('pos')/속도('vel') 제약 선형해를 1회 풀어 적용 */
   function _solveDynamicComponent(comp, level, fixedPulleys) {
     const active = [];
     for (const c of comp.constraints) {
@@ -855,68 +863,44 @@
     }
     const nc = active.length;
     if (nc === 0) return;
-    const np = comp.pulleys.length;
-    const N = nc + 2 * np;
 
-    const pIdx = new Map();
-    comp.pulleys.forEach((id, i) => pIdx.set(id, i));
-    const bodyW = (id) => { const el = STATE.elements.find(e => e.id === id); return 1 / (el.mass || 1); };
+    // 노드 = 유한 물체(1/m) + 움직도르래(큰 유한 역질량). 동시 선형해로 풀어
+    // (Gauss-Seidel과 달리) 무질량 노드가 보정을 독식하지 않는다.
+    const nodes = [];
+    for (const bid of comp.bodies) { const el = STATE.elements.find(e => e.id === bid); nodes.push({ el, w: 1 / (el.mass || 1) }); }
+    for (const pid of comp.pulleys) { const el = STATE.elements.find(e => e.id === pid); nodes.push({ el, w: PULLEY_KKT_INVMASS }); }
 
-    const Mtx = Array.from({ length: N }, () => new Array(N).fill(0));
-    const rhs = new Array(N).fill(0);
-
+    const A = Array.from({ length: nc }, () => new Array(nc).fill(0));
+    const rhs = new Array(nc).fill(0);
     for (let k = 0; k < nc; k++) {
       for (let m = 0; m < nc; m++) {
         let a = 0;
-        for (const bid of comp.bodies) {
-          const Jk = active[k].J.get(bid), Jm = active[m].J.get(bid);
-          if (Jk && Jm) a += bodyW(bid) * (Jk[0] * Jm[0] + Jk[1] * Jm[1]);
+        for (const nd of nodes) {
+          const Jk = active[k].J.get(nd.el.id), Jm = active[m].J.get(nd.el.id);
+          if (Jk && Jm) a += nd.w * (Jk[0] * Jm[0] + Jk[1] * Jm[1]);
         }
-        Mtx[k][m] = a;
-      }
-      for (const pid of comp.pulleys) {
-        const Jk = active[k].J.get(pid);
-        const p = pIdx.get(pid);
-        const bx = Jk ? Jk[0] : 0, by = Jk ? Jk[1] : 0;
-        Mtx[k][nc + 2 * p] = bx;      Mtx[k][nc + 2 * p + 1] = by;
-        Mtx[nc + 2 * p][k] = bx;      Mtx[nc + 2 * p + 1][k] = by;
+        A[k][m] = a;
       }
       if (level === 'pos') {
         rhs[k] = -active[k].C;
       } else {
-        let jv = 0;   // -J·v_free (유한 물체 속도만; 도르래 속도는 미지수)
-        for (const bid of comp.bodies) {
-          const Jk = active[k].J.get(bid);
-          if (Jk) { const el = STATE.elements.find(e => e.id === bid); jv += Jk[0] * (el.vx || 0) + Jk[1] * (el.vy || 0); }
+        let jv = 0;   // -J·v_free (모든 노드의 현재 속도)
+        for (const nd of nodes) {
+          const Jk = active[k].J.get(nd.el.id);
+          if (Jk) jv += Jk[0] * (nd.el.vx || 0) + Jk[1] * (nd.el.vy || 0);
         }
         rhs[k] = -jv;
       }
     }
 
-    // Tikhonov 정칙화: 완전 수직 배치 등에서 도르래 횡방향 DOF가 제약되지
-    // 않아(영 열) 계가 특이해진다. 도르래 대각에 미소값을 더해 미제약
-    // 자유모드를 0으로 고정(도르래가 옆으로 표류하지 않게). 제약된 DOF는
-    // 거의 영향 없음.
-    const EPS = 1e-6;
-    for (let p = 0; p < np; p++) {
-      Mtx[nc + 2 * p][nc + 2 * p]         += EPS;
-      Mtx[nc + 2 * p + 1][nc + 2 * p + 1] += EPS;
-    }
-
-    const sol = _solveLinear(Mtx, rhs);
+    const sol = _solveLinear(A, rhs);
     if (!sol) return;
 
-    for (const bid of comp.bodies) {
+    for (const nd of nodes) {
       let dx = 0, dy = 0;
-      for (let k = 0; k < nc; k++) { const Jk = active[k].J.get(bid); if (Jk) { dx += sol[k] * Jk[0]; dy += sol[k] * Jk[1]; } }
-      const w = bodyW(bid);
-      if (level === 'pos') { _applyPhysDelta(bid, w * dx, w * dy); }
-      else { const el = STATE.elements.find(e => e.id === bid); el.vx += w * dx; el.vy += w * dy; }
-    }
-    for (const pid of comp.pulleys) {
-      const p = pIdx.get(pid);
-      if (level === 'pos') { _applyPhysDelta(pid, sol[nc + 2 * p], sol[nc + 2 * p + 1]); }
-      else { const el = STATE.elements.find(e => e.id === pid); el.vx = sol[nc + 2 * p]; el.vy = sol[nc + 2 * p + 1]; }
+      for (let k = 0; k < nc; k++) { const Jk = active[k].J.get(nd.el.id); if (Jk) { dx += sol[k] * Jk[0]; dy += sol[k] * Jk[1]; } }
+      if (level === 'pos') { _applyPhysDelta(nd.el.id, nd.w * dx, nd.w * dy); }
+      else { nd.el.vx += nd.w * dx; nd.el.vy += nd.w * dy; }
     }
   }
 
