@@ -944,8 +944,46 @@
     if (inv1 > 0) { el1.vx -= lambda * inv1 * n1x; el1.vy -= lambda * inv1 * n1y; }
   }
 
-  /* ── 7-2. 용수철 힘 applySpringForces() ── */
+  /* ── 용수철 부착점(물리 좌표, y-up) ──
+   * side: 'right'/'left'/'top'/'bottom' — 이 요소가 용수철을 향하는 면.
+   * 부착점은 요소의 해당 면 중앙 → 물체가 2D로 움직이면 부착점도 함께 이동
+   * → 용수철 축이 회전(완전 2D). floorSegment는 caller가 투영 처리(null 반환).
+   */
+  function _springAttachFace(el, side) {
+    if (el.type === 'rect') {
+      switch (side) {
+        case 'right':  return { x: el.physX + el.gridW,     y: el.physY + el.gridH / 2 };
+        case 'left':   return { x: el.physX,                y: el.physY + el.gridH / 2 };
+        case 'bottom': return { x: el.physX + el.gridW / 2, y: el.physY };
+        case 'top':    return { x: el.physX + el.gridW / 2, y: el.physY + el.gridH };
+      }
+    }
+    if (el.type === 'circle') {
+      const r = el.gridW / 2;   // physX/Y = 중심
+      switch (side) {
+        case 'right':  return { x: el.physX + r, y: el.physY };
+        case 'left':   return { x: el.physX - r, y: el.physY };
+        case 'bottom': return { x: el.physX,     y: el.physY - r };
+        case 'top':    return { x: el.physX,     y: el.physY + r };
+      }
+    }
+    return null;  // floorSegment
+  }
+
+  /* ── 7-2. 용수철 힘 applySpringForces() — 완전 2D 벡터 물리 ──
+   * F = -k(|d|-L0)·d̂, 양끝 부착점 사이 벡터 d 기준. 축 분기 없음(모드는
+   * 부착 면 선택에만 사용). 부착점이 2D로 움직이면 복원력 방향도 함께 회전.
+   */
   function applySpringForces() {
+    const GS = CONFIG.GRID_SIZE;
+    const segClosest = (seg, px, py) => {
+      const ax = seg.x1, ay = GS - seg.y1, bx = seg.x2, by = GS - seg.y2;  // 물리 좌표
+      const dx = bx - ax, dy = by - ay, l2 = dx*dx + dy*dy;
+      let t = l2 > 1e-9 ? ((px-ax)*dx + (py-ay)*dy) / l2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      return { x: ax + t*dx, y: ay + t*dy };
+    };
+
     for (const spring of STATE.elements) {
       if (spring.type !== 'spring') continue;
       if (!spring.leftElementId || !spring.rightElementId) continue;
@@ -956,92 +994,43 @@
                    || STATE.floorSegments.find(s => s.id === spring.rightElementId);
       if (!leftEl || !rightEl) continue;
 
-      if (!spring.isVertical) {
-        // ── 가로 모드: X축 방향 ──
-        let leftEdgeX, rightEdgeX;
-        if      (leftEl.type === 'rect')           leftEdgeX = leftEl.physX + leftEl.gridW;
-        else if (leftEl.type === 'circle')         leftEdgeX = leftEl.physX + leftEl.gridW / 2;
-        else if (leftEl.type === 'floorSegment')   leftEdgeX = Math.max(leftEl.x1, leftEl.x2);  // 바닥면 오른쪽 끝
-        else                                        leftEdgeX = spring.gridX;
+      // 부착 면: 가로 → left의 오른쪽 면 / right의 왼쪽 면.
+      //          세로 → 위(left)의 아래 면 / 아래(right)의 위 면.
+      const leftSide  = spring.isVertical ? 'bottom' : 'right';
+      const rightSide = spring.isVertical ? 'top'    : 'left';
+      let A = _springAttachFace(leftEl,  leftSide);
+      let B = _springAttachFace(rightEl, rightSide);
+      if (!A && !B) {
+        A = { x: (leftEl.x1 + leftEl.x2)/2,  y: GS - (leftEl.y1 + leftEl.y2)/2 };
+        B = { x: (rightEl.x1 + rightEl.x2)/2, y: GS - (rightEl.y1 + rightEl.y2)/2 };
+      } else if (!A) { A = segClosest(leftEl,  B.x, B.y); }
+      else if (!B)   { B = segClosest(rightEl, A.x, A.y); }
 
-        if      (rightEl.type === 'rect')           rightEdgeX = rightEl.physX;
-        else if (rightEl.type === 'circle')         rightEdgeX = rightEl.physX - rightEl.gridW / 2;
-        else if (rightEl.type === 'floorSegment')   rightEdgeX = Math.min(rightEl.x1, rightEl.x2);  // 바닥면 왼쪽 끝
-        else                                         rightEdgeX = spring.gridX + spring.gridW;
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1e-9) continue;              // 축 미정의 → 이 프레임 건너뜀
+      const ux = dx / dist, uy = dy / dist;   // A→B 단위 벡터
 
-        const L_current = rightEdgeX - leftEdgeX;
-        const F = -spring.k * (L_current - spring.L0);
+      // sForce > 0: 늘어남(양끝 서로 당김) / < 0: 압축(양끝 서로 밀어냄)
+      const sForce = spring.k * (dist - spring.L0);
 
-        // 체결 여부에 따른 힘 적용:
-        // locked=true:  인장/압축 모두 전달 (체결)
-        // locked=false: 압축(밀어내는 힘)만 전달, 인장 시(F<0 = 늘어남) 분리
-        const pushLeft  = spring.leftLocked  ? true : F > 0;  // F>0: 압축 = 밀어냄
-        const pushRight = spring.rightLocked ? true : F > 0;
-        if (pushLeft  && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) leftEl.ax  -= F / leftEl.mass;
-        if (pushRight && (rightEl.type === 'rect' || rightEl.type === 'circle')) rightEl.ax += F / rightEl.mass;
-        // 미체결 + 인장(F<0): 미체결 쪽만 분리 (체결된 쪽 leftLocked/rightLocked=true는 조건에서 제외)
-        if (!spring.leftLocked  && F < 0) spring.leftElementId  = null;
-        if (!spring.rightLocked && F < 0) spring.rightElementId = null;
-
-        spring.L = Math.max(0.01, L_current);
-
-        // gridX/W 동기화 (렌더 fallback용)
-        if (leftEl.type !== 'floorSegment' || rightEl.type !== 'floorSegment') {
-          spring.gridX = leftEdgeX;
-          spring.gridW = Math.max(0.5, L_current);
-          const lCY = leftEl.gridY  != null ? leftEl.gridY  + (leftEl.gridH  || 1) / 2 : spring.gridY + spring.gridH / 2;
-          const rCY = rightEl.gridY != null ? rightEl.gridY + (rightEl.gridH || 1) / 2 : spring.gridY + spring.gridH / 2;
-          spring.gridY = (lCY + rCY) / 2 - spring.gridH / 2;
-        }
-      } else {
-        // ── 세로 모드: Y축 방향 (물리 좌표 y: 위=양수) ──
-        // 위쪽(leftEl): 아래쪽 끝 physY (rect: physY 자체, circle: physY - r)
-        let topEdgeY, botEdgeY;
-        const GS = CONFIG.GRID_SIZE;
-
-        if      (leftEl.type === 'rect')           topEdgeY = leftEl.physY;
-        else if (leftEl.type === 'circle')         topEdgeY = leftEl.physY - leftEl.gridH / 2;
-        else if (leftEl.type === 'floorSegment')   topEdgeY = GS - Math.max(leftEl.y1, leftEl.y2);  // 물리 y (y-up)
-        else                                        topEdgeY = GS - spring.gridY - spring.gridH;
-
-        if      (rightEl.type === 'rect')           botEdgeY = rightEl.physY + rightEl.gridH;
-        else if (rightEl.type === 'circle')         botEdgeY = rightEl.physY + rightEl.gridH / 2;
-        else if (rightEl.type === 'floorSegment')   botEdgeY = GS - Math.min(rightEl.y1, rightEl.y2);  // 물리 y (y-up)
-        else                                         botEdgeY = GS - spring.gridY;
-
-        // 물리 Y: 위쪽이 큰 값. 위쪽 물체 하단 - 아래쪽 물체 상단 = gap
-        // L_current = 두 물체 사이의 간격 (물리 y-up 좌표계)
-        // topEdgeY = 위 물체의 하단(physY), botEdgeY = 아래 물체의 상단(physY + gridH)
-        const L_current = topEdgeY - botEdgeY;
-        // F_restore > 0: 늘어남 → 서로 당김 / F_restore < 0: 압축 → 서로 밀어냄
-        const F_restore = spring.k * (L_current - spring.L0);
-
-        // 위 물체(leftEl): 늘어나면 아래로(ay -=), 압축이면 위로(ay +=)
-        // F_restore > 0: 늘어남(당김) / F_restore < 0: 압축(밀어냄)
-        // 세로: 위 물체는 F_restore>0이면 아래로 당겨짐, F_restore<0이면 위로 밀려남
-        // 압축(F_restore<0) = 밀어내는 힘 → 미체결에도 전달
-        const pushUp   = spring.leftLocked  ? true : F_restore < 0;  // 압축: 위 물체를 위로 밀어냄
-        const pushDown = spring.rightLocked ? true : F_restore < 0;  // 압축: 아래 물체를 아래로 밀어냄
-        if (pushUp   && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) leftEl.ay  -= F_restore / leftEl.mass;
-        if (pushDown && (rightEl.type === 'rect' || rightEl.type === 'circle')) rightEl.ay += F_restore / rightEl.mass;
-        // 미체결 + 인장(F_restore>0): 미체결 쪽만 분리 (체결된 쪽은 !locked 조건에서 제외)
-        if (!spring.leftLocked  && F_restore > 0) spring.leftElementId  = null;
-        if (!spring.rightLocked && F_restore > 0) spring.rightElementId = null;
-
-        spring.L = Math.max(0.01, L_current);
-
-        // gridY/H 동기화
-        if (leftEl.type !== 'floorSegment' || rightEl.type !== 'floorSegment') {
-          // 위쪽 물체의 아래쪽 gridY
-          const tGridY = (leftEl.gridY != null)  ? leftEl.gridY  + leftEl.gridH  : spring.gridY;
-          const bGridY = (rightEl.gridY != null) ? rightEl.gridY                 : spring.gridY + spring.gridH;
-          spring.gridY = tGridY;
-          spring.gridH = Math.max(0.5, bGridY - tGridY);
-          const lCX = leftEl.gridX  != null ? leftEl.gridX  + (leftEl.gridW  || 1) / 2 : spring.gridX + spring.gridW / 2;
-          const rCX = rightEl.gridX != null ? rightEl.gridX + (rightEl.gridW || 1) / 2 : spring.gridX + spring.gridW / 2;
-          spring.gridX = (lCX + rCX) / 2 - spring.gridW / 2;
-        }
+      // 체결(locked): 인장·압축 모두 전달. 미체결: 압축(밀어냄, sForce<0)만.
+      const leftTransmit  = spring.leftLocked  || sForce < 0;
+      const rightTransmit = spring.rightLocked || sForce < 0;
+      // A(left)에는 +sForce·û(늘어나면 B쪽으로), B(right)에는 반대로.
+      if (leftTransmit  && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) {
+        leftEl.ax  += sForce * ux / leftEl.mass;
+        leftEl.ay  += sForce * uy / leftEl.mass;
       }
+      if (rightTransmit && (rightEl.type === 'rect' || rightEl.type === 'circle')) {
+        rightEl.ax -= sForce * ux / rightEl.mass;
+        rightEl.ay -= sForce * uy / rightEl.mass;
+      }
+      // 미체결 + 인장(sForce>0): 미체결 쪽 분리 (당길 수 없음)
+      if (!spring.leftLocked  && sForce > 0) spring.leftElementId  = null;
+      if (!spring.rightLocked && sForce > 0) spring.rightElementId = null;
+
+      spring.L = Math.max(0.01, dist);
     }
   }
 
@@ -1199,13 +1188,15 @@
         // 끝점 기준
         if (!leftId  && ((seg.x1 === leftX  && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === leftX  && seg.y2 >= topY && seg.y2 <= botY))) leftId  = seg.id;
         if (!rightId && ((seg.x1 === rightX && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === rightX && seg.y2 >= topY && seg.y2 <= botY))) rightId = seg.id;
-        // 수평 선분이 용수철 좌측/우측 면에 걸쳐 있는 경우
-        if (!leftId && seg.pathType === 'LINE') {
+        // 선분이 용수철 좌/우 면을 가로지르는 경우 — 단, 용수철 축(가로)에
+        // 수직인 면(세로 벽)일 때만 체결. 평행한 바닥(가로 선분)은 오판정 제외(#7).
+        const segVertical = Math.abs(seg.y2 - seg.y1) >= Math.abs(seg.x2 - seg.x1);
+        if (!leftId && seg.pathType === 'LINE' && segVertical) {
           const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
           const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
           if (maxX >= leftX && minX <= leftX && minY <= botY && maxY >= topY) leftId = seg.id;
         }
-        if (!rightId && seg.pathType === 'LINE') {
+        if (!rightId && seg.pathType === 'LINE' && segVertical) {
           const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
           const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
           if (maxX >= rightX && minX <= rightX && minY <= botY && maxY >= topY) rightId = seg.id;
@@ -1225,13 +1216,15 @@
         // 끝점 기준
         if (!leftId  && ((seg.y1 === topY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === topY && seg.x2 >= leftX && seg.x2 <= rightX))) leftId  = seg.id;
         if (!rightId && ((seg.y1 === botY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === botY && seg.x2 >= leftX && seg.x2 <= rightX))) rightId = seg.id;
-        // 수평 선분이 용수철 위쪽/아래쪽 면에 걸쳐 있는 경우
-        if (!leftId && seg.pathType === 'LINE') {
+        // 선분이 용수철 상/하 면을 가로지르는 경우 — 단, 용수철 축(세로)에
+        // 수직인 면(가로 바닥)일 때만 체결. 평행한 세로 벽은 오판정 제외(#7).
+        const segHorizontal = Math.abs(seg.x2 - seg.x1) >= Math.abs(seg.y2 - seg.y1);
+        if (!leftId && seg.pathType === 'LINE' && segHorizontal) {
           const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
           const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
           if (maxY >= topY && minY <= topY && minX <= rightX && maxX >= leftX) leftId = seg.id;
         }
-        if (!rightId && seg.pathType === 'LINE') {
+        if (!rightId && seg.pathType === 'LINE' && segHorizontal) {
           const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
           const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
           if (maxY >= botY && minY <= botY && minX <= rightX && maxX >= leftX) rightId = seg.id;
@@ -1249,11 +1242,21 @@
   function validateAll() {
     const warnings = [];
 
-    // 1. 용수철 이웃 감지 (경고 없음 — 체결 여부는 패널에서 사용자가 설정)
+    // 1. 용수철 이웃 감지 (#5 자동 체결)
+    //    autoAttach=true(기본): 접촉 감지 시 elementId + locked 자동 세팅
+    //      (새로 붙는 순간 locked=true; 붙어있는 동안 사용자 토글은 보존).
+    //    autoAttach=false: 접촉해도 자동 체결하지 않음(감지 스킵).
     STATE.elements.filter(e => e.type === 'spring').forEach(s => {
+      if (s.autoAttach === false) return;
       const nb = detectSpringNeighbors(s);
-      s.leftElementId  = nb.leftId;
-      s.rightElementId = nb.rightId;
+      if (s.leftElementId !== nb.leftId) {
+        s.leftElementId = nb.leftId;
+        s.leftLocked    = !!nb.leftId;   // 새 체결이면 잠금, 분리면 해제
+      }
+      if (s.rightElementId !== nb.rightId) {
+        s.rightElementId = nb.rightId;
+        s.rightLocked    = !!nb.rightId;
+      }
     });
 
     // 2. 도르래 한쪽만 연결 = 도르래를 고정점으로 하는 단순 실 (경고 없이 허용, QC #12)

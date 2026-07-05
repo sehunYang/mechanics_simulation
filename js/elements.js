@@ -378,6 +378,50 @@
       this.rightElementId = null;  // 가로: 오른쪽 / 세로: 아래쪽
       this.leftLocked     = false; // 왼쪽/위쪽 물체와 체결 여부
       this.rightLocked    = false; // 오른쪽/아래쪽 물체와 체결 여부
+      this.autoAttach     = true;  // #5: 접촉 시 자동 체결 여부
+    }
+
+    /**
+     * 두 부착점의 월드 픽셀 좌표 { ax, ay, bx, by } (2D 회전 렌더용).
+     * 양끝이 연결돼 있지 않으면 null → draw()는 편집용 bbox 폴백 사용.
+     */
+    getEndpointsWorld() {
+      const cs = CONFIG.cellSize;
+      const L = this.leftElementId
+        ? (STATE.elements.find(e => e.id === this.leftElementId) || STATE.floorSegments.find(s => s.id === this.leftElementId))
+        : null;
+      const R = this.rightElementId
+        ? (STATE.elements.find(e => e.id === this.rightElementId) || STATE.floorSegments.find(s => s.id === this.rightElementId))
+        : null;
+      if (!L || !R) return null;
+
+      const face = (el, side) => {
+        if (el.type === 'floorSegment') return null;
+        const x = el.gridX * cs, y = el.gridY * cs, w = (el.gridW || 1) * cs, h = (el.gridH || 1) * cs;
+        switch (side) {
+          case 'right':  return { x: x + w,     y: y + h / 2 };
+          case 'left':   return { x: x,         y: y + h / 2 };
+          case 'bottom': return { x: x + w / 2, y: y + h };   // 화면 아래 = gridY+gridH
+          case 'top':    return { x: x + w / 2, y: y };
+        }
+      };
+      const segClosest = (seg, px, py) => {
+        const ax = seg.x1 * cs, ay = seg.y1 * cs, bx = seg.x2 * cs, by = seg.y2 * cs;
+        const dx = bx - ax, dy = by - ay, l2 = dx*dx + dy*dy;
+        let t = l2 > 1e-9 ? ((px-ax)*dx + (py-ay)*dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        return { x: ax + t*dx, y: ay + t*dy };
+      };
+
+      const leftSide  = this.isVertical ? 'bottom' : 'right';
+      const rightSide = this.isVertical ? 'top'    : 'left';
+      let A = face(L, leftSide), B = face(R, rightSide);
+      if (!A && !B) {
+        A = { x: ((L.x1 + L.x2) / 2) * cs, y: ((L.y1 + L.y2) / 2) * cs };
+        B = { x: ((R.x1 + R.x2) / 2) * cs, y: ((R.y1 + R.y2) / 2) * cs };
+      } else if (!A) { A = segClosest(L, B.x, B.y); }
+      else if (!B)   { B = segClosest(R, A.x, A.y); }
+      return { ax: A.x, ay: A.y, bx: B.x, by: B.y };
     }
 
     /**
@@ -466,10 +510,6 @@
     draw(ctx) {
       const cs  = CONFIG.cellSize;
       const s   = VIEWPORT.scale;
-      const b   = this._getRenderBounds();
-      const bx  = b.x, by = b.y, bw = b.w, bh = b.h;
-      const cx  = bx + bw / 2;
-      const cy  = by + bh / 2;
 
       // 압축/신장 색상
       const stretched  = this.L > this.L0 * 1.05;
@@ -478,64 +518,59 @@
                   : compressed ? 'rgba(134,239,172,0.85)'
                   : '#a78bfa';
 
+      // ── 부착점 기반 2D 축 (양끝 연결 시) / 편집용 bbox 폴백 ──
+      const ep = this.getEndpointsWorld();
+      let ax, ay, bx2, by2;
+      const b = this._getRenderBounds();
+      if (ep) {
+        ax = ep.ax; ay = ep.ay; bx2 = ep.bx; by2 = ep.by;
+      } else if (!this.isVertical) {
+        ax = b.x;         ay = b.y + b.h / 2; bx2 = b.x + b.w; by2 = b.y + b.h / 2;
+      } else {
+        ax = b.x + b.w/2; ay = b.y;           bx2 = b.x + b.w/2; by2 = b.y + b.h;
+      }
+
+      const dx = bx2 - ax, dy = by2 - ay;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;   // 축 방향
+      const px = -uy, py = ux;              // 수직 방향
+      // 코일 진폭: 용수철 두께(min 변) 기준
+      const thick = Math.min(this.gridW, this.gridH) * cs;
+      const amp   = Math.max(thick * 0.30, 2 / s);
+      const along = (t) => ({ x: ax + ux * t, y: ay + uy * t });
+
       ctx.save();
       ctx.strokeStyle = color;
       ctx.lineWidth   = 2 / s;
 
-      const coils = 6;
+      const coils  = 6;
+      const margin = Math.min(len * 0.1, cs * 0.3);
+      const p0 = along(margin), p1 = along(len - margin);
+      const span = Math.max(len - 2 * margin, 1);
+      const step = span / (coils * 2);
 
-      if (!this.isVertical) {
-        // ── 가로 지그재그 ──
-        const margin = Math.min(bw * 0.1, cs * 0.3);
-        const x0   = bx + margin;
-        const x1   = bx + bw - margin;
-        const span = Math.max(x1 - x0, 1);
-        const amp  = Math.max(bh * 0.30, 2 / s);
-        const step = span / (coils * 2);
-
-        ctx.beginPath();
-        ctx.moveTo(bx, cy); ctx.lineTo(x0, cy);
-        for (let i = 0; i < coils * 2; i++) {
-          ctx.lineTo(x0 + step * (i + 0.5), cy + (i % 2 === 0 ? -amp : amp));
-        }
-        ctx.lineTo(x1, cy); ctx.lineTo(bx + bw, cy);
-        ctx.stroke();
-
-        // k 레이블 (위쪽)
-        ctx.fillStyle    = color;
-        ctx.font         = `${Math.max(7, bh * 0.28) / s}px 'Courier New', monospace`;
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`k=${this.k}`, cx, cy - Math.max(bh * 0.30, 2/s) - 4/s);
-      } else {
-        // ── 세로 지그재그 ──
-        const margin = Math.min(bh * 0.1, cs * 0.3);
-        const y0   = by + margin;
-        const y1   = by + bh - margin;
-        const span = Math.max(y1 - y0, 1);
-        const amp  = Math.max(bw * 0.30, 2 / s);
-        const step = span / (coils * 2);
-
-        ctx.beginPath();
-        ctx.moveTo(cx, by); ctx.lineTo(cx, y0);
-        for (let i = 0; i < coils * 2; i++) {
-          ctx.lineTo(cx + (i % 2 === 0 ? -amp : amp), y0 + step * (i + 0.5));
-        }
-        ctx.lineTo(cx, y1); ctx.lineTo(cx, by + bh);
-        ctx.stroke();
-
-        // k 레이블 (오른쪽)
-        ctx.fillStyle    = color;
-        ctx.font         = `${Math.max(7, bw * 0.28) / s}px 'Courier New', monospace`;
-        ctx.textAlign    = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`k=${this.k}`, cx + Math.max(bw * 0.30, 2/s) + 4/s, cy);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay); ctx.lineTo(p0.x, p0.y);
+      for (let i = 0; i < coils * 2; i++) {
+        const c = along(margin + step * (i + 0.5));
+        const a = (i % 2 === 0 ? -amp : amp);
+        ctx.lineTo(c.x + px * a, c.y + py * a);
       }
+      ctx.lineTo(p1.x, p1.y); ctx.lineTo(bx2, by2);
+      ctx.stroke();
+
+      // k 레이블 — 축 중앙에서 수직으로 살짝 띄움
+      const mid = along(len / 2);
+      ctx.fillStyle    = color;
+      ctx.font         = `${Math.max(7, thick * 0.28) / s}px 'Courier New', monospace`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`k=${this.k}`, mid.x + px * (amp + 6 / s), mid.y + py * (amp + 6 / s));
 
       ctx.restore();
 
       if (STATE.selected === this) {
-        drawSelectionBox(ctx, bx, by, bw, bh);
+        drawSelectionBox(ctx, b.x, b.y, b.w, b.h);
       }
     }
   }

@@ -328,6 +328,12 @@
         sel.rightLocked,
         v => { sel.rightLocked = v; }
       ));
+      // ── 자동 체결 (#5) ──
+      lockSection.appendChild(_checkbox(
+        '자동 체결 (접촉 시 자동 연결)',
+        sel.autoAttach !== false,
+        v => { sel.autoAttach = v; validateAll(); }
+      ));
       panelRight.appendChild(lockSection);
     }
 
