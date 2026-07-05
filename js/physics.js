@@ -172,6 +172,29 @@
       if (!A || !B) continue;
       rope.calibratedLength = Math.hypot(B.x - A.x, B.y - A.y);
     }
+
+    // 외력(ExtForce): 시작 시점의 실 방향을 고정 방향으로 동결 + 앵커 추종 오프셋 저장.
+    // 이후 실행 내내 이 방향으로 지속적 힘을 가하며, 앵커는 물체를 따라 이동한다.
+    for (const ef of STATE.elements) {
+      if (ef.type !== 'extforce') continue;
+      ef._fdx = ef._fdy = ef._offX = ef._offY = null;   // 매 시작마다 재동결
+      if (!(ef.forceN > 0)) continue;
+      const rope = STATE.ropes.find(r =>
+        r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
+      if (!rope) continue;
+      const efAnchor   = rope.anchorA.elementId === ef.id ? rope.anchorA : rope.anchorB;
+      const bodyAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
+      const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
+      if (!body || !['rect', 'circle'].includes(body.type)) continue;
+      const efPos   = getAttachPhysPos(efAnchor);
+      const bodyPos = getAttachPhysPos(bodyAnchor);
+      if (!efPos || !bodyPos) continue;
+      const offX = efPos.x - bodyPos.x, offY = efPos.y - bodyPos.y;
+      const dist = Math.hypot(offX, offY);
+      if (dist < 1e-9) continue;
+      ef._fdx = offX / dist;  ef._fdy = offY / dist;   // 고정 방향(물체→앵커)
+      ef._offX = offX;        ef._offY = offY;          // 추종용 오프셋
+    }
   }
 
   /* ── 6-3. 시뮬 스텝 (4 서브스텝) ── */
@@ -181,6 +204,7 @@
     for (let i = 0; i < sub; i++) {
       applyForces(subDt);
       integrate(subDt);
+      updateExtForceAnchors();   // 외력 앵커가 물체를 따라 이동 (실 방향 유지)
       resolveFloorCollisions();
       resolveBodyCollisions();
       resolveRopeConstraints(subDt);
@@ -217,40 +241,59 @@
   }
 
   /* ── 외력(ExtForce) 힘 적용 ──
-   * 앵커는 고정(불변) — 부착 물체에만 힘을 가함.
-   * 실이 팽팽(dist ≥ 실 길이)할 때만 실 방향(물체→앵커)으로 크기 N 적용.
-   * 실이 이완되면 힘 0 (실은 당기기만 가능).
+   * 손으로 실을 잡고 물체를 따라 이동하며 끄는 방식.
+   * 시작 시점에 동결한 실 방향(물체→앵커)으로 부착 물체에 크기 N의 힘을
+   * 실행 내내 지속 적용한다. 물체 위치가 바뀌어도 힘은 끊기지 않고 항상
+   * 같은 방향으로 작용한다 (팽팽/이완과 무관). 방향 동결은 calibrateRopeLengths,
+   * 앵커의 물체 추종은 updateExtForceAnchors 참조.
    */
   function applyExtForces() {
     for (const ef of STATE.elements) {
       if (ef.type !== 'extforce') continue;
       if (!(ef.forceN > 0)) continue;
+      if (ef._fdx == null) continue;   // 시작 전/미연결 → 방향 미확정
 
       const rope = STATE.ropes.find(r =>
         r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
       if (!rope) continue;
 
-      const efAnchor   = rope.anchorA.elementId === ef.id ? rope.anchorA : rope.anchorB;
       const bodyAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
       const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
       if (!body || !['rect', 'circle'].includes(body.type)) continue;
 
-      const efPos   = getAttachPhysPos(efAnchor);
+      // 고정 방향(시작 시점 실 방향)으로 지속적 힘 N — 위치가 바뀌어도 같은 방향
+      body.ax += (ef.forceN * ef._fdx) / body.mass;
+      body.ay += (ef.forceN * ef._fdy) / body.mass;
+    }
+  }
+
+  /* ── 외력 앵커 추종 ──
+   * 부착 물체의 이동만큼 앵커를 같은 오프셋으로 함께 이동시켜, 실 방향과 길이를
+   * 시작 시점 그대로 유지한다(손이 물체를 따라 이동하며 끄는 모습). 이로써 실
+   * 자체 제약과 충돌하지 않고 힘 방향도 일정하게 유지된다. integrate 직후 호출.
+   */
+  function updateExtForceAnchors() {
+    const GS = CONFIG.GRID_SIZE;
+    for (const ef of STATE.elements) {
+      if (ef.type !== 'extforce') continue;
+      if (ef._offX == null) continue;
+
+      const rope = STATE.ropes.find(r =>
+        r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
+      if (!rope) continue;
+
+      const bodyAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
+      const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
+      if (!body || !['rect', 'circle'].includes(body.type)) continue;
+
       const bodyPos = getAttachPhysPos(bodyAnchor);
-      if (!efPos || !bodyPos) continue;
+      if (!bodyPos) continue;
 
-      const dx = efPos.x - bodyPos.x, dy = efPos.y - bodyPos.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 1e-9) continue;
-
-      // 팽팽 여부: 단순 실 제약과 동일 기준 (calibratedLength ?? ropeLength)
-      const maxLen = rope.calibratedLength ?? rope.ropeLength;
-      if (dist < maxLen - 1e-4) continue;   // 이완 → 힘 없음
-
-      // 실 방향(물체 → 앵커)으로 힘 N
-      const ux = dx / dist, uy = dy / dist;
-      body.ax += (ef.forceN * ux) / body.mass;
-      body.ay += (ef.forceN * uy) / body.mass;
+      // 앵커 중심 물리 좌표 = 물체 부착점 + 고정 오프셋
+      const cx = bodyPos.x + ef._offX;
+      const cy = bodyPos.y + ef._offY;
+      ef.gridX = cx - ef.gridW / 2;
+      ef.gridY = GS - cy - ef.gridH / 2;
     }
   }
 
