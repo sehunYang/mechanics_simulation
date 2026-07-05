@@ -1,0 +1,119 @@
+/* ============================================================
+   ui-controls.js — 팔레트/하단 버튼 + addElement + 시뮬 제어
+   ─ 클래식 스크립트: 전역 스코프 공유, index.html 순서대로 로드 ─
+   ============================================================ */
+  /* ================================================================
+     [UI BUTTONS] — 팔레트 + 하단 버튼
+  ================================================================ */
+
+  /* 팔레트 아이템 클릭 */
+  document.querySelectorAll('.palette-item').forEach(item => {
+    item.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    });
+    item.addEventListener('click', (e) => {
+      const type = item.dataset.type;
+      const mode = item.dataset.mode;
+
+      if (STATE.simMode === 'RUNNING') return;
+
+      // 모드 버튼: 토글
+      if (mode) {
+        const targetMode = mode.toUpperCase();
+        if (STATE.interactionMode === targetMode) {
+          STATE.interactionMode = 'IDLE';
+          item.classList.remove('active-mode');
+        } else {
+          STATE.interactionMode = targetMode;
+          document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active-mode'));
+          item.classList.add('active-mode');
+        }
+        STATE.pendingGridPoint  = null;
+        STATE.pendingRopeAnchor = null;
+        STATE._ropePreviewWorld = null;
+        drawGrid();   // FLOOR_DRAW 강조 갱신
+        return;
+      }
+
+      // 요소 추가 (Sprint 2에서 구현)
+      if (type) {
+        // 다른 팔레트 버튼 클릭 시 모드 초기화
+        STATE.interactionMode = 'IDLE';
+        document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active-mode'));
+        addElement(type);
+      }
+    });
+  });
+
+  /** 요소 생성 팩토리 — 현재 화면 중앙 격자 좌표에 추가 */
+  function addElement(type) {
+    let el;
+    switch (type) {
+      case 'rect':      el = new RectBody();    break;
+      case 'circle':    el = new CircleBody();  break;
+      case 'forceZone': el = new ForceZone();   break;
+      case 'pulley':    el = new Pulley();      break;
+      case 'spring':    el = new Spring();      break;
+      default: return;
+    }
+
+    // 현재 화면 중앙의 월드 좌표 → 격자 인덱스
+    const screenCX = mainCanvas.width  / 2;
+    const screenCY = mainCanvas.height / 2;
+    const world    = screenToWorld(screenCX, screenCY);
+    const cs       = CONFIG.cellSize;
+    const GS       = CONFIG.GRID_SIZE;
+
+    // 격자 스냅 + 경계 클램프 (요소가 그리드 밖으로 나가지 않도록)
+    const gx = clamp(snapToGridIndex(world.x / cs * cs), 0, GS - el.gridW);
+    const gy = clamp(snapToGridIndex(world.y / cs * cs), 0, GS - el.gridH);
+    el.gridX = gx;
+    el.gridY = gy;
+
+    STATE.elements.push(el);
+    _selectObject(el);
+    validateAll();
+  }
+
+  /* 하단 버튼 */
+  btnRun.addEventListener('click', () => {
+    if (STATE.simMode === 'EDIT') {
+      startSimulation();
+    } else if (STATE.simMode === 'RUNNING') {
+      pauseSimulation();
+    } else if (STATE.simMode === 'PAUSED') {
+      resumeSimulation();
+    }
+  });
+
+  btnReset.addEventListener('click', () => {
+    stopSimulation();
+    restoreSnapshot();          // t=0 상태 완전 복원
+    STATE.simMode = 'EDIT';
+    STATE.interactionMode = 'IDLE';
+    STATE.pendingGridPoint = null;
+    STATE.pendingRopeAnchor = null;
+    STATE._ropePreviewWorld = null;
+    document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active-mode'));
+    btnRun.textContent = '▶ 실행';
+    btnRun.disabled = false;
+    btnRun.style.opacity = '1';
+    _selectObject(null);        // 패널 닫기
+    drawGrid();
+    validateAll();
+  });
+
+  btnCapture.addEventListener('click', () => {
+    captureImage();
+  });
+
+  btnGravity.addEventListener('click', () => {
+    STATE.gravityOn = !STATE.gravityOn;
+    if (!STATE.gravityOn) {
+      btnGravity.textContent = '중력 OFF';
+      btnGravity.classList.add('active');
+    } else {
+      btnGravity.textContent = '⊙ 무중력';
+      btnGravity.classList.remove('active');
+    }
+  });

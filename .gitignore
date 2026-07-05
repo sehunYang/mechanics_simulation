@@ -1,0 +1,13 @@
+# OMC (oh-my-claudecode) 로컬 상태 — 저장소에 포함하지 않음
+.omc/
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# 로그·임시
+*.log
+node_modules/

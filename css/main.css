@@ -1,0 +1,367 @@
+    /* ── 전역 리셋 ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* 배경 계열 (Circuit 토큰 채택) */
+      --bg: #0d0f1a;            /* 앱 전체 배경 (Circuit --bg-app) */
+      --surface: #111827;       /* 사이드바 (Circuit --bg-sidebar) */
+      --surface2: #1a2438;      /* 아이템 (Circuit --bg-item) */
+      --bg-panel: rgba(10,16,30,0.97);   /* 글래스 패널 */
+      --bg-glass: rgba(17,24,39,0.90);   /* 반투명 버튼/pill */
+      --bg-ctx:   rgba(14,22,40,0.97);   /* 컨텍스트 메뉴 */
+
+      /* 테두리 계열 */
+      --border: #1e3050;        /* 기본 테두리 (Circuit --border-base) */
+      --border-dim: #1e2d45;    /* 약한 구분선 */
+      --border-active: #2d6fc0; /* 활성 강조 */
+      --border-focus: #4a90d9;  /* 입력 포커스 */
+
+      /* 텍스트 계열 */
+      --text: #c8d6e5;          /* 기본 본문 (Circuit --text-base) */
+      --text-dim: #506a88;      /* 흐린 텍스트 */
+      --text-label: #607a99;    /* 라벨 */
+      --text-accent: #7ec8f0;   /* 강조(하늘색) */
+      --text-accent2: #9ecfff;  /* 강조(밝은 하늘) */
+      --text-title: #4a90d9;    /* 제목 */
+
+      /* 강조 (구 --accent/--accent2 → 파랑 계열로 통일, 초록 제거) */
+      --accent: #4a90d9;
+      --accent2: #7ec8f0;
+
+      /* 위험(삭제) 계열 */
+      --danger-bg: #3a1010;
+      --danger-border: #5a2020;
+      --danger-text: #f08080;
+
+      /* 경고 바 (밝은 노랑 → 다크/글래스) */
+      --warn-bg: rgba(58,16,16,0.92);
+      --warn-fg: #f0a0a0;
+      --warn-border: #5a2020;
+
+      /* 버튼 호버 */
+      --btn-h: #243352;
+
+      /* 캔버스 무대 배경 */
+      --bg-stage: #0a0c14;
+
+      /* 형태 */
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 10px;
+      --radius-xl: 14px;
+      --radius-pill: 36px;
+
+      /* 효과 */
+      --blur: blur(12px);
+      --shadow-panel: 0 4px 20px rgba(0,0,0,0.5);
+      --shadow-float: 0 6px 32px rgba(0,0,0,0.7);
+
+      /* 레이아웃 치수 */
+      --panel-w: 200px;
+      --sidebar-w: 64px;
+      --bottom-h: 56px;
+      --font: 'Courier New', 'Consolas', monospace;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+    }
+
+    /* ── 레이아웃 ── */
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+    }
+
+    /* 1. 경고 바 */
+    #warning-bar {
+      display: none;
+      background: var(--warn-bg);
+      color: var(--warn-fg);
+      padding: 8px 16px;
+      font-size: 13px;
+      font-family: var(--font);
+      text-align: center;
+      border-bottom: 1px solid var(--warn-border);
+      backdrop-filter: var(--blur);
+      flex-shrink: 0;
+      z-index: 50;
+    }
+
+    /* 2. 앱 래퍼 */
+    #app-wrapper {
+      display: flex;
+      flex-direction: row;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 3. 사이드바 */
+    #sidebar-left {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border-dim);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 0;
+      gap: 6px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      z-index: 10;
+      scrollbar-width: none;
+    }
+    #sidebar-left::-webkit-scrollbar { display: none; }
+
+    .palette-item {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 16px;
+      transition: background 0.12s, border-color 0.12s, transform 0.08s;
+      user-select: none;
+      touch-action: manipulation;
+      position: relative;
+    }
+    .palette-item:hover {
+      background: var(--btn-h);
+      border-color: var(--border-active);
+    }
+    .palette-item.active-mode {
+      background: rgba(26,58,106,0.95);
+      border: 1px solid var(--border-active);
+      color: var(--text-accent);
+      box-shadow: 0 0 10px rgba(60,130,220,0.3);
+    }
+    .palette-item:active {
+      transform: scale(0.88);
+    }
+    .palette-item[title]:hover::after {
+      content: attr(title);
+      position: absolute;
+      left: calc(100% + 8px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--bg-ctx);
+      color: var(--text-accent2);
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+      font-size: 11px;
+      pointer-events: none;
+      z-index: 100;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow-panel);
+    }
+
+    .palette-separator {
+      width: 40px;
+      height: 1px;
+      background: var(--border-dim);
+      margin: 2px 0;
+    }
+
+    /* 4. 캔버스 래퍼 */
+    #canvas-wrapper {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      background: var(--bg-stage);
+    }
+
+    #gridCanvas,
+    #mainCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+    }
+
+    #gridCanvas {
+      z-index: 1;
+    }
+    #mainCanvas {
+      z-index: 2;
+    }
+
+    /* 5. 속성 패널 */
+    #panel-right {
+      width: var(--panel-w);
+      flex-shrink: 0;
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border);
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 14px;
+      overflow-y: auto;
+      z-index: 10;
+      font-size: 11px;
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow-panel);
+    }
+
+    .panel-label {
+      color: var(--text-title);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    .panel-input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-accent);
+      padding: 4px 6px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font);
+      font-size: 11px;
+    }
+    .panel-input:focus { outline: none; border-color: var(--border-focus); }
+
+    .panel-btn {
+      width: 100%;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      color: var(--text-accent);
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 11px;
+      text-align: center;
+      min-height: 32px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .panel-btn:hover { background: var(--btn-h); border-color: var(--border-active); }
+    .panel-btn.danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+    .panel-btn.danger:hover { background: #4f1c1c; }
+
+    /* 6. 하단 컨트롤 → 떠있는 mode-bar pill (Circuit 패턴, #canvas-wrapper 기준 absolute) */
+    #controls-bottom {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      padding: 5px 8px;
+      backdrop-filter: var(--blur);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    }
+
+    .ctrl-btn {
+      padding: 7px 16px;
+      height: auto;
+      min-height: 0;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      border-radius: 28px;
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      transition: all 0.18s;
+      white-space: nowrap;
+      touch-action: manipulation;
+    }
+    .ctrl-btn:hover:not(.active) { color: var(--text-accent2); background: rgba(255,255,255,0.05); }
+    .ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .ctrl-btn.active { background: #1a3a6a; border-color: var(--border-active); color: var(--text-accent); box-shadow: 0 0 10px rgba(60,130,220,0.3); }
+
+    /* 줌 레벨 표시 (Circuit 오버레이 톤) */
+    #zoom-indicator {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: var(--bg-glass);
+      color: var(--text-dim);
+      font-size: 10px;
+      padding: 3px 7px;
+      border-radius: var(--radius-sm);
+      pointer-events: none;
+      z-index: 5;
+      font-family: var(--font);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+    }
+
+    /* 모바일 전용 요소 (기본 숨김 — 데스크톱) */
+    #hamburger-btn, #sidebar-overlay { display: none; }
+
+    /* 모바일 레이아웃 (≤480px) — Circuit 햄버거 오버레이 패턴 */
+    @media (max-width: 480px) {
+      /* 사이드바: 슬라이드 오버레이 */
+      #sidebar-left {
+        position: fixed; left: 0; top: 0; bottom: 0;
+        width: 72px; z-index: 200;
+        transform: translateX(-100%);
+        transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
+        box-shadow: 4px 0 24px rgba(0,0,0,0.7);
+        padding: 56px 0 12px 0;
+      }
+      #sidebar-left.mobile-open { transform: translateX(0); }
+
+      /* 사이드바 배경 딤 */
+      #sidebar-overlay {
+        display: none; position: fixed; inset: 0; z-index: 199;
+        background: rgba(0,0,0,0.55);
+      }
+      #sidebar-overlay.visible { display: block; }
+
+      /* 햄버거 버튼 */
+      #hamburger-btn {
+        display: flex; position: fixed; top: 10px; left: 10px; z-index: 201;
+        width: 40px; height: 40px; border-radius: var(--radius-lg);
+        background: var(--bg-glass); border: 1px solid var(--border);
+        flex-direction: column; align-items: center; justify-content: center;
+        gap: 5px; cursor: pointer; backdrop-filter: blur(8px);
+      }
+      #hamburger-btn span { display: block; width: 20px; height: 2px; background: var(--text-accent); border-radius: 1px; }
+
+      /* 하단 pill: 약간 축소 */
+      .ctrl-btn { font-size: 11px; padding: 6px 12px; }
+
+      /* 속성 패널: 기존 display-구동 바텀시트 유지(글래스 재스타일) */
+      #panel-right {
+        position: fixed;
+        bottom: 0; right: 0; left: 0;
+        width: 100% !important;
+        max-height: 60vh;
+        overflow-y: auto;
+        background: var(--bg-panel);
+        z-index: 180;
+        border-top: 1px solid var(--border);
+        border-left: none;
+        border-radius: 18px 18px 0 0;
+        padding: 16px 18px 24px;
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow-float);
+      }
+    }
+  
