@@ -155,6 +155,7 @@
       case 'forceZone': clone = Object.assign(new ForceZone(),   data); break;
       case 'pulley':    clone = Object.assign(new Pulley(),      data); break;
       case 'spring':    clone = Object.assign(new Spring(),      data); break;
+      case 'extforce':  clone = Object.assign(new ExtForce(),    data); break;
       default: return null;
     }
     STATE.elements.push(clone);

@@ -55,6 +55,7 @@
         case 'forceZone': el = new ForceZone();   break;
         case 'pulley':    el = new Pulley();      break;
         case 'spring':    el = new Spring();      break;
+        case 'extforce':  el = new ExtForce();    break;
         default: return null;
       }
       Object.assign(el, d);
@@ -210,6 +211,47 @@
 
     // 용수철 힘
     applySpringForces();
+
+    // 외력 (실 팽팽 시 실 방향으로 부착 물체에 힘 N)
+    applyExtForces();
+  }
+
+  /* ── 외력(ExtForce) 힘 적용 ──
+   * 앵커는 고정(불변) — 부착 물체에만 힘을 가함.
+   * 실이 팽팽(dist ≥ 실 길이)할 때만 실 방향(물체→앵커)으로 크기 N 적용.
+   * 실이 이완되면 힘 0 (실은 당기기만 가능).
+   */
+  function applyExtForces() {
+    for (const ef of STATE.elements) {
+      if (ef.type !== 'extforce') continue;
+      if (!(ef.forceN > 0)) continue;
+
+      const rope = STATE.ropes.find(r =>
+        r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
+      if (!rope) continue;
+
+      const efAnchor   = rope.anchorA.elementId === ef.id ? rope.anchorA : rope.anchorB;
+      const bodyAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
+      const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
+      if (!body || !['rect', 'circle'].includes(body.type)) continue;
+
+      const efPos   = getAttachPhysPos(efAnchor);
+      const bodyPos = getAttachPhysPos(bodyAnchor);
+      if (!efPos || !bodyPos) continue;
+
+      const dx = efPos.x - bodyPos.x, dy = efPos.y - bodyPos.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1e-9) continue;
+
+      // 팽팽 여부: 단순 실 제약과 동일 기준 (calibratedLength ?? ropeLength)
+      const maxLen = rope.calibratedLength ?? rope.ropeLength;
+      if (dist < maxLen - 1e-4) continue;   // 이완 → 힘 없음
+
+      // 실 방향(물체 → 앵커)으로 힘 N
+      const ux = dx / dist, uy = dy / dist;
+      body.ax += (ef.forceN * ux) / body.mass;
+      body.ay += (ef.forceN * uy) / body.mass;
+    }
   }
 
   /* bbox 겹침 (격자 인덱스 기준) */
@@ -643,6 +685,11 @@
       // physX/Y = 중심 기준
       return { x: el.physX, y: el.physY };
     }
+    if (el.type === 'extforce') {
+      // 고정 앵커 — 물리 적분 없음. 격자 좌표에서 중심 물리 좌표 산출.
+      const GS = CONFIG.GRID_SIZE;
+      return { x: el.gridX + el.gridW / 2, y: GS - el.gridY - el.gridH / 2 };
+    }
     if (el.type === 'pulley') {
       const r = Math.min(el.gridW, el.gridH) / 2;
       switch (pt) {
@@ -683,6 +730,7 @@
     const el = STATE.elements.find(e => e.id === elementId);
     if (!el) return Infinity;
     if (el.type === 'pulley') return 0;  // massless: inv = Infinity
+    if (el.type === 'extforce') return Infinity;  // 고정 외력 앵커 (불변)
     return el.mass || 1;
   }
 
@@ -746,6 +794,7 @@
     const el = STATE.elements.find(e => e.id === elementId);
     if (!el) return 0;
     if (el.type === 'pulley') return fixedPulleys.has(el.id) ? 0 : PULLEY_RELAY_INVMASS;
+    if (el.type === 'extforce') return 0;  // 고정 외력 앵커 (실 제약에서 불변)
     const m = el.mass || 1;
     return m > 0 ? 1 / m : 0;
   }

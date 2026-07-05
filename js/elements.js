@@ -298,6 +298,76 @@
   }
 
   /* ──────────────────────────────────────────────────────────────
+     ExtForce — 외력 (실 방향으로 크기 N의 힘 적용, 고정 앵커)
+       · 물리 적분 없음 — 고정된 외부 작용점(immovable anchor).
+       · 실이 팽팽할 때만 실 방향으로 부착 물체에 힘 N을 가함.
+       · 렌더는 벡터 화살표만 (아이콘/이미지 없음).
+  ────────────────────────────────────────────────────────────── */
+  class ExtForce extends Element {
+    constructor() {
+      super();
+      this.type   = 'extforce';
+      this.gridW  = 1;
+      this.gridH  = 1;
+      this.forceN = 10;   // 힘 크기 [N]
+    }
+
+    /** 연결된 실 + 반대편(물체) 앵커 조회 (없으면 null) */
+    _getAttached() {
+      const rope = STATE.ropes.find(r =>
+        r.anchorA.elementId === this.id || r.anchorB.elementId === this.id);
+      if (!rope) return null;
+      const bodyAnchor = rope.anchorA.elementId === this.id ? rope.anchorB : rope.anchorA;
+      const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
+      return { rope, bodyAnchor, body };
+    }
+
+    draw(ctx) {
+      const cs = CONFIG.cellSize;
+      const s  = VIEWPORT.scale;
+      const bx = this.gridX * cs, by = this.gridY * cs;
+      const bw = this.gridW * cs, bh = this.gridH * cs;
+      const cx = bx + bw / 2, cy = by + bh / 2;
+      const color = '#fb923c';   // orange-400 (ForceZone 파랑과 구분)
+
+      // 화살표 방향: 부착 물체 → 앵커(바깥 방향, 실 따라). 실 없으면 위쪽 기본.
+      let ux = 0, uy = -1;
+      const att = this._getAttached();
+      if (att && att.body) {
+        const bw2 = getAttachPointWorld(att.body, att.bodyAnchor.attachPoint);
+        const dx = cx - bw2.x, dy = cy - bw2.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 1e-6) { ux = dx / len; uy = dy / len; }
+      }
+
+      const arrowLen = cs * 1.3;
+
+      ctx.save();
+      // 앵커 점 (작은 원)
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3 / s, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 벡터 화살표 (앵커에서 바깥 방향)
+      drawArrow(ctx, cx, cy, cx + ux * arrowLen, cy + uy * arrowLen, color);
+
+      // 크기 레이블 (N)
+      ctx.fillStyle    = color;
+      ctx.font         = `${Math.max(9, cs * 0.28) / s}px 'Courier New', monospace`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.forceN + 'N',
+        cx + ux * (arrowLen + 8 / s), cy + uy * (arrowLen + 8 / s));
+      ctx.restore();
+
+      if (STATE.selected === this) this.drawSelection(ctx);
+    }
+
+    serialize() { return { ...this }; }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
      Pulley — 도르래
   ────────────────────────────────────────────────────────────── */
   class Pulley extends Element {
@@ -882,6 +952,9 @@
     const bw = el.gridW * cs, bh = el.gridH * cs;
     const cx = bx + bw / 2, cy = by + bh / 2;
     if (el.type === 'circle') {
+      return [{ id: 'center', worldX: cx, worldY: cy }];
+    }
+    if (el.type === 'extforce') {
       return [{ id: 'center', worldX: cx, worldY: cy }];
     }
     if (el.type === 'pulley') {

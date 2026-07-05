@@ -187,8 +187,8 @@
        Element 공통 속성
     ───────────────────────── */
 
-    // 가로 칸수 — Spring·Pulley·Circle 제외
-    if (sel.type !== 'spring' && sel.type !== 'pulley' && sel.type !== 'circle') {
+    // 가로 칸수 — Spring·Pulley·Circle·ExtForce 제외
+    if (!['spring','pulley','circle','extforce'].includes(sel.type)) {
       panelRight.appendChild(_row('가로 칸수',
         _numInput(sel.gridW, 1, 20, 1, v => {
           sel.gridW = Math.max(1, Math.round(v));
@@ -196,8 +196,8 @@
         })));
     }
 
-    // 세로 칸수 — Spring·Pulley·Circle 제외
-    if (sel.type !== 'spring' && sel.type !== 'pulley' && sel.type !== 'circle') {
+    // 세로 칸수 — Spring·Pulley·Circle·ExtForce 제외
+    if (!['spring','pulley','circle','extforce'].includes(sel.type)) {
       panelRight.appendChild(_row('세로 칸수',
         _numInput(sel.gridH, 1, 20, 1, v => {
           sel.gridH = Math.max(1, Math.round(v));
@@ -347,6 +347,18 @@
         _numInput(sel.fy, undefined, undefined, 0.1, v => { sel.fy = v; })));
     }
 
+    /* ─────────────────────────
+       ExtForce (외력)
+    ───────────────────────── */
+    if (sel.type === 'extforce') {
+      panelRight.appendChild(_row('힘 크기 (N)',
+        _numInput(sel.forceN, 0, undefined, 0.1, v => { sel.forceN = Math.max(0, v); })));
+      const info = document.createElement('div');
+      info.style.cssText = 'color:var(--text-dim);font-size:10px;margin-top:2px;';
+      info.textContent   = '실을 연결하면 실 방향으로 힘이 작용합니다 (실이 팽팽할 때만).';
+      panelRight.appendChild(info);
+    }
+
     /* ── 공통: 삭제 버튼 ── */
     panelRight.appendChild(_btn('🗑 삭제', 'danger', () => deleteSelected()));
   }
@@ -354,7 +366,7 @@
   /* 타입 → 한국어 레이블 */
   function _typeLabel(type) {
     return { rect:'네모 물체', circle:'원 물체', forceZone:'힘 구간',
-             pulley:'도르래', spring:'용수철',
+             pulley:'도르래', spring:'용수철', extforce:'외력',
              floorSegment:'바닥면', rope:'실' }[type] || type;
   }
 

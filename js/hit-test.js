@@ -138,7 +138,7 @@
     const thresh = 10 / VIEWPORT.scale;
     // Element 앵커 포인트
     for (const el of STATE.elements) {
-      if (!['rect','circle','pulley'].includes(el.type)) continue;
+      if (!['rect','circle','pulley','extforce'].includes(el.type)) continue;
       for (const pt of getAttachPoints(el)) {
         if (Math.hypot(worldX - pt.worldX, worldY - pt.worldY) < thresh) {
           return { elementId: el.id, attachPoint: pt.id };

@@ -54,6 +54,7 @@
       case 'forceZone': el = new ForceZone();   break;
       case 'pulley':    el = new Pulley();      break;
       case 'spring':    el = new Spring();      break;
+      case 'extforce':  el = new ExtForce();    break;
       default: return;
     }
 

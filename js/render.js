@@ -74,7 +74,7 @@
 
     // ── Element 앵커 포인트 (원형) ──
     for (const el of STATE.elements) {
-      if (!['rect', 'circle', 'pulley'].includes(el.type)) continue;
+      if (!['rect', 'circle', 'pulley', 'extforce'].includes(el.type)) continue;
       const pts = getAttachPoints(el);
       for (const pt of pts) {
         const isPending = (

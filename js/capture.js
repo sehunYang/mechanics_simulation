@@ -125,6 +125,33 @@
           tc.stroke();
           break;
         }
+        case 'extforce': {
+          const bx = el.gridX * cs, by = el.gridY * cs;
+          const bw = el.gridW * cs, bh = el.gridH * cs;
+          const cx = bx + bw/2, cy = by + bh/2;
+          // 화살표 방향: 부착 물체 → 앵커(바깥, 실 따라). 실 없으면 위쪽 기본.
+          let ux = 0, uy = -1;
+          const att = el._getAttached ? el._getAttached() : null;
+          if (att && att.body) {
+            const bw2 = getAttachPointWorld(att.body, att.bodyAnchor.attachPoint);
+            const dx = cx - bw2.x, dy = cy - bw2.y;
+            const len = Math.hypot(dx, dy);
+            if (len > 1e-6) { ux = dx / len; uy = dy / len; }
+          }
+          const arrowLen = cs * 1.3;
+          tc.fillStyle = '#000000';
+          tc.beginPath();
+          tc.arc(cx, cy, 3 / s, 0, Math.PI * 2);
+          tc.fill();
+          drawArrow(tc, cx, cy, cx + ux * arrowLen, cy + uy * arrowLen, '#333333');
+          tc.fillStyle = '#000000';
+          tc.font = `${Math.max(9, cs * 0.28) / s}px 'Courier New', monospace`;
+          tc.textAlign = 'center';
+          tc.textBaseline = 'middle';
+          tc.fillText(el.forceN + 'N',
+            cx + ux * (arrowLen + 8 / s), cy + uy * (arrowLen + 8 / s));
+          break;
+        }
         case 'spring': {
           const b2  = el._getRenderBounds();
           const bx  = b2.x, by = b2.y, bw = b2.w, bh = b2.h;
