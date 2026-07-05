@@ -117,3 +117,11 @@
       btnGravity.classList.remove('active');
     }
   });
+
+  /* 배속 버튼: RUNNING 중에만 표시(render.js에서 토글), 1→2→5→10→100→1 순환 */
+  const SPEED_LEVELS = [1, 2, 5, 10, 100];
+  btnSpeed.addEventListener('click', () => {
+    const idx = SPEED_LEVELS.indexOf(STATE.speedMultiplier);
+    STATE.speedMultiplier = SPEED_LEVELS[(idx + 1) % SPEED_LEVELS.length];
+    btnSpeed.textContent = STATE.speedMultiplier + 'x';
+  });

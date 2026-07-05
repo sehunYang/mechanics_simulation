@@ -8,6 +8,7 @@
 
   let _rafId = null;
   let _lastTs = 0;
+  let _dtAccumulator = 0;   // 고정 dt 누산기 (배속 결정성 보장)
 
   function renderLoop(ts = 0) {
     _rafId = requestAnimationFrame(renderLoop);
@@ -16,9 +17,19 @@
     if (elapsed < 14 && _lastTs !== 0) return;
     _lastTs = ts;
 
+    btnSpeed.style.display = STATE.simMode === 'RUNNING' ? '' : 'none';
+
     if (STATE.simMode === 'RUNNING') {
-      const rawDt = Math.min(elapsed / 1000, CONFIG.MAX_DT);
-      simStep(rawDt);
+      // MAX_DT는 스텝 크기가 아니라 "실제 경과시간" 배출 상한(spiral-of-death 가드)로만 사용.
+      // 배속(speedMultiplier)은 상한 적용 후 곱해, 100배에서도 캡 없이 FIXED_DT 스텝을 여러 번 실행.
+      const cappedRealDt = Math.min(elapsed / 1000, CONFIG.MAX_DT);
+      _dtAccumulator += cappedRealDt * STATE.speedMultiplier;
+      while (_dtAccumulator >= CONFIG.FIXED_DT) {
+        simStep(CONFIG.FIXED_DT);
+        _dtAccumulator -= CONFIG.FIXED_DT;
+      }
+    } else {
+      _dtAccumulator = 0;   // EDIT/PAUSED 중엔 누산 부채가 쌓이지 않도록 리셋
     }
     drawScene();
   }
