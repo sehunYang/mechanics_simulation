@@ -306,7 +306,7 @@
       this.type             = 'pulley';
       this.gridW            = 2;   // 항상 정사각형 (gridW === gridH)
       this.gridH            = 2;
-      this.mass             = 1.0;   // 도르래 질량 (중력 적용)
+      // 도르래는 무질량 중계점 — 질량 속성 없음 (getMass()가 0 반환)
       this.vx0              = 0;
       this.vy0              = 0;
       this.vx = 0; this.vy = 0;

@@ -227,12 +227,9 @@
           validateAll();
         })));
 
-      panelRight.appendChild(_row('질량 (kg)',
-        _numInput(sel.mass, 0.1, undefined, 0.1, v => { sel.mass = v; })));
-
       const fixInfo = document.createElement('div');
       fixInfo.style.cssText = 'color:var(--text-dim);font-size:10px;margin-top:2px;';
-      fixInfo.textContent   = '중심(center) 앵커로 고정 가능';
+      fixInfo.textContent   = '무질량 중계점 · 중심(center) 앵커로 고정 가능';
       panelRight.appendChild(fixInfo);
     }
 

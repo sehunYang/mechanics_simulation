@@ -140,10 +140,12 @@
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
       const aIsRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
       const bIsRim = elB && elB.type === 'pulley' && rope.anchorB.attachPoint !== 'center';
+      // 림↔림 실은 양쪽 도르래 그룹에 등록 (도르래-실 그래프 구성)
       if (aIsRim) {
         pulleyGroups.get(elA.id).push({ rope, bodyAnchor: rope.anchorB, pulleyAnchor: rope.anchorA });
         pulleyRopeIds.add(rope.id);
-      } else if (bIsRim) {
+      }
+      if (bIsRim) {
         pulleyGroups.get(elB.id).push({ rope, bodyAnchor: rope.anchorA, pulleyAnchor: rope.anchorB });
         pulleyRopeIds.add(rope.id);
       }
@@ -180,7 +182,7 @@
       integrate(subDt);
       resolveFloorCollisions();
       resolveBodyCollisions();
-      resolveRopeConstraints();
+      resolveRopeConstraints(subDt);
     }
   }
 
@@ -189,8 +191,8 @@
     for (const el of STATE.elements) {
       if (!['rect', 'circle', 'pulley'].includes(el.type)) continue;
 
-      // 중력 (Pulley도 중력 받음 — 고정 실이 없으면 자유낙하)
-      if (STATE.gravityOn) {
+      // 중력 — 도르래는 무질량 중계점(자체 관성/무게 없음)이므로 제외
+      if (STATE.gravityOn && el.type !== 'pulley') {
         el.ay -= CONFIG.G;
       }
 
@@ -220,7 +222,8 @@
   function integrate(dt) {
     const GS = CONFIG.GRID_SIZE;
     for (const el of STATE.elements) {
-      if (!['rect', 'circle', 'pulley'].includes(el.type)) continue;
+      // 도르래는 무질량 중계점 — 위치는 제약 해소가 결정하므로 자유 적분 제외
+      if (!['rect', 'circle'].includes(el.type)) continue;
 
       el.vx += el.ax * dt;
       el.vy += el.ay * dt;
@@ -684,14 +687,53 @@
   }
 
   /* ================================================================
-     [ROPE & PULLEY CONSTRAINTS — 재설계]
+     [ROPE & PULLEY CONSTRAINTS — 재설계 v2: 무질량 중계점 통일]
      실: 최대 길이 제한만 (이완 시 힘 없음, 팽팽 시 장력)
-     도르래: 연결된 두 실의 길이 합 = 상수 (Atwood 제약)
+     도르래: 무질량 "중계점" — 자체 관성/무게 없음.
+             위치는 연결 제약이 결정, 속도는 위치 갱신에서 유도(v=Δx/dt).
+       · 고정 도르래(center 앵커가 고정점에 연결): 위치 불변, 물체만 제약 해소.
+       · 움직 도르래: 위치가 자유 — Atwood/실 제약이 도르래 중심을 이동.
+     림↔림 실은 양쪽 도르래 그룹에 등록 → 도르래-실 네트워크를
+     축차(Gauss-Seidel) 위치 투영으로 해소 (무질량 노드는 큰 유효
+     역질량으로 상대적 자유도를 부여, 자기 제약이 과운동을 되돌림).
   ================================================================ */
 
-  function resolveRopeConstraints() {
-    /* ── 1. 도르래별 연결 실 그룹화 ── */
-    // pulleyId → [ { rope, bodyAnchor } ]
+  // 무질량 도르래의 유효 역질량 — 유한 물체(1/m ~ 0.01..10)보다 훨씬 크게
+  // 잡아 제약 보정을 도르래가 우선 흡수(중계점)하게 한다.
+  const PULLEY_RELAY_INVMASS = 1e3;
+  const _EMPTY_SET = new Set();
+
+  /** center 앵커 실이 고정점(FloorSegment)에 연결된 도르래 = 고정 도르래 */
+  function _computeFixedPulleys() {
+    const fixed = new Set();
+    for (const rope of STATE.ropes) {
+      const mark = (pAnchor, oAnchor) => {
+        const p = STATE.elements.find(e => e.id === pAnchor.elementId);
+        if (!p || p.type !== 'pulley' || pAnchor.attachPoint !== 'center') return;
+        if (STATE.floorSegments.find(s => s.id === oAnchor.elementId)) fixed.add(p.id);
+      };
+      mark(rope.anchorA, rope.anchorB);
+      mark(rope.anchorB, rope.anchorA);
+    }
+    return fixed;
+  }
+
+  /** 노드의 위치-투영 역질량(가중치)
+   * FloorSegment / 고정 도르래 → 0 (불변)
+   * 움직 도르래            → PULLEY_RELAY_INVMASS (중계점)
+   * 유한 물체              → 1/m
+   */
+  function _nodeInvMass(elementId, fixedPulleys) {
+    if (STATE.floorSegments.find(s => s.id === elementId)) return 0;
+    const el = STATE.elements.find(e => e.id === elementId);
+    if (!el) return 0;
+    if (el.type === 'pulley') return fixedPulleys.has(el.id) ? 0 : PULLEY_RELAY_INVMASS;
+    const m = el.mass || 1;
+    return m > 0 ? 1 / m : 0;
+  }
+
+  function resolveRopeConstraints(subDt) {
+    /* ── 1. 도르래별 연결 실 그룹화 (림↔림 실은 양쪽 그룹에 등록) ── */
     const pulleyGroups = new Map();
     for (const el of STATE.elements) {
       if (el.type === 'pulley') pulleyGroups.set(el.id, []);
@@ -703,37 +745,62 @@
       const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
 
-      // center 앵커 = 도르래 고정용 → 단순 실로 처리 (Atwood 그룹에 넣지 않음)
-      const aIsPulleyRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
-      const bIsPulleyRim = elB && elB.type === 'pulley' && rope.anchorB.attachPoint !== 'center';
+      // center 앵커 = 도르래 고정/하중용 → 단순 실 (Atwood 그룹 아님)
+      const aIsRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
+      const bIsRim = elB && elB.type === 'pulley' && rope.anchorB.attachPoint !== 'center';
 
-      if (aIsPulleyRim) {
-        // pulleyAnchor: 도르래 쪽 앵커 (실제 연결 포인트 저장)
+      if (aIsRim) {
         pulleyGroups.get(elA.id).push({ rope, bodyAnchor: rope.anchorB, pulleyAnchor: rope.anchorA });
         pulleyRopeIds.add(rope.id);
-      } else if (bIsPulleyRim) {
+      }
+      if (bIsRim) {
         pulleyGroups.get(elB.id).push({ rope, bodyAnchor: rope.anchorA, pulleyAnchor: rope.anchorB });
         pulleyRopeIds.add(rope.id);
       }
-      // center 앵커 실: pulleyRopeIds에 추가 안 함 → simpleRopes로 자동 분류
     }
 
     const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id));
+    const fixedPulleys = _computeFixedPulleys();
 
-    /* ── 2. 반복 제약 해소 ── */
-    for (let iter = 0; iter < 8; iter++) {
-      // 단순 실
+    // 무질량 노드 속도 유도용: 서브스텝 제약 해소 전 도르래 위치 기록
+    const prePos = new Map();
+    for (const el of STATE.elements) {
+      if (el.type === 'pulley') prePos.set(el.id, { x: el.physX, y: el.physY });
+    }
+
+    /* ── 2. 반복 위치 제약 해소 (무질량 네트워크는 반복 수를 늘려 수렴 유도) ── */
+    const hasMovablePulley = [...pulleyGroups.keys()].some(id => !fixedPulleys.has(id));
+    const iters = hasMovablePulley ? 24 : 8;
+    for (let iter = 0; iter < iters; iter++) {
       for (const rope of simpleRopes) {
-        _simpleRopeConstraint(rope);
+        _simpleRopeConstraint(rope, fixedPulleys);
       }
-      // 도르래 Atwood 제약
       for (const [pulleyId, group] of pulleyGroups) {
-        if (group.length === 2) {
-          _atwoodConstraint(pulleyId, group[0], group[1]);
+        if (!fixedPulleys.has(pulleyId)) {
+          // 움직 도르래(무질량): Atwood 합제약은 접선 특이 모드(한쪽 신장/한쪽
+          // 이완, 합 보존)를 못 막아 도르래가 자유낙하한다. 각 림 실을 개별
+          // 신축 불가 제약으로 걸어 도르래 중심을 실이 직접 붙잡게 한다.
+          for (const g of group) _simpleRopeConstraint(g.rope, fixedPulleys);
+        } else if (group.length >= 2) {
+          // 고정 도르래: Atwood 합제약 (d0+d1=일정) — 검증된 단일 도르래 경로.
+          for (let k = 1; k < group.length; k++) {
+            _atwoodConstraint(pulleyId, group[k - 1], group[k], fixedPulleys);
+          }
         } else if (group.length === 1) {
-          // 도르래 한쪽만 연결 → 도르래를 고정점으로 하는 단순 실
-          _simpleRopeConstraint(group[0].rope);
+          // 한쪽만 연결 → 도르래를 고정점으로 하는 단순 실 (QC #12)
+          _simpleRopeConstraint(group[0].rope, fixedPulleys);
         }
+      }
+    }
+
+    /* ── 3. 무질량 노드 속도 = Δx / subDt (위치 갱신과 일관) ── */
+    if (subDt && subDt > 0) {
+      for (const el of STATE.elements) {
+        if (el.type !== 'pulley') continue;
+        const p0 = prePos.get(el.id);
+        if (!p0) continue;
+        el.vx = (el.physX - p0.x) / subDt;
+        el.vy = (el.physY - p0.y) / subDt;
       }
     }
   }
@@ -742,7 +809,8 @@
    * 거리 > ropeLength 일 때만 장력 작용 (이완 시 완전 무시)
    * vRel > 0: 두 앵커가 서로 멀어지고 있는 상황 → 속도 보정
    */
-  function _simpleRopeConstraint(rope) {
+  function _simpleRopeConstraint(rope, fixedPulleys) {
+    fixedPulleys = fixedPulleys || _EMPTY_SET;
     const A = getAttachPhysPos(rope.anchorA);
     const B = getAttachPhysPos(rope.anchorB);
     if (!A || !B) return;
@@ -756,55 +824,34 @@
     const excess = dist - maxLen;
     const nx = dx / dist, ny = dy / dist;
 
-    const m1 = getMass(rope.anchorA.elementId);
-    const m2 = getMass(rope.anchorB.elementId);
+    // 무질량 중계점 통일 규칙: 고정=0, 움직 도르래=중계(큰 역질량), 유한=1/m
+    const w1 = _nodeInvMass(rope.anchorA.elementId, fixedPulleys);
+    const w2 = _nodeInvMass(rope.anchorB.elementId, fixedPulleys);
+    const wSum = w1 + w2;
+    if (wSum < 1e-12) return;   // 양쪽 고정
 
-    // mass=0 (pulley) → inv=Infinity, 해당 끝이 100% 이동
-    const inv1 = (m1 === 0) ? Infinity : (isFinite(m1) ? 1/m1 : 0);
-    const inv2 = (m2 === 0) ? Infinity : (isFinite(m2) ? 1/m2 : 0);
+    // 위치 보정 (역질량 비례 분배)
+    _applyPhysDelta(rope.anchorA.elementId, +nx * excess * (w1 / wSum), +ny * excess * (w1 / wSum));
+    _applyPhysDelta(rope.anchorB.elementId, -nx * excess * (w2 / wSum), -ny * excess * (w2 / wSum));
 
-    // 양쪽 모두 Infinity인 경우는 없어야 하지만 방어
-    const bothInf = !isFinite(inv1) && !isFinite(inv2);
-    if (bothInf) return;
-
-    let w1, w2;
-    if (!isFinite(inv1)) { w1 = 1; w2 = 0; }
-    else if (!isFinite(inv2)) { w1 = 0; w2 = 1; }
-    else {
-      const invSum = inv1 + inv2;
-      if (invSum < 1e-12) return;
-      w1 = inv1 / invSum;
-      w2 = inv2 / invSum;
-    }
-
-    // 위치 보정
-    _applyPhysDelta(rope.anchorA.elementId, +nx * excess * w1, +ny * excess * w1);
-    _applyPhysDelta(rope.anchorB.elementId, -nx * excess * w2, -ny * excess * w2);
-
-    // ── 속도 보정 (뉴턴 3법칙: 동일 충격량 J를 양쪽에 등방향 적용) ──
+    // ── 속도 보정 (뉴턴 3법칙: 동일 충격량 J를 양쪽에 반대로 적용) ──
+    // 무질량 도르래 속도는 위치 갱신에서 유도하므로 여기선 유한 물체만 갱신.
     const elAObj = STATE.elements.find(e => e.id === rope.anchorA.elementId);
     const elBObj = STATE.elements.find(e => e.id === rope.anchorB.elementId);
+    const aFinite = elAObj && ['rect','circle'].includes(elAObj.type);
+    const bFinite = elBObj && ['rect','circle'].includes(elBObj.type);
+    const iv1 = aFinite ? (1 / (elAObj.mass || 1)) : 0;
+    const iv2 = bFinite ? (1 / (elBObj.mass || 1)) : 0;
     const vAx = elAObj ? (elAObj.vx||0) : 0, vAy = elAObj ? (elAObj.vy||0) : 0;
     const vBx = elBObj ? (elBObj.vx||0) : 0, vBy = elBObj ? (elBObj.vy||0) : 0;
     const vRel = (vBx - vAx)*nx + (vBy - vAy)*ny;
 
     if (vRel > 1e-9) {
-      // 충격량: J = vRel / (1/mA + 1/mB) — 뉴턴 3법칙으로 양쪽 동일 크기
-      const effInvSum = (isFinite(inv1) ? inv1 : 0) + (isFinite(inv2) ? inv2 : 0);
-      if (effInvSum < 1e-12) { /* 양쪽 고정: 보정 불필요 */ }
-      else {
+      const effInvSum = iv1 + iv2;
+      if (effInvSum >= 1e-12) {
         const J = vRel / effInvSum;   // 충격량 크기 (scalar)
-
-        // A: +n 방향으로 J/mA 만큼 속도 변화
-        if (elAObj && ['rect','circle','pulley'].includes(elAObj.type) && isFinite(inv1)) {
-          elAObj.vx += nx * J * inv1;
-          elAObj.vy += ny * J * inv1;
-        }
-        // B: -n 방향으로 J/mB 만큼 속도 변화 (작용-반작용)
-        if (elBObj && ['rect','circle','pulley'].includes(elBObj.type) && isFinite(inv2)) {
-          elBObj.vx -= nx * J * inv2;
-          elBObj.vy -= ny * J * inv2;
-        }
+        if (aFinite) { elAObj.vx += nx * J * iv1; elAObj.vy += ny * J * iv1; }
+        if (bFinite) { elBObj.vx -= nx * J * iv2; elBObj.vy -= ny * J * iv2; }
       }
     }
   }
@@ -824,15 +871,12 @@
    *       그대로 실의 기준점으로 사용.
    * 예: 왼쪽 앵커에 연결 → 기준점 = 도르래 왼쪽 림 → 물체가 정확히 아래면 n=(0,-1)
    */
-  function _atwoodConstraint(pulleyId, g0, g1) {
+  function _atwoodConstraint(pulleyId, g0, g1, fixedPulleys) {
+    fixedPulleys = fixedPulleys || _EMPTY_SET;
     const pulley = STATE.elements.find(e => e.id === pulleyId);
     if (!pulley) return;
 
-    const vpx = pulley.vx || 0, vpy = pulley.vy || 0;
-
     // ── 기준점: 사용자가 연결한 실제 앵커 포인트(림 위치) ──
-    // g0/g1.pulleyAnchor = { elementId: pulleyId, attachPoint: 'left'/'right'/... }
-    // getAttachPhysPos가 physX/Y 기준 실제 림 좌표를 반환
     const anchor0 = g0.pulleyAnchor || { elementId: pulleyId, attachPoint: 'center' };
     const anchor1 = g1.pulleyAnchor || { elementId: pulleyId, attachPoint: 'center' };
     const rim0 = getAttachPhysPos(anchor0);
@@ -851,7 +895,6 @@
     const n0x = (pos0.x - rim0.x) / d0, n0y = (pos0.y - rim0.y) / d0;
     const n1x = (pos1.x - rim1.x) / d1, n1y = (pos1.y - rim1.y) / d1;
 
-    // calibratedLength: 시뮬 시작 시 실제 물리 거리로 보정된 값 (없으면 ropeLength 폴백)
     const L0 = g0.rope.calibratedLength ?? g0.rope.ropeLength;
     const L1 = g1.rope.calibratedLength ?? g1.rope.ropeLength;
     const L_total = L0 + L1;
@@ -860,24 +903,32 @@
     const el0 = STATE.elements.find(e => e.id === g0.bodyAnchor.elementId);
     const el1 = STATE.elements.find(e => e.id === g1.bodyAnchor.elementId);
 
-    const m0  = getMass(g0.bodyAnchor.elementId);
-    const m1m = getMass(g1.bodyAnchor.elementId);
-    const inv0 = isFinite(m0)  && m0 > 0 ? 1 / m0  : 0;
-    const inv1 = isFinite(m1m) && m1m > 0 ? 1 / m1m : 0;
+    // ── 위치 보정 (팽팽 시) ──
+    // C = d0 + d1 - L_total.  ∇: body0=n0, body1=n1, 도르래 중심=-(n0+n1)
+    // (림 위치는 도르래 중심을 따라 이동하므로 중심에 대한 기울기에 두 항이 합쳐짐)
+    if (excess > 1e-6) {
+      const w0 = _nodeInvMass(g0.bodyAnchor.elementId, fixedPulleys);
+      const w1 = _nodeInvMass(g1.bodyAnchor.elementId, fixedPulleys);
+      const wp = fixedPulleys.has(pulleyId) ? 0 : PULLEY_RELAY_INVMASS;
+      const gpx = -(n0x + n1x), gpy = -(n0y + n1y);
+      const denom = w0 + w1 + wp * (gpx*gpx + gpy*gpy);
+      if (denom > 1e-12) {
+        const lambda = excess / denom;
+        _applyPhysDelta(g0.bodyAnchor.elementId, -lambda * w0 * n0x, -lambda * w0 * n0y);
+        _applyPhysDelta(g1.bodyAnchor.elementId, -lambda * w1 * n1x, -lambda * w1 * n1y);
+        if (wp > 0) _applyPhysDelta(pulleyId, -lambda * wp * gpx, -lambda * wp * gpy);
+      }
+    }
+
+    // ── 속도 보정: 팽팽 상태에서 ḋ0 + ḋ1 = 0 (유한 물체만; 도르래 속도는 위치 유도) ──
+    if (d0 + d1 < L_total - 1e-4) return;
+
+    const inv0 = (el0 && ['rect','circle'].includes(el0.type)) ? 1 / (el0.mass || 1) : 0;
+    const inv1 = (el1 && ['rect','circle'].includes(el1.type)) ? 1 / (el1.mass || 1) : 0;
     const invSum = inv0 + inv1;
     if (invSum < 1e-12) return;
 
-    // ── 위치 보정 ──
-    if (excess > 1e-6) {
-      const share0 = excess * inv0 / invSum;
-      const share1 = excess * inv1 / invSum;
-      _applyPhysDelta(g0.bodyAnchor.elementId, -n0x * share0, -n0y * share0);
-      _applyPhysDelta(g1.bodyAnchor.elementId, -n1x * share1, -n1y * share1);
-    }
-
-    // ── 속도 보정: 팽팽 상태에서 ḋ0 + ḋ1 = 0 ──
-    if (d0 + d1 < L_total - 1e-4) return;
-
+    const vpx = pulley.vx || 0, vpy = pulley.vy || 0;
     const v0x = el0 ? (el0.vx||0) : 0, v0y = el0 ? (el0.vy||0) : 0;
     const v1x = el1 ? (el1.vx||0) : 0, v1y = el1 ? (el1.vy||0) : 0;
 
@@ -889,14 +940,8 @@
 
     const lambda = violation / invSum;
 
-    if (el0 && ['rect','circle'].includes(el0.type)) {
-      el0.vx -= lambda * inv0 * n0x;
-      el0.vy -= lambda * inv0 * n0y;
-    }
-    if (el1 && ['rect','circle'].includes(el1.type)) {
-      el1.vx -= lambda * inv1 * n1x;
-      el1.vy -= lambda * inv1 * n1y;
-    }
+    if (inv0 > 0) { el0.vx -= lambda * inv0 * n0x; el0.vy -= lambda * inv0 * n0y; }
+    if (inv1 > 0) { el1.vx -= lambda * inv1 * n1x; el1.vy -= lambda * inv1 * n1y; }
   }
 
   /* ── 7-2. 용수철 힘 applySpringForces() ── */
