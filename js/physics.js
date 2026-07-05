@@ -488,6 +488,18 @@
     //           중복 보정을 일으켜 물체가 튕겨나가는 버그 방지) ──
     let maxPen = 0, bestNx = 0, bestNy = 0, bestSeg = null;
 
+    // 공유 조인트(ELBOW/ARC 내부 연결점) 키맵 — ≥2개 미세 선분이 만나는 끝점.
+    // 자유 끝단(1회 등장)은 바닥 끝 → 물체가 지나쳐 낙하해야 하므로 제외.
+    const _jkey = (x, y) => (Math.round(x*1000)/1000) + ',' + (Math.round(y*1000)/1000);
+    const jointCount = new Map();
+    for (const seg of segs) {
+      for (const p of [[seg.x1, seg.y1], [seg.x2, seg.y2]]) {
+        const k = _jkey(p[0], p[1]);
+        jointCount.set(k, (jointCount.get(k) || 0) + 1);
+      }
+    }
+
+    const maxAllowedPen = el.gridW + el.gridH;
     for (const seg of segs) {
       const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
       const lenSq = sdx*sdx + sdy*sdy;
@@ -496,15 +508,21 @@
       const snx = seg.normalX, sny = seg.normalY;
 
       for (const c of corners) {
-        const t = ((c.x - seg.x1)*sdx + (c.y - seg.y1)*sdy) / lenSq;
-        if (t < 0 || t > 1) continue;
+        let t = ((c.x - seg.x1)*sdx + (c.y - seg.y1)*sdy) / lenSq;
+        if (t < 0 || t > 1) {
+          // 세그먼트 끝단: 공유 조인트일 때만 최근접점(끝점)으로 클램프.
+          // 자유 끝단이면 스킵 → 바닥 끝을 지나 낙하 허용(팬텀 지지 방지).
+          const tc = t < 0 ? 0 : 1;
+          const jx = seg.x1 + tc*sdx, jy = seg.y1 + tc*sdy;
+          if ((jointCount.get(_jkey(jx, jy)) || 0) < 2) continue;
+          t = tc;
+        }
 
         const footX = seg.x1 + t*sdx;
         const footY = seg.y1 + t*sdy;
         const fx = c.x - footX, fy = c.y - footY;
-        const signed = fx*snx + fy*sny;
+        const signed = fx*snx + fy*sny;   // 표면 법선 방향 부호 거리 → 배출도 법선 방향
 
-        const maxAllowedPen = el.gridW + el.gridH;
         if (signed < 0 && Math.abs(signed) > maxPen && Math.abs(signed) < maxAllowedPen) {
           maxPen = Math.abs(signed);
           bestNx = snx;
