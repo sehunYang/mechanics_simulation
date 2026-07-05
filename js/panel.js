@@ -18,29 +18,29 @@
     return wrap;
   }
 
+  /* 탭하면 숫자 키패드 모달이 열리는 읽기전용 입력 (모바일 네이티브 키보드 대체) */
   function _numInput(val, min, max, step, onChange) {
     const inp = document.createElement('input');
-    inp.type      = 'number';
+    inp.type      = 'text';
+    inp.inputMode = 'none';
+    inp.readOnly  = true;
     inp.className = 'panel-input';
     inp.value     = val;
-    if (min  !== undefined) inp.min  = min;
-    if (max  !== undefined) inp.max  = max;
-    if (step !== undefined) inp.step = step;
     const clampVal = (v) => {
       if (min !== undefined && v < min) v = min;
       if (max !== undefined && v > max) v = max;
       return v;
     };
-    inp.addEventListener('input', () => {
-      const v = parseFloat(inp.value);
-      if (!isNaN(v)) onChange(clampVal(v));
-    });
-    // 포커스 아웃 시 필드 표시값도 유효 범위로 정리 (min 속성은 직접 타이핑을 막지 못함)
-    inp.addEventListener('change', () => {
-      const v = parseFloat(inp.value);
-      const c = clampVal(isNaN(v) ? val : v);
-      if (String(c) !== inp.value) inp.value = c;
-      onChange(c);
+    inp.addEventListener('click', () => {
+      openNumericKeypad({
+        initialValue: parseFloat(inp.value),
+        min, max, step,
+        onConfirm: (v) => {
+          const c = clampVal(isNaN(v) ? val : v);
+          inp.value = c;
+          onChange(c);
+        }
+      });
     });
     return inp;
   }
