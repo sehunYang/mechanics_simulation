@@ -750,6 +750,213 @@
     return m > 0 ? 1 / m : 0;
   }
 
+  /* ================================================================
+     [MOVABLE-PULLEY NETWORK SOLVER — 국소 KKT 선형해]
+     무질량 움직도르래 네트워크는 도르래별 Atwood 합제약(d0+d1=일정)으로는
+     풀 수 없다: 여러 도르래를 지나는 하나의 실을 도르래마다 쪼개 합산하면
+     공유 세그먼트가 이중 계상되고, 무질량 노드의 접선 자유모드가 남아
+     자유낙하한다. 올바른 모델:
+       · "실 런(run)": 도르래 림을 통해 연결된 실 세그먼트 체인 = 총길이
+         일정 단일 제약(Σd_seg = L). 마찰無 도르래 → 장력 균일.
+       · 무질량 도르래: 위치는 힘평형(순 제약 임펄스=0)이 결정 → KKT 계에서
+         질량 0 행으로 처리(Bᵀλ=0). 유한 물체는 1/m 임펄스.
+     각 연결 성분에 대해 (nc + 2·np)×(nc + 2·np) 선형계를 위치/속도 각각
+     1회 풀어 정확한 역학(예: 움직도르래 2:1 속도비)을 재현한다.
+  ================================================================ */
+
+  /** 작은 밀집 선형계 M x = b 를 부분 피벗 가우스 소거로 해. 특이면 null. */
+  function _solveLinear(M, b) {
+    const n = b.length;
+    const A = M.map((row, i) => row.slice().concat(b[i]));
+    for (let col = 0; col < n; col++) {
+      let piv = col;
+      for (let r = col + 1; r < n; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+      if (Math.abs(A[piv][col]) < 1e-12) return null;
+      if (piv !== col) { const t = A[piv]; A[piv] = A[col]; A[col] = t; }
+      const d = A[col][col];
+      for (let r = 0; r < n; r++) {
+        if (r === col) continue;
+        const f = A[r][col] / d;
+        if (f === 0) continue;
+        for (let c = col; c <= n; c++) A[r][c] -= f * A[col][c];
+      }
+    }
+    const x = new Array(n);
+    for (let i = 0; i < n; i++) x[i] = A[i][n] / A[i][i];
+    return x;
+  }
+
+  /** 노드의 자유도 종류: 'body'(유한) / 'pulley'(움직 무질량) / null(고정) */
+  function _dofKind(elementId, fixedPulleys) {
+    if (STATE.floorSegments.find(s => s.id === elementId)) return null;
+    const el = STATE.elements.find(e => e.id === elementId);
+    if (!el) return null;
+    if (el.type === 'pulley') return fixedPulleys.has(el.id) ? null : 'pulley';
+    if (el.type === 'rect' || el.type === 'circle') return 'body';
+    return null;
+  }
+
+  /** union-find로 실 런(도르래 림을 통해 연결된 세그먼트 체인) 구성 */
+  function _buildRuns(pulleyGroups, fixedPulleys) {
+    const parent = new Map();
+    const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+    const union = (a, b) => { parent.set(find(a), find(b)); };
+    for (const [, group] of pulleyGroups) for (const g of group) if (!parent.has(g.rope.id)) parent.set(g.rope.id, g.rope.id);
+    for (const [, group] of pulleyGroups) for (let i = 1; i < group.length; i++) union(group[0].rope.id, group[i].rope.id);
+
+    const runMap = new Map();
+    for (const [pid, group] of pulleyGroups) {
+      for (const g of group) {
+        const r = find(g.rope.id);
+        if (!runMap.has(r)) runMap.set(r, { ropes: new Map(), pulleys: new Set() });
+        const run = runMap.get(r);
+        run.ropes.set(g.rope.id, g.rope);
+        run.pulleys.add(pid);
+      }
+    }
+    const runs = [];
+    for (const [, run] of runMap) {
+      const ropes = [...run.ropes.values()];
+      const totalLen = ropes.reduce((s, rp) => s + (rp.calibratedLength ?? rp.ropeLength), 0);
+      const hasMovable = [...run.pulleys].some(p => !fixedPulleys.has(p));
+      runs.push({ ropes, pulleys: [...run.pulleys], totalLen, hasMovable });
+    }
+    return runs;
+  }
+
+  /** 제약 c의 야코비안 J(node→[gx,gy])와 위반량 C, 팽팽 여부 계산 */
+  function _computeConstraintJC(c, fixedPulleys) {
+    const J = new Map();
+    let sumd = 0;
+    for (const rope of c.ropes) {
+      const A = getAttachPhysPos(rope.anchorA), B = getAttachPhysPos(rope.anchorB);
+      if (!A || !B) return null;
+      const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
+      if (d < 1e-9) return null;
+      sumd += d;
+      const nx = dx / d, ny = dy / d;
+      const add = (anchor, sx, sy) => {
+        if (!_dofKind(anchor.elementId, fixedPulleys)) return;
+        const cur = J.get(anchor.elementId) || [0, 0];
+        cur[0] += sx; cur[1] += sy; J.set(anchor.elementId, cur);
+      };
+      add(rope.anchorA, -nx, -ny);
+      add(rope.anchorB, +nx, +ny);
+    }
+    return { J, C: sumd - c.L, taut: sumd >= c.L - 1e-6 };
+  }
+
+  /** 움직도르래 성분의 위치('pos')/속도('vel') KKT 선형해를 1회 풀어 적용 */
+  function _solveDynamicComponent(comp, level, fixedPulleys) {
+    const active = [];
+    for (const c of comp.constraints) {
+      const jc = _computeConstraintJC(c, fixedPulleys);
+      if (jc && jc.taut) active.push({ J: jc.J, C: jc.C });
+    }
+    const nc = active.length;
+    if (nc === 0) return;
+    const np = comp.pulleys.length;
+    const N = nc + 2 * np;
+
+    const pIdx = new Map();
+    comp.pulleys.forEach((id, i) => pIdx.set(id, i));
+    const bodyW = (id) => { const el = STATE.elements.find(e => e.id === id); return 1 / (el.mass || 1); };
+
+    const Mtx = Array.from({ length: N }, () => new Array(N).fill(0));
+    const rhs = new Array(N).fill(0);
+
+    for (let k = 0; k < nc; k++) {
+      for (let m = 0; m < nc; m++) {
+        let a = 0;
+        for (const bid of comp.bodies) {
+          const Jk = active[k].J.get(bid), Jm = active[m].J.get(bid);
+          if (Jk && Jm) a += bodyW(bid) * (Jk[0] * Jm[0] + Jk[1] * Jm[1]);
+        }
+        Mtx[k][m] = a;
+      }
+      for (const pid of comp.pulleys) {
+        const Jk = active[k].J.get(pid);
+        const p = pIdx.get(pid);
+        const bx = Jk ? Jk[0] : 0, by = Jk ? Jk[1] : 0;
+        Mtx[k][nc + 2 * p] = bx;      Mtx[k][nc + 2 * p + 1] = by;
+        Mtx[nc + 2 * p][k] = bx;      Mtx[nc + 2 * p + 1][k] = by;
+      }
+      if (level === 'pos') {
+        rhs[k] = -active[k].C;
+      } else {
+        let jv = 0;   // -J·v_free (유한 물체 속도만; 도르래 속도는 미지수)
+        for (const bid of comp.bodies) {
+          const Jk = active[k].J.get(bid);
+          if (Jk) { const el = STATE.elements.find(e => e.id === bid); jv += Jk[0] * (el.vx || 0) + Jk[1] * (el.vy || 0); }
+        }
+        rhs[k] = -jv;
+      }
+    }
+
+    // Tikhonov 정칙화: 완전 수직 배치 등에서 도르래 횡방향 DOF가 제약되지
+    // 않아(영 열) 계가 특이해진다. 도르래 대각에 미소값을 더해 미제약
+    // 자유모드를 0으로 고정(도르래가 옆으로 표류하지 않게). 제약된 DOF는
+    // 거의 영향 없음.
+    const EPS = 1e-6;
+    for (let p = 0; p < np; p++) {
+      Mtx[nc + 2 * p][nc + 2 * p]         += EPS;
+      Mtx[nc + 2 * p + 1][nc + 2 * p + 1] += EPS;
+    }
+
+    const sol = _solveLinear(Mtx, rhs);
+    if (!sol) return;
+
+    for (const bid of comp.bodies) {
+      let dx = 0, dy = 0;
+      for (let k = 0; k < nc; k++) { const Jk = active[k].J.get(bid); if (Jk) { dx += sol[k] * Jk[0]; dy += sol[k] * Jk[1]; } }
+      const w = bodyW(bid);
+      if (level === 'pos') { _applyPhysDelta(bid, w * dx, w * dy); }
+      else { const el = STATE.elements.find(e => e.id === bid); el.vx += w * dx; el.vy += w * dy; }
+    }
+    for (const pid of comp.pulleys) {
+      const p = pIdx.get(pid);
+      if (level === 'pos') { _applyPhysDelta(pid, sol[nc + 2 * p], sol[nc + 2 * p + 1]); }
+      else { const el = STATE.elements.find(e => e.id === pid); el.vx = sol[nc + 2 * p]; el.vy = sol[nc + 2 * p + 1]; }
+    }
+  }
+
+  /** 움직도르래 네트워크 성분(동적 런 + 움직도르래 하중 실) 구성 */
+  function _buildDynamicComponent(runs, pulleyRopeIds, fixedPulleys) {
+    const constraints = [];
+    const bodies = new Set(), pulleys = new Set();
+    const dynamicRopeIds = new Set();
+
+    for (const run of runs) {
+      if (!run.hasMovable) continue;
+      constraints.push({ ropes: run.ropes, L: run.totalLen });
+      for (const rope of run.ropes) {
+        dynamicRopeIds.add(rope.id);
+        for (const a of [rope.anchorA, rope.anchorB]) {
+          const k = _dofKind(a.elementId, fixedPulleys);
+          if (k === 'body') bodies.add(a.elementId);
+          else if (k === 'pulley') pulleys.add(a.elementId);
+        }
+      }
+    }
+    // 움직도르래 center 하중 실 (단순 실이지만 성분에 포함해야 무질량 힘평형이 성립)
+    for (const rope of STATE.ropes) {
+      if (pulleyRopeIds.has(rope.id)) continue;
+      for (const [a, o] of [[rope.anchorA, rope.anchorB], [rope.anchorB, rope.anchorA]]) {
+        const el = STATE.elements.find(e => e.id === a.elementId);
+        if (el && el.type === 'pulley' && !fixedPulleys.has(el.id) && a.attachPoint === 'center') {
+          constraints.push({ ropes: [rope], L: (rope.calibratedLength ?? rope.ropeLength) });
+          dynamicRopeIds.add(rope.id);
+          pulleys.add(el.id);
+          const k2 = _dofKind(o.elementId, fixedPulleys);
+          if (k2 === 'body') bodies.add(o.elementId);
+          else if (k2 === 'pulley') pulleys.add(o.elementId);
+        }
+      }
+    }
+    if (constraints.length === 0) return { component: null, dynamicRopeIds };
+    return { component: { constraints, bodies: [...bodies], pulleys: [...pulleys] }, dynamicRopeIds };
+  }
+
   function resolveRopeConstraints(subDt) {
     /* ── 1. 도르래별 연결 실 그룹화 (림↔림 실은 양쪽 그룹에 등록) ── */
     const pulleyGroups = new Map();
@@ -777,8 +984,13 @@
       }
     }
 
-    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id));
     const fixedPulleys = _computeFixedPulleys();
+
+    // 실 런 구성 → 움직도르래 포함 성분은 KKT 선형해로, 나머지는 기존 경로로.
+    const runs = _buildRuns(pulleyGroups, fixedPulleys);
+    const { component, dynamicRopeIds } = _buildDynamicComponent(runs, pulleyRopeIds, fixedPulleys);
+
+    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id) && !dynamicRopeIds.has(r.id));
 
     // 무질량 노드 속도 유도용: 서브스텝 제약 해소 전 도르래 위치 기록
     const prePos = new Map();
@@ -786,20 +998,17 @@
       if (el.type === 'pulley') prePos.set(el.id, { x: el.physX, y: el.physY });
     }
 
-    /* ── 2. 반복 위치 제약 해소 (무질량 네트워크는 반복 수를 늘려 수렴 유도) ── */
-    const hasMovablePulley = [...pulleyGroups.keys()].some(id => !fixedPulleys.has(id));
-    const iters = hasMovablePulley ? 24 : 8;
+    /* ── 2. 반복 위치 제약 해소 ── */
+    const iters = component ? 24 : 8;
     for (let iter = 0; iter < iters; iter++) {
       for (const rope of simpleRopes) {
         _simpleRopeConstraint(rope, fixedPulleys);
       }
       for (const [pulleyId, group] of pulleyGroups) {
-        if (!fixedPulleys.has(pulleyId)) {
-          // 움직 도르래(무질량): Atwood 합제약은 접선 특이 모드(한쪽 신장/한쪽
-          // 이완, 합 보존)를 못 막아 도르래가 자유낙하한다. 각 림 실을 개별
-          // 신축 불가 제약으로 걸어 도르래 중심을 실이 직접 붙잡게 한다.
-          for (const g of group) _simpleRopeConstraint(g.rope, fixedPulleys);
-        } else if (group.length >= 2) {
+        // 움직도르래 및 동적 런에 속한 고정도르래는 KKT 성분이 처리 → 스킵
+        if (!fixedPulleys.has(pulleyId)) continue;
+        if (group.some(g => dynamicRopeIds.has(g.rope.id))) continue;
+        if (group.length >= 2) {
           // 고정 도르래: Atwood 합제약 (d0+d1=일정) — 검증된 단일 도르래 경로.
           for (let k = 1; k < group.length; k++) {
             _atwoodConstraint(pulleyId, group[k - 1], group[k], fixedPulleys);
@@ -809,12 +1018,18 @@
           _simpleRopeConstraint(group[0].rope, fixedPulleys);
         }
       }
+      // 움직도르래 네트워크: 위치 KKT (총길이 런 + 하중 실, 무질량 힘평형)
+      if (component) _solveDynamicComponent(component, 'pos', fixedPulleys);
     }
 
-    /* ── 3. 무질량 노드 속도 = Δx / subDt (위치 갱신과 일관) ── */
+    /* ── 3. 움직도르래 네트워크 속도 KKT (정확한 역학: 2:1 속도비 등) ── */
+    if (component) _solveDynamicComponent(component, 'vel', fixedPulleys);
+
+    /* ── 4. 성분 밖 무질량 도르래 속도 = Δx / subDt (위치 갱신과 일관) ── */
     if (subDt && subDt > 0) {
+      const compPulleySet = new Set(component ? component.pulleys : []);
       for (const el of STATE.elements) {
-        if (el.type !== 'pulley') continue;
+        if (el.type !== 'pulley' || compPulleySet.has(el.id)) continue;
         const p0 = prePos.get(el.id);
         if (!p0) continue;
         el.vx = (el.physX - p0.x) / subDt;
