@@ -1211,27 +1211,17 @@
       s.rightElementId = nb.rightId;
     });
 
-    // 2. 도르래 실 연결 검사
-    STATE.elements.filter(e => e.type === 'pulley').forEach(p => {
-      const cnt = STATE.ropes.filter(
-        r => r.anchorA.elementId === p.id || r.anchorB.elementId === p.id
-      ).length;
-      if (cnt === 1) {
-        warnings.push('도르래의 반대편도 실이 연결되어야 합니다.');
-      }
-    });
+    // 2. 도르래 한쪽만 연결 = 도르래를 고정점으로 하는 단순 실 (경고 없이 허용, QC #12)
 
     const unique = [...new Set(warnings)];
     if (unique.length > 0) {
       warningBar.textContent = unique.join('  |  ');
       warningBar.style.display = 'block';
-      btnRun.disabled = true;
-      btnRun.style.opacity = '0.4';
     } else {
       warningBar.style.display = 'none';
-      btnRun.disabled = false;
-      btnRun.style.opacity = '1';
     }
+    btnRun.disabled = false;
+    btnRun.style.opacity = '1';
 
     // 패널도 갱신 (Spring 연결 상태 변화 반영)
     if (STATE.selected && STATE.selected.type === 'spring') renderPanel();
