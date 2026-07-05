@@ -458,12 +458,12 @@
         _lastTapEl   = elHit;
         _selectObject(elHit);
 
-        // 롱프레스 타이머 시작 (600ms)
+        // 롱프레스 타이머 시작
         _longPressEl = elHit;
         _longPressTimer = setTimeout(() => {
           _deleteZoneVis = true;
           _longPressEl   = elHit;
-        }, 600);
+        }, CONFIG.LONG_PRESS_MS);
         // dragOffset: 클릭 위치 - 요소 좌상단 월드 좌표
         if (!elHit.getBBox) return;   // getBBox 없는 요소(FloorSeg 등)는 드래그 불가
         const box = elHit.getBBox();

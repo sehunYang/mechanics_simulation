@@ -10,11 +10,13 @@
     G:          9.8,
     SUBSTEPS:   4,
     MAX_DT:     0.033,
+    FIXED_DT:   1 / 60,   // 물리 스텝 고정 간격 (배속 결정성 보장용, MAX_DT와 별개)
     GRID_SIZE:  100,
     cellSize:   null,   // initCanvas()에서 설정
     DEFAULT_E:  1.0,
     DEFAULT_MU: 0.3,
     DEFAULT_K:  10.0,
+    LONG_PRESS_MS: 300,
   };
 
   /* ================================================================
@@ -46,6 +48,7 @@
     activePointers:    new Map(),
     prevPinchDist:     null,
     _ropePreviewWorld: null,   // ROPE_DRAW 커서 위치 (월드 픽셀)
+    speedMultiplier:   1,      // 배속 (1/2/5/10/100), RUNNING 중에만 의미 있음
   };
 
   /* ================================================================
@@ -63,3 +66,12 @@
   const btnGravity   = document.getElementById('btn-gravity');
   const warningBar   = document.getElementById('warning-bar');
   const panelRight   = document.getElementById('panel-right');
+
+  /* 배속 버튼: HTML에 없으므로 동적 생성, canvas-wrapper 우측 하단에 배치
+     (controls-bottom 중앙 pill과는 별개 — RUNNING 중에만 render.js가 표시) */
+  const btnSpeed = document.createElement('button');
+  btnSpeed.id = 'btn-speed';
+  btnSpeed.className = 'ctrl-btn';
+  btnSpeed.textContent = '1x';
+  btnSpeed.style.cssText = 'position:absolute;bottom:40px;right:8px;z-index:20;display:none;';
+  canvasWrapper.appendChild(btnSpeed);
