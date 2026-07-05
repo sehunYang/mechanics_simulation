@@ -1002,7 +1002,7 @@
           _simpleRopeConstraint(group[0].rope, fixedPulleys);
         }
       }
-      // 움직도르래 네트워크: 위치 KKT (총길이 런 + 하중 실, 무질량 힘평형)
+      // 움직도르래 네트워크: 위치 제약 선형해 (총길이 런 + 하중 실)
       if (component) _solveDynamicComponent(component, 'pos', fixedPulleys);
     }
 
