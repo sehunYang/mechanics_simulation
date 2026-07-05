@@ -150,7 +150,30 @@
     .palette-item:active {
       transform: scale(0.88);
     }
-    .palette-item[title]:hover::after {
+    .sidebar-danger-btn {
+      width: 48px;
+      height: 48px;
+      flex-shrink: 0;
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      border: 1px solid var(--danger-border);
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      font-size: 18px;
+      transition: background 0.12s, border-color 0.12s, transform 0.08s;
+      user-select: none;
+      touch-action: manipulation;
+      position: relative;
+    }
+    .sidebar-danger-btn:hover { background: #4f1c1c; }
+    .sidebar-danger-btn:active { transform: scale(0.88); }
+
+    .palette-item[title]:hover::after,
+    .sidebar-danger-btn[title]:hover::after {
       content: attr(title);
       position: absolute;
       left: calc(100% + 8px);

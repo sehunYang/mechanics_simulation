@@ -412,3 +412,29 @@
     renderPanel();
     validateAll();
   }
+
+  /* ================================================================
+     [전체 삭제] — 사이드바 하단 버튼: 배치된 모든 객체 제거
+     (하단 pill의 "↺ 초기화"=스냅샷 복원과는 무관한 별개 동작)
+  ================================================================ */
+  const btnClearAll = document.getElementById('btn-clear-all');
+  if (btnClearAll) {
+    btnClearAll.addEventListener('click', () => {
+      if (STATE.simMode === 'RUNNING') return;
+      openConfirmDialog({
+        message: '정말 초기화하시겠습니까?\n모든 물체·바닥면·실이 삭제됩니다.',
+        confirmLabel: '삭제',
+        cancelLabel: '취소',
+        danger: true,
+        onConfirm: () => {
+          STATE.elements = [];
+          STATE.floorSegments = [];
+          STATE.ropes = [];
+          STATE.selected = null;
+          renderPanel();
+          drawGrid();
+          validateAll();
+        }
+      });
+    });
+  }
