@@ -317,6 +317,37 @@
     .ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .ctrl-btn.active { background: #1a3a6a; border-color: var(--border-active); color: var(--text-accent); box-shadow: 0 0 10px rgba(60,130,220,0.3); }
 
+    /* 실행취소 / 다시실행 — 좌측 하단 소형 기호 버튼 (zoom-indicator 대칭) */
+    #undo-redo {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      z-index: 20;
+      display: flex;
+      gap: 4px;
+    }
+    .ur-btn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-dim);
+      font-size: 17px;
+      line-height: 1;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      transition: all 0.18s;
+      touch-action: manipulation;
+      font-family: var(--font);
+    }
+    .ur-btn:hover:not(:disabled) { color: var(--text-accent2); background: rgba(255,255,255,0.08); }
+    .ur-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .ur-btn:active:not(:disabled) { transform: scale(0.92); }
+
     /* 줌 레벨 표시 (Circuit 오버레이 톤) */
     #zoom-indicator {
       position: absolute;
@@ -463,6 +494,12 @@
     }
     .modal-keypad-key:hover { background: var(--btn-h); border-color: var(--border-active); }
     .modal-keypad-key:active { transform: scale(0.94); }
+    /* 부호 전환(+/−) 키: 음수 입력이 가능함을 눈에 띄게 강조 */
+    .modal-keypad-key-sign {
+      color: var(--text-accent);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
 
     .modal-message {
       font-size: 12px;

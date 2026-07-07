@@ -465,7 +465,7 @@
       const R = this.rightElementId
         ? (STATE.elements.find(e => e.id === this.rightElementId) || STATE.floorSegments.find(s => s.id === this.rightElementId))
         : null;
-      if (!L || !R) return null;
+      if (!L && !R) return null;   // 양쪽 미연결 → 편집 bbox 폴백
 
       const face = (el, side) => {
         if (el.type === 'floorSegment') return null;
@@ -484,15 +484,29 @@
         t = Math.max(0, Math.min(1, t));
         return { x: ax + t*dx, y: ay + t*dy };
       };
+      // 미연결단(자유 핀) 월드 좌표 — 용수철 배치 위치 기준 (#3)
+      const cxW = (this.gridX + this.gridW / 2) * cs;
+      const cyW = (this.gridY + this.gridH / 2) * cs;
+      const freeEnd = (slot) => {
+        if (!this.isVertical) {
+          return slot === 'left'
+            ? { x: this.gridX * cs,                  y: cyW }
+            : { x: (this.gridX + this.gridW) * cs,   y: cyW };
+        }
+        return slot === 'left'
+          ? { x: cxW, y: this.gridY * cs }
+          : { x: cxW, y: (this.gridY + this.gridH) * cs };
+      };
 
       const leftSide  = this.isVertical ? 'bottom' : 'right';
       const rightSide = this.isVertical ? 'top'    : 'left';
-      let A = face(L, leftSide), B = face(R, rightSide);
-      if (!A && !B) {
+      let A = !L ? freeEnd('left')  : face(L, leftSide);
+      let B = !R ? freeEnd('right') : face(R, rightSide);
+      if (A === null && B === null) {
         A = { x: ((L.x1 + L.x2) / 2) * cs, y: ((L.y1 + L.y2) / 2) * cs };
         B = { x: ((R.x1 + R.x2) / 2) * cs, y: ((R.y1 + R.y2) / 2) * cs };
-      } else if (!A) { A = segClosest(L, B.x, B.y); }
-      else if (!B)   { B = segClosest(R, A.x, A.y); }
+      } else if (A === null) { A = segClosest(L, B.x, B.y); }
+      else if (B === null)   { B = segClosest(R, A.x, A.y); }
       return { ax: A.x, ay: A.y, bx: B.x, by: B.y };
     }
 

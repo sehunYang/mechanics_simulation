@@ -126,6 +126,14 @@
    * Atwood: 두 실의 거리 합을 L_total로 저장.
    * 단순 실: 현재 물리 거리를 저장.
    */
+  /** 실이 외력(ExtForce)에 연결돼 있는지 — 외력 실은 길이 제약이 아니라
+   *  힘의 원천/시각 요소이므로 로프/도르래 제약 그래프에서 제외한다 (#2). */
+  function _ropeHasExtForce(rope) {
+    const a = STATE.elements.find(e => e.id === rope.anchorA.elementId);
+    const b = STATE.elements.find(e => e.id === rope.anchorB.elementId);
+    return (a && a.type === 'extforce') || (b && b.type === 'extforce');
+  }
+
   function calibrateRopeLengths() {
     const cs = CONFIG.cellSize;
     const GS = CONFIG.GRID_SIZE;
@@ -137,6 +145,7 @@
     }
     const pulleyRopeIds = new Set();
     for (const rope of STATE.ropes) {
+      if (_ropeHasExtForce(rope)) continue;   // 외력 실은 제약 제외 (#2)
       const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
       const aIsRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
@@ -167,33 +176,61 @@
     // 단순 실: 현재 물리 거리를 calibratedLength로 저장
     for (const rope of STATE.ropes) {
       if (pulleyRopeIds.has(rope.id)) continue;
+      if (_ropeHasExtForce(rope)) continue;   // 외력 실 제외 (#2)
       const A = getAttachPhysPos(rope.anchorA);
       const B = getAttachPhysPos(rope.anchorB);
       if (!A || !B) continue;
       rope.calibratedLength = Math.hypot(B.x - A.x, B.y - A.y);
     }
 
-    // 외력(ExtForce): 시작 시점의 실 방향을 고정 방향으로 동결 + 앵커 추종 오프셋 저장.
-    // 이후 실행 내내 이 방향으로 지속적 힘을 가하며, 앵커는 물체를 따라 이동한다.
+    // 외력(ExtForce): 시작 시점의 실 방향을 고정 방향으로 동결.
+    //   · 물체 직접 부착: 물체→앵커 방향으로 힘 N, 앵커는 물체를 따라 이동.
+    //   · 도르래 경유(#2): 도르래의 다른 실이 연결된 물체를, 그 실이 도르래에
+    //     닿는 지점(rim/center) 방향으로 당김 (이상적 마찰無 도르래 = 장력 전달).
     for (const ef of STATE.elements) {
       if (ef.type !== 'extforce') continue;
-      ef._fdx = ef._fdy = ef._offX = ef._offY = null;   // 매 시작마다 재동결
+      ef._targets = [];   // [{ bodyId, fdx, fdy }]
+      ef._offX = ef._offY = ef._followAnchor = null;   // 직접 부착 추종용
       if (!(ef.forceN > 0)) continue;
       const rope = STATE.ropes.find(r =>
         r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
       if (!rope) continue;
-      const efAnchor   = rope.anchorA.elementId === ef.id ? rope.anchorA : rope.anchorB;
-      const bodyAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
-      const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
-      if (!body || !['rect', 'circle'].includes(body.type)) continue;
-      const efPos   = getAttachPhysPos(efAnchor);
-      const bodyPos = getAttachPhysPos(bodyAnchor);
-      if (!efPos || !bodyPos) continue;
-      const offX = efPos.x - bodyPos.x, offY = efPos.y - bodyPos.y;
-      const dist = Math.hypot(offX, offY);
-      if (dist < 1e-9) continue;
-      ef._fdx = offX / dist;  ef._fdy = offY / dist;   // 고정 방향(물체→앵커)
-      ef._offX = offX;        ef._offY = offY;          // 추종용 오프셋
+      const efAnchor    = rope.anchorA.elementId === ef.id ? rope.anchorA : rope.anchorB;
+      const otherAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
+      const otherEl = STATE.elements.find(e => e.id === otherAnchor.elementId);
+      if (!otherEl) continue;
+      const efPos = getAttachPhysPos(efAnchor);
+      if (!efPos) continue;
+
+      if (otherEl.type === 'rect' || otherEl.type === 'circle') {
+        // ── 직접 부착 ──
+        const bodyPos = getAttachPhysPos(otherAnchor);
+        if (!bodyPos) continue;
+        const offX = efPos.x - bodyPos.x, offY = efPos.y - bodyPos.y;
+        const dist = Math.hypot(offX, offY);
+        if (dist < 1e-9) continue;
+        ef._targets.push({ bodyId: otherEl.id, fdx: offX / dist, fdy: offY / dist });
+        ef._offX = offX; ef._offY = offY;      // 앵커 추종 오프셋
+        ef._followAnchor = otherAnchor;
+      } else if (otherEl.type === 'pulley') {
+        // ── 도르래 경유 (#2) ── 도르래에 연결된 다른 실의 물체들을 당김
+        for (const r2 of STATE.ropes) {
+          if (r2 === rope || _ropeHasExtForce(r2)) continue;
+          let pAnchor = null, bAnchor = null;
+          if (r2.anchorA.elementId === otherEl.id)      { pAnchor = r2.anchorA; bAnchor = r2.anchorB; }
+          else if (r2.anchorB.elementId === otherEl.id) { pAnchor = r2.anchorB; bAnchor = r2.anchorA; }
+          else continue;
+          const body = STATE.elements.find(e => e.id === bAnchor.elementId);
+          if (!body || !['rect', 'circle'].includes(body.type)) continue;
+          const rimPos  = getAttachPhysPos(pAnchor);
+          const bodyPos = getAttachPhysPos(bAnchor);
+          if (!rimPos || !bodyPos) continue;
+          const offX = rimPos.x - bodyPos.x, offY = rimPos.y - bodyPos.y;
+          const dist = Math.hypot(offX, offY);
+          if (dist < 1e-9) continue;
+          ef._targets.push({ bodyId: body.id, fdx: offX / dist, fdy: offY / dist });
+        }
+      }
     }
   }
 
@@ -251,19 +288,16 @@
     for (const ef of STATE.elements) {
       if (ef.type !== 'extforce') continue;
       if (!(ef.forceN > 0)) continue;
-      if (ef._fdx == null) continue;   // 시작 전/미연결 → 방향 미확정
+      if (!ef._targets || ef._targets.length === 0) continue;   // 미연결/방향 미확정
 
-      const rope = STATE.ropes.find(r =>
-        r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
-      if (!rope) continue;
-
-      const bodyAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
-      const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
-      if (!body || !['rect', 'circle'].includes(body.type)) continue;
-
-      // 고정 방향(시작 시점 실 방향)으로 지속적 힘 N — 위치가 바뀌어도 같은 방향
-      body.ax += (ef.forceN * ef._fdx) / body.mass;
-      body.ay += (ef.forceN * ef._fdy) / body.mass;
+      // 고정 방향(시작 시점 실 방향)으로 지속적 힘 N — 위치가 바뀌어도 같은 방향.
+      // 도르래 경유 시 여러 물체가 대상일 수 있음.
+      for (const t of ef._targets) {
+        const body = STATE.elements.find(e => e.id === t.bodyId);
+        if (!body || !['rect', 'circle'].includes(body.type)) continue;
+        body.ax += (ef.forceN * t.fdx) / body.mass;
+        body.ay += (ef.forceN * t.fdy) / body.mass;
+      }
     }
   }
 
@@ -276,17 +310,10 @@
     const GS = CONFIG.GRID_SIZE;
     for (const ef of STATE.elements) {
       if (ef.type !== 'extforce') continue;
-      if (ef._offX == null) continue;
+      // 직접 부착(물체)일 때만 손(앵커)이 물체를 따라 이동. 도르래 경유는 고정.
+      if (ef._offX == null || !ef._followAnchor) continue;
 
-      const rope = STATE.ropes.find(r =>
-        r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
-      if (!rope) continue;
-
-      const bodyAnchor = rope.anchorA.elementId === ef.id ? rope.anchorB : rope.anchorA;
-      const body = STATE.elements.find(e => e.id === bodyAnchor.elementId);
-      if (!body || !['rect', 'circle'].includes(body.type)) continue;
-
-      const bodyPos = getAttachPhysPos(bodyAnchor);
+      const bodyPos = getAttachPhysPos(ef._followAnchor);
       if (!bodyPos) continue;
 
       // 앵커 중심 물리 좌표 = 물체 부착점 + 고정 오프셋
@@ -1043,6 +1070,7 @@
     const pulleyRopeIds = new Set();
 
     for (const rope of STATE.ropes) {
+      if (_ropeHasExtForce(rope)) continue;   // 외력 실은 제약 제외 (#2)
       const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
 
@@ -1066,7 +1094,7 @@
     const runs = _buildRuns(pulleyGroups, fixedPulleys);
     const { component, dynamicRopeIds } = _buildDynamicComponent(runs, pulleyRopeIds, fixedPulleys);
 
-    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id) && !dynamicRopeIds.has(r.id));
+    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id) && !dynamicRopeIds.has(r.id) && !_ropeHasExtForce(r));
 
     // 무질량 노드 속도 유도용: 서브스텝 제약 해소 전 도르래 위치 기록
     const prePos = new Map();
@@ -1279,9 +1307,28 @@
     return null;  // floorSegment
   }
 
+  /* 한쪽만 연결된 용수철의 자유단(고정 핀) 물리 좌표 (#3).
+   * 용수철은 시뮬 중 이동하지 않으므로 gridX/Y로부터 직접 산출.
+   * slot: 'left'=가로 왼쪽/세로 위, 'right'=가로 오른쪽/세로 아래. */
+  function _springFreeEnd(spring, slot) {
+    const GS = CONFIG.GRID_SIZE;
+    const cx     = spring.gridX + spring.gridW / 2;
+    const cyPhys = GS - spring.gridY - spring.gridH / 2;
+    if (!spring.isVertical) {
+      return slot === 'left'
+        ? { x: spring.gridX,                y: cyPhys }
+        : { x: spring.gridX + spring.gridW, y: cyPhys };
+    }
+    return slot === 'left'
+      ? { x: cx, y: GS - spring.gridY }
+      : { x: cx, y: GS - spring.gridY - spring.gridH };
+  }
+
   /* ── 7-2. 용수철 힘 applySpringForces() — 완전 2D 벡터 물리 ──
    * F = -k(|d|-L0)·d̂, 양끝 부착점 사이 벡터 d 기준. 축 분기 없음(모드는
    * 부착 면 선택에만 사용). 부착점이 2D로 움직이면 복원력 방향도 함께 회전.
+   * 한쪽만 연결된 경우(#3): 미연결단을 용수철 배치 위치의 고정 핀으로 보고
+   * 연결된 물체가 거기에 매달려 진동하도록 한다.
    */
   function applySpringForces() {
     const GS = CONFIG.GRID_SIZE;
@@ -1295,25 +1342,34 @@
 
     for (const spring of STATE.elements) {
       if (spring.type !== 'spring') continue;
-      if (!spring.leftElementId || !spring.rightElementId) continue;
+      // 최소 한쪽은 연결돼 있어야 힘 존재 (#3: 한쪽만 연결이면 자유단=고정 핀)
+      if (!spring.leftElementId && !spring.rightElementId) continue;
 
-      const leftEl  = STATE.elements.find(e => e.id === spring.leftElementId)
-                   || STATE.floorSegments.find(s => s.id === spring.leftElementId);
-      const rightEl = STATE.elements.find(e => e.id === spring.rightElementId)
-                   || STATE.floorSegments.find(s => s.id === spring.rightElementId);
-      if (!leftEl || !rightEl) continue;
+      const leftEl  = spring.leftElementId
+        ? (STATE.elements.find(e => e.id === spring.leftElementId)
+           || STATE.floorSegments.find(s => s.id === spring.leftElementId) || null)
+        : null;
+      const rightEl = spring.rightElementId
+        ? (STATE.elements.find(e => e.id === spring.rightElementId)
+           || STATE.floorSegments.find(s => s.id === spring.rightElementId) || null)
+        : null;
+      if (!leftEl && !rightEl) continue;   // id는 있으나 대상 소실
 
       // 부착 면: 가로 → left의 오른쪽 면 / right의 왼쪽 면.
       //          세로 → 위(left)의 아래 면 / 아래(right)의 위 면.
       const leftSide  = spring.isVertical ? 'bottom' : 'right';
       const rightSide = spring.isVertical ? 'top'    : 'left';
-      let A = _springAttachFace(leftEl,  leftSide);
-      let B = _springAttachFace(rightEl, rightSide);
-      if (!A && !B) {
+
+      // 각 끝단 좌표: 물체=부착면 / 미연결=자유단(고정 핀) / 바닥면=null(아래서 보정)
+      let A = !leftEl  ? _springFreeEnd(spring, 'left')
+                       : _springAttachFace(leftEl,  leftSide);   // 바닥면이면 null
+      let B = !rightEl ? _springFreeEnd(spring, 'right')
+                       : _springAttachFace(rightEl, rightSide);
+      if (A === null && B === null) {
         A = { x: (leftEl.x1 + leftEl.x2)/2,  y: GS - (leftEl.y1 + leftEl.y2)/2 };
         B = { x: (rightEl.x1 + rightEl.x2)/2, y: GS - (rightEl.y1 + rightEl.y2)/2 };
-      } else if (!A) { A = segClosest(leftEl,  B.x, B.y); }
-      else if (!B)   { B = segClosest(rightEl, A.x, A.y); }
+      } else if (A === null) { A = segClosest(leftEl,  B.x, B.y); }
+      else if (B === null)   { B = segClosest(rightEl, A.x, A.y); }
 
       const dx = B.x - A.x, dy = B.y - A.y;
       const dist = Math.hypot(dx, dy);
@@ -1327,17 +1383,17 @@
       const leftTransmit  = spring.leftLocked  || sForce < 0;
       const rightTransmit = spring.rightLocked || sForce < 0;
       // A(left)에는 +sForce·û(늘어나면 B쪽으로), B(right)에는 반대로.
-      if (leftTransmit  && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) {
+      if (leftTransmit  && leftEl  && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) {
         leftEl.ax  += sForce * ux / leftEl.mass;
         leftEl.ay  += sForce * uy / leftEl.mass;
       }
-      if (rightTransmit && (rightEl.type === 'rect' || rightEl.type === 'circle')) {
+      if (rightTransmit && rightEl && (rightEl.type === 'rect' || rightEl.type === 'circle')) {
         rightEl.ax -= sForce * ux / rightEl.mass;
         rightEl.ay -= sForce * uy / rightEl.mass;
       }
-      // 미체결 + 인장(sForce>0): 미체결 쪽 분리 (당길 수 없음)
-      if (!spring.leftLocked  && sForce > 0) spring.leftElementId  = null;
-      if (!spring.rightLocked && sForce > 0) spring.rightElementId = null;
+      // 미체결 + 인장(sForce>0): 미체결(연결된) 쪽 분리 (당길 수 없음)
+      if (leftEl  && !spring.leftLocked  && sForce > 0) spring.leftElementId  = null;
+      if (rightEl && !spring.rightLocked && sForce > 0) spring.rightElementId = null;
 
       spring.L = Math.max(0.01, dist);
     }
@@ -1483,14 +1539,17 @@
     let leftId  = null;
     let rightId = null;
 
+    // 바닥면 스냅으로 물체가 비정수 좌표에 놓일 수 있으므로 근접 허용(#6)
+    const SNAP_TOL = 0.4;   // 격자 단위 근접 허용치
+
     if (!spring.isVertical) {
       // ── 가로 모드: 왼쪽/오른쪽 이웃 ──
       for (const el of STATE.elements) {
         if (el === spring) continue;
         if (!['rect', 'circle'].includes(el.type)) continue;
-        if (el.gridX + el.gridW === leftX && el.gridY < botY && el.gridY + el.gridH > topY)
+        if (Math.abs((el.gridX + el.gridW) - leftX) <= SNAP_TOL && el.gridY < botY && el.gridY + el.gridH > topY)
           leftId = el.id;
-        if (el.gridX === rightX && el.gridY < botY && el.gridY + el.gridH > topY)
+        if (Math.abs(el.gridX - rightX) <= SNAP_TOL && el.gridY < botY && el.gridY + el.gridH > topY)
           rightId = el.id;
       }
       for (const seg of STATE.floorSegments) {
@@ -1516,9 +1575,9 @@
       for (const el of STATE.elements) {
         if (el === spring) continue;
         if (!['rect', 'circle'].includes(el.type)) continue;
-        if (el.gridY + el.gridH === topY && el.gridX < rightX && el.gridX + el.gridW > leftX)
+        if (Math.abs((el.gridY + el.gridH) - topY) <= SNAP_TOL && el.gridX < rightX && el.gridX + el.gridW > leftX)
           leftId = el.id;
-        if (el.gridY === botY && el.gridX < rightX && el.gridX + el.gridW > leftX)
+        if (Math.abs(el.gridY - botY) <= SNAP_TOL && el.gridX < rightX && el.gridX + el.gridW > leftX)
           rightId = el.id;
       }
       for (const seg of STATE.floorSegments) {

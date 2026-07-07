@@ -39,6 +39,12 @@
       <canvas id="mainCanvas"></canvas>
       <div id="zoom-indicator">100%</div>
 
+      <!-- 실행취소 / 다시실행 (기호 전용 소형 버튼, EDIT 모드에서만 표시) -->
+      <div id="undo-redo">
+        <button id="btn-undo" class="ur-btn" title="실행 취소 (Ctrl+Z)" disabled>↶</button>
+        <button id="btn-redo" class="ur-btn" title="다시 실행 (Ctrl+Y)" disabled>↷</button>
+      </div>
+
       <!-- 하단 컨트롤 → 떠있는 mode-bar pill (canvas-wrapper 기준 absolute) -->
       <div id="controls-bottom">
         <button class="ctrl-btn" id="btn-run">▶ 실행</button>
@@ -68,6 +74,7 @@
   <script src="js/capture.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/panel.js"></script>
+  <script src="js/history.js"></script>
   <script src="js/boot.js"></script>
 </body>
 </html>

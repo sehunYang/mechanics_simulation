@@ -19,6 +19,10 @@
 
     btnSpeed.style.display = STATE.simMode === 'RUNNING' ? '' : 'none';
 
+    // 실행취소/다시실행 바: EDIT 모드에서만 표시
+    const _urBar = document.getElementById('undo-redo');
+    if (_urBar) _urBar.style.display = (STATE.simMode === 'EDIT') ? 'flex' : 'none';
+
     if (STATE.simMode === 'RUNNING') {
       // MAX_DT는 스텝 크기가 아니라 "실제 경과시간" 배출 상한(spiral-of-death 가드)로만 사용.
       // 배속(speedMultiplier)은 상한 적용 후 곱해, 100배에서도 캡 없이 FIXED_DT 스텝을 여러 번 실행.

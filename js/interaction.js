@@ -161,6 +161,7 @@
     STATE.elements.push(clone);
     _selectObject(clone);
     validateAll();
+    if (typeof recordHistory === 'function') recordHistory();
     return clone;
   }
 
@@ -212,6 +213,7 @@
     }
     _selectObject(null);
     validateAll();
+    if (typeof recordHistory === 'function') recordHistory();
   }
 
   /** 삭제 존 렌더 */
@@ -321,7 +323,8 @@
       el.fy =  tmpFx;
       renderPanel();
     }
-    // circle, pulley: 대칭이므로 동작 없음
+    // circle, pulley: 대칭이므로 동작 없음 (dedup이 무변경 스냅샷 스킵)
+    if (typeof recordHistory === 'function') recordHistory();
   }
 
   /** 실 재연결 완료: 가장 가까운 앵커에 스냅 */
@@ -363,6 +366,7 @@
         rope.calibratedLength = null;
       }
       validateAll();
+      if (typeof recordHistory === 'function') recordHistory();
     }
     _ropeRewireMode = null;
     STATE.interactionMode = 'IDLE';
@@ -521,6 +525,7 @@
           STATE.pendingGridPoint = null;
           drawGrid();
           validateAll();
+          if (typeof recordHistory === 'function') recordHistory();
         }
       }
     }
@@ -559,6 +564,16 @@
         return;
       }
 
+      // #4: 외력↔도르래 연결은 도르래 중심(center)으로 스냅 → 곧게 연결 (경계면 각도 방지)
+      {
+        const elP = STATE.elements.find(e => e.id === pA.elementId);
+        const elQ = STATE.elements.find(e => e.id === ap.elementId);
+        if (elP && elQ) {
+          if (elP.type === 'pulley' && elQ.type === 'extforce') pA.attachPoint = 'center';
+          if (elQ.type === 'pulley' && elP.type === 'extforce') ap.attachPoint = 'center';
+        }
+      }
+
       // 양쪽 앵커의 월드 좌표 resolve (Element & FloorSegment 통합)
       const wA = _resolveAnchorWorld(pA);
       const wB = _resolveAnchorWorld(ap);
@@ -593,6 +608,7 @@
       STATE.pendingRopeAnchor = null;
       STATE._ropePreviewWorld = null;
       validateAll();
+      if (typeof recordHistory === 'function') recordHistory();
     }
   });
 
@@ -761,6 +777,9 @@
         _longPressEl   = null;
       }
 
+      if (STATE.interactionMode === 'DRAGGING' || STATE.interactionMode === 'RESIZING') {
+        if (typeof recordHistory === 'function') recordHistory();  // 이동/크기변경 완료 1회 기록
+      }
       if (STATE.interactionMode === 'DRAGGING') { _dragEl = null; }
       if (STATE.interactionMode === 'RESIZING') { _resizeHandle = null; }
 

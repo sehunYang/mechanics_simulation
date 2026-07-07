@@ -28,6 +28,7 @@
     // 떠있는 pill로의 재배치로 캔버스 래퍼 크기가 확정된 뒤 한 번 더 맞춤 (필수 안전장치)
     requestAnimationFrame(fitCanvas);
     validateAll();
+    initHistory();   // 최초 씬 상태를 실행취소 베이스로 기록
   });
 
   

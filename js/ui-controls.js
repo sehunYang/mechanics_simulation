@@ -74,6 +74,7 @@
     STATE.elements.push(el);
     _selectObject(el);
     validateAll();
+    if (typeof recordHistory === 'function') recordHistory();
   }
 
   /* 하단 버튼 */
@@ -102,6 +103,7 @@
     _selectObject(null);        // 패널 닫기
     drawGrid();
     validateAll();
+    if (typeof _updateUndoRedoButtons === 'function') _updateUndoRedoButtons();
   });
 
   btnCapture.addEventListener('click', () => {

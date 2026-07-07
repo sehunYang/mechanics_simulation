@@ -87,15 +87,17 @@
 
     const grid = document.createElement('div');
     grid.className = 'modal-keypad-grid';
-    const gridKeys = ['7','8','9','4','5','6','1','2','3','.','0','±'];
+    // '+/−' = 부호 전환 (음수 입력, 예: 속도 방향). 기호가 명확하도록 라벨링.
+    const gridKeys = ['7','8','9','4','5','6','1','2','3','.','0','+/−'];
     gridKeys.forEach(k => {
       const key = document.createElement('button');
       key.type = 'button';
       key.className = 'modal-keypad-key';
+      if (k === '+/−') key.className += ' modal-keypad-key-sign';
       key.textContent = k;
       key.addEventListener('click', () => {
         if (k === '.') pressDot();
-        else if (k === '±') toggleSign();
+        else if (k === '+/−') toggleSign();
         else pressDigit(k);
       });
       grid.appendChild(key);

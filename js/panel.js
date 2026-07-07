@@ -39,6 +39,7 @@
           const c = clampVal(isNaN(v) ? val : v);
           inp.value = c;
           onChange(c);
+          if (typeof recordHistory === 'function') recordHistory();
         }
       });
     });
@@ -60,6 +61,10 @@
     sl.addEventListener('input', () => {
       disp.textContent = sl.value;
       onChange(parseFloat(sl.value));
+    });
+    // 슬라이더 조작 종료 시점(release)에 1회 히스토리 기록
+    sl.addEventListener('change', () => {
+      if (typeof recordHistory === 'function') recordHistory();
     });
     wrap.appendChild(sl);
     wrap.appendChild(disp);
@@ -102,6 +107,7 @@
         const idx  = PATH_TYPES.indexOf(sel.pathType);
         sel.pathType = PATH_TYPES[(idx + 1) % PATH_TYPES.length];
         pathBtn.textContent = '변경: ' + sel.pathType;
+        if (typeof recordHistory === 'function') recordHistory();
         renderPanel();   // ARC 관련 행 표시/숨김
       });
       panelRight.appendChild(_row('경로 타입', pathBtn));
@@ -122,6 +128,7 @@
       const frBtn = _btn(sel.isFriction ? '마찰 ON' : '마찰 OFF', '', () => {
         sel.isFriction = !sel.isFriction;
         frBtn.textContent = sel.isFriction ? '마찰 ON' : '마찰 OFF';
+        if (typeof recordHistory === 'function') recordHistory();
         renderPanel();
       });
       panelRight.appendChild(_row('마찰 구간', frBtn));
@@ -312,7 +319,10 @@
         cb.type    = 'checkbox';
         cb.checked = checked;
         cb.style.cssText = 'accent-color:var(--accent);width:13px;height:13px;cursor:pointer;';
-        cb.addEventListener('change', () => onChange(cb.checked));
+        cb.addEventListener('change', () => {
+          onChange(cb.checked);
+          if (typeof recordHistory === 'function') recordHistory();
+        });
         wrap.appendChild(cb);
         wrap.appendChild(document.createTextNode(label));
         return wrap;
@@ -423,6 +433,7 @@
     STATE.selected = null;
     renderPanel();
     validateAll();
+    if (typeof recordHistory === 'function') recordHistory();
   }
 
   /* ================================================================
@@ -446,6 +457,7 @@
           renderPanel();
           drawGrid();
           validateAll();
+          if (typeof recordHistory === 'function') recordHistory();
         }
       });
     });
