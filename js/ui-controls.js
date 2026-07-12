@@ -66,8 +66,13 @@
     const GS       = CONFIG.GRID_SIZE;
 
     // 격자 스냅 + 경계 클램프 (요소가 그리드 밖으로 나가지 않도록)
-    const gx = clamp(snapToGridIndex(world.x / cs * cs), 0, GS - el.gridW);
-    const gy = clamp(snapToGridIndex(world.y / cs * cs), 0, GS - el.gridH);
+    // ExtForce는 0.5칸 격자(반정수)까지 스냅 허용 — 도르래 테두리/몸체 중심과 정렬하기 위함
+    const gx = el.type === 'extforce'
+      ? clamp(Math.round((world.x / cs) * 2) / 2, 0, GS - el.gridW)
+      : clamp(snapToGridIndex(world.x / cs * cs), 0, GS - el.gridW);
+    const gy = el.type === 'extforce'
+      ? clamp(Math.round((world.y / cs) * 2) / 2, 0, GS - el.gridH)
+      : clamp(snapToGridIndex(world.y / cs * cs), 0, GS - el.gridH);
     el.gridX = gx;
     el.gridY = gy;
 

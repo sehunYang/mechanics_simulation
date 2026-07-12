@@ -564,13 +564,32 @@
         return;
       }
 
-      // #4: 외력↔도르래 연결은 도르래 중심(center)으로 스냅 → 곧게 연결 (경계면 각도 방지)
+      // 외력(ExtForce)이 연결 대상 쪽으로 곧게 정렬되도록 격자 위치를 0.5칸 단위로 nudge
       {
         const elP = STATE.elements.find(e => e.id === pA.elementId);
         const elQ = STATE.elements.find(e => e.id === ap.elementId);
-        if (elP && elQ) {
-          if (elP.type === 'pulley' && elQ.type === 'extforce') pA.attachPoint = 'center';
-          if (elQ.type === 'pulley' && elP.type === 'extforce') ap.attachPoint = 'center';
+        const efAnchor     = elP && elP.type === 'extforce' ? pA : (elQ && elQ.type === 'extforce' ? ap : null);
+        const targetAnchor = efAnchor === pA ? ap : (efAnchor === ap ? pA : null);
+        if (efAnchor) {
+          const T = _resolveAnchorWorld(targetAnchor);
+          const efEl = STATE.elements.find(e => e.id === efAnchor.elementId);
+          if (T && efEl) {
+            const cs = CONFIG.cellSize;
+            const GS = CONFIG.GRID_SIZE;
+            const cx = (efEl.gridX + 0.5) * cs;
+            const cy = (efEl.gridY + 0.5) * cs;
+            const dx = T.x - cx;
+            const dy = T.y - cy;
+            if (Math.abs(dx) < Math.abs(dy)) {
+              const newGX = Math.round((T.x / cs - 0.5) * 2) / 2;
+              const clampedGX = clamp(newGX, 0, GS - efEl.gridW);
+              if (clampedGX === newGX) efEl.gridX = clampedGX;
+            } else {
+              const newGY = Math.round((T.y / cs - 0.5) * 2) / 2;
+              const clampedGY = clamp(newGY, 0, GS - efEl.gridH);
+              if (clampedGY === newGY) efEl.gridY = clampedGY;
+            }
+          }
         }
       }
 
@@ -735,8 +754,15 @@
 
       const newWX = world.x - STATE.dragOffset.x;
       const newWY = world.y - STATE.dragOffset.y;
-      const newGX = clamp(snapToGridIndex(newWX / cs * cs), 0, GS - _dragEl.gridW);
-      const newGY = clamp(snapToGridIndex(newWY / cs * cs), 0, GS - _dragEl.gridH);
+      let newGX, newGY;
+      if (_dragEl.type === 'extforce') {
+        // 외력(ExtForce)은 0.5칸 격자에도 배치 가능 (도르래 rim ↔ 물체 중심 양쪽 정렬용)
+        newGX = clamp(Math.round((newWX / cs) * 2) / 2, 0, GS - _dragEl.gridW);
+        newGY = clamp(Math.round((newWY / cs) * 2) / 2, 0, GS - _dragEl.gridH);
+      } else {
+        newGX = clamp(snapToGridIndex(newWX / cs * cs), 0, GS - _dragEl.gridW);
+        newGY = clamp(snapToGridIndex(newWY / cs * cs), 0, GS - _dragEl.gridH);
+      }
       _dragEl.gridX = newGX;
       _dragEl.gridY = newGY;
       if (_dragEl.type === 'pulley') syncPulleyPhys();

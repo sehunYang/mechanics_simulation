@@ -136,15 +136,25 @@
   /** 앵커 포인트 근접 판정 → {elementId, attachPoint} | null (10/scale px) */
   function hitTestAttachPoint(worldX, worldY) {
     const thresh = 10 / VIEWPORT.scale;
-    // Element 앵커 포인트
+    // Element 앵커 포인트: thresh 이내 후보를 모두 모은 뒤,
+    // 도르래 테두리(top/bottom/left/right)가 있으면 그것을 우선시 (ExtForce center와의 겹침 타이브레이크)
+    const rimAttachPoints = new Set(['top', 'bottom', 'left', 'right']);
+    let firstMatch = null;
+    let pulleyRimMatch = null;
     for (const el of STATE.elements) {
       if (!['rect','circle','pulley','extforce'].includes(el.type)) continue;
       for (const pt of getAttachPoints(el)) {
         if (Math.hypot(worldX - pt.worldX, worldY - pt.worldY) < thresh) {
-          return { elementId: el.id, attachPoint: pt.id };
+          const match = { elementId: el.id, attachPoint: pt.id };
+          if (!firstMatch) firstMatch = match;
+          if (!pulleyRimMatch && el.type === 'pulley' && rimAttachPoints.has(pt.id)) {
+            pulleyRimMatch = match;
+          }
         }
       }
     }
+    if (pulleyRimMatch) return pulleyRimMatch;
+    if (firstMatch) return firstMatch;
     // FloorSegment 끝점 앵커
     for (const seg of STATE.floorSegments) {
       for (const pt of getFloorSegAttachPoints(seg)) {
