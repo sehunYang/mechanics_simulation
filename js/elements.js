@@ -451,6 +451,10 @@
       this.leftLocked     = false; // 왼쪽/위쪽 물체와 체결 여부
       this.rightLocked    = false; // 오른쪽/아래쪽 물체와 체결 여부
       this.autoAttach     = true;  // #5: 접촉 시 자동 체결 여부
+      // 실행 중 물체가 밀려나며 분리된 끝단 표시 (배치 때부터 미연결인 끝단과 구분).
+      // 분리된 끝단 = 진짜 자유단 → 무질량 용수철이라 힘 전달 없음 + 자연길이 복귀.
+      this._leftDetached  = false;
+      this._rightDetached = false;
     }
 
     /**
@@ -498,10 +502,21 @@
           : { x: cxW, y: (this.gridY + this.gridH) * cs };
       };
 
+      // 실행 중 분리된 끝단: 배치 위치의 핀이 아니라, 남은 물체 부착면에서
+      // 자연길이(L0)만큼 떨어진 자유단으로 그린다 (용수철이 자연길이로 복귀).
+      // slot 'left' = 가로 왼쪽 / 세로 위쪽 → 축 방향(A→B)은 +x / +y(화면).
+      const natural = (slot, other) => {
+        const d = this.L0 * cs;
+        if (!this.isVertical) return { x: other.x + (slot === 'left' ? -d : d), y: other.y };
+        return { x: other.x, y: other.y + (slot === 'left' ? -d : d) };
+      };
+
       const leftSide  = this.isVertical ? 'bottom' : 'right';
       const rightSide = this.isVertical ? 'top'    : 'left';
       let A = !L ? freeEnd('left')  : face(L, leftSide);
       let B = !R ? freeEnd('right') : face(R, rightSide);
+      if (!L && this._leftDetached  && B) A = natural('left',  B);
+      if (!R && this._rightDetached && A) B = natural('right', A);
       if (A === null && B === null) {
         A = { x: ((L.x1 + L.x2) / 2) * cs, y: ((L.y1 + L.y2) / 2) * cs };
         B = { x: ((R.x1 + R.x2) / 2) * cs, y: ((R.y1 + R.y2) / 2) * cs };

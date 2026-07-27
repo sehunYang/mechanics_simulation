@@ -115,6 +115,12 @@
         el.vy = el.vy0 || 0;
         el.ax = 0; el.ay = 0;
       }
+      if (el.type === 'spring') {
+        // 지난 실행에서 분리된 흔적 초기화 (분리 = 실행 중에만 생기는 상태)
+        el._leftDetached  = false;
+        el._rightDetached = false;
+        el.L = el.L0;
+      }
     }
     // 시뮬 시작 시점 실제 물리 거리로 보정
     calibrateRopeLengths();
@@ -169,7 +175,10 @@
         const rim = getAttachPhysPos(g.pulleyAnchor);
         const pos = getAttachPhysPos(g.bodyAnchor);
         if (!rim || !pos) continue;
-        g.rope.calibratedLength = Math.hypot(pos.x - rim.x, pos.y - rim.y);
+        const d = Math.hypot(pos.x - rim.x, pos.y - rim.y);
+        g.rope.calibratedLength = d;
+        // 하한(0) 판정용 기준 방향 초기화 — _simpleRopeConstraint의 터널링 방지에 사용
+        if (d > 1e-9) { g.rope._refDirX = (pos.x - rim.x) / d; g.rope._refDirY = (pos.y - rim.y) / d; }
       }
     }
 
@@ -180,7 +189,9 @@
       const A = getAttachPhysPos(rope.anchorA);
       const B = getAttachPhysPos(rope.anchorB);
       if (!A || !B) continue;
-      rope.calibratedLength = Math.hypot(B.x - A.x, B.y - A.y);
+      const d = Math.hypot(B.x - A.x, B.y - A.y);
+      rope.calibratedLength = d;
+      if (d > 1e-9) { rope._refDirX = (B.x - A.x) / d; rope._refDirY = (B.y - A.y) / d; }
     }
 
     // 외력(ExtForce): 시작 시점의 실 방향을 고정 방향으로 동결.
@@ -189,8 +200,9 @@
     //     닿는 지점(rim/center) 방향으로 당김 (이상적 마찰無 도르래 = 장력 전달).
     for (const ef of STATE.elements) {
       if (ef.type !== 'extforce') continue;
-      ef._targets = [];   // [{ bodyId, fdx, fdy }]
+      ef._targets = [];   // [{ bodyId, fdx, fdy, pAnchor, bAnchor, dist0 }]
       ef._offX = ef._offY = ef._followAnchor = null;   // 직접 부착 추종용
+      ef._selfRimAnchor = ef._selfDir0 = ef._selfDist0 = null;   // 도르래 경유 손 이동용
       if (!(ef.forceN > 0)) continue;
       const rope = STATE.ropes.find(r =>
         r.anchorA.elementId === ef.id || r.anchorB.elementId === ef.id);
@@ -214,6 +226,18 @@
         ef._followAnchor = otherAnchor;
       } else if (otherEl.type === 'pulley') {
         // ── 도르래 경유 (#2) ── 도르래에 연결된 다른 실의 물체들을 당김
+        // 손(외력 자신) 쪽 실이 도르래에 닿는 지점 — 대상 물체의 이동량만큼
+        // 반대로 움직여 손이 물체를 따라가는 것처럼 보이게 하는 기준점 (아래 updateExtForceAnchors 참조).
+        const selfRimPos = getAttachPhysPos(otherAnchor);
+        if (selfRimPos) {
+          const selfDX = efPos.x - selfRimPos.x, selfDY = efPos.y - selfRimPos.y;
+          const selfDist0 = Math.hypot(selfDX, selfDY);
+          if (selfDist0 > 1e-9) {
+            ef._selfRimAnchor = otherAnchor;
+            ef._selfDir0 = { x: selfDX / selfDist0, y: selfDY / selfDist0 };
+            ef._selfDist0 = selfDist0;
+          }
+        }
         for (const r2 of STATE.ropes) {
           if (r2 === rope || _ropeHasExtForce(r2)) continue;
           let pAnchor = null, bAnchor = null;
@@ -228,7 +252,7 @@
           const offX = rimPos.x - bodyPos.x, offY = rimPos.y - bodyPos.y;
           const dist = Math.hypot(offX, offY);
           if (dist < 1e-9) continue;
-          ef._targets.push({ bodyId: body.id, fdx: offX / dist, fdy: offY / dist });
+          ef._targets.push({ bodyId: body.id, fdx: offX / dist, fdy: offY / dist, pAnchor, bAnchor, dist0: dist });
         }
       }
     }
@@ -310,15 +334,34 @@
     const GS = CONFIG.GRID_SIZE;
     for (const ef of STATE.elements) {
       if (ef.type !== 'extforce') continue;
-      // 직접 부착(물체)일 때만 손(앵커)이 물체를 따라 이동. 도르래 경유는 고정.
-      if (ef._offX == null || !ef._followAnchor) continue;
 
-      const bodyPos = getAttachPhysPos(ef._followAnchor);
-      if (!bodyPos) continue;
+      if (ef._offX != null && ef._followAnchor) {
+        // 직접 부착: 손(앵커)이 물체를 따라 이동 (고정 오프셋 유지)
+        const bodyPos = getAttachPhysPos(ef._followAnchor);
+        if (!bodyPos) continue;
+        const cx = bodyPos.x + ef._offX;
+        const cy = bodyPos.y + ef._offY;
+        ef.gridX = cx - ef.gridW / 2;
+        ef.gridY = GS - cy - ef.gridH / 2;
+        continue;
+      }
 
-      // 앵커 중심 물리 좌표 = 물체 부착점 + 고정 오프셋
-      const cx = bodyPos.x + ef._offX;
-      const cy = bodyPos.y + ef._offY;
+      // 도르래 경유: 실 총길이 보존 — 대상 물체가 도르래 쪽으로 다가간(멀어진)
+      // 만큼 손도 반대로 멀어지며(다가가며) 실을 계속 풀어주는(당기는) 모습으로 이동.
+      if (!ef._selfDir0 || !ef._targets || ef._targets.length === 0) continue;
+      const t = ef._targets[0];
+      if (!t.pAnchor || !t.bAnchor || t.dist0 == null) continue;
+      const rimPosNow  = getAttachPhysPos(t.pAnchor);
+      const bodyPosNow = getAttachPhysPos(t.bAnchor);
+      const selfRimPosNow = getAttachPhysPos(ef._selfRimAnchor);
+      if (!rimPosNow || !bodyPosNow || !selfRimPosNow) continue;
+
+      const distNow = Math.hypot(bodyPosNow.x - rimPosNow.x, bodyPosNow.y - rimPosNow.y);
+      const delta = distNow - t.dist0;   // 양수: 물체가 도르래에서 멀어짐, 음수: 가까워짐
+      const newSelfDist = Math.max(0, ef._selfDist0 - delta);   // 실 총길이 보존
+
+      const cx = selfRimPosNow.x + ef._selfDir0.x * newSelfDist;
+      const cy = selfRimPosNow.y + ef._selfDir0.y * newSelfDist;
       ef.gridX = cx - ef.gridW / 2;
       ef.gridY = GS - cy - ef.gridH / 2;
     }
@@ -600,17 +643,6 @@
     //           중복 보정을 일으켜 물체가 튕겨나가는 버그 방지) ──
     let maxPen = 0, bestNx = 0, bestNy = 0, bestSeg = null;
 
-    // 공유 조인트(ELBOW/ARC 내부 연결점) 키맵 — ≥2개 미세 선분이 만나는 끝점.
-    // 자유 끝단(1회 등장)은 바닥 끝 → 물체가 지나쳐 낙하해야 하므로 제외.
-    const _jkey = (x, y) => (Math.round(x*1000)/1000) + ',' + (Math.round(y*1000)/1000);
-    const jointCount = new Map();
-    for (const seg of segs) {
-      for (const p of [[seg.x1, seg.y1], [seg.x2, seg.y2]]) {
-        const k = _jkey(p[0], p[1]);
-        jointCount.set(k, (jointCount.get(k) || 0) + 1);
-      }
-    }
-
     const maxAllowedPen = el.gridW + el.gridH;
     for (const seg of segs) {
       const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
@@ -620,15 +652,17 @@
       const snx = seg.normalX, sny = seg.normalY;
 
       for (const c of corners) {
-        let t = ((c.x - seg.x1)*sdx + (c.y - seg.y1)*sdy) / lenSq;
-        if (t < 0 || t > 1) {
-          // 세그먼트 끝단: 공유 조인트일 때만 최근접점(끝점)으로 클램프.
-          // 자유 끝단이면 스킵 → 바닥 끝을 지나 낙하 허용(팬텀 지지 방지).
-          const tc = t < 0 ? 0 : 1;
-          const jx = seg.x1 + tc*sdx, jy = seg.y1 + tc*sdy;
-          if ((jointCount.get(_jkey(jx, jy)) || 0) < 2) continue;
-          t = tc;
-        }
+        const t = ((c.x - seg.x1)*sdx + (c.y - seg.y1)*sdy) / lenSq;
+        // t∈[0,1] 밖 = 이 미세 선분의 수직 띠(slab) 밖 → 접촉 아님.
+        //   ⚠ 예전에는 "공유 조인트면 끝점으로 클램프"했으나, 그러면 아래의
+        //     signed(법선 투영)가 그 선분의 접평면을 무한 반평면처럼 취급하게 된다.
+        //     ARC_UP(위로 볼록)처럼 볼록한 바닥은 양 끝 미세 선분의 접평면이
+        //     비스듬히 누워 있어, 호 위쪽 멀리 떨어진(=실제로는 공중인) 모서리도
+        //     signed<0(≈0)으로 잡혀 "보이지 않는 아래로 볼록한 면"이 생겼다.
+        //     볼록 이음매의 solid 내부는 어차피 인접 선분들의 slab이 모두 덮으므로
+        //     (덮이지 않는 쐐기 영역은 표면 바깥 = 접촉 없음) 그냥 스킵하면 된다.
+        //     이음매 정점이 사각형 안으로 파고든 경우는 아래 1-2단계가 처리한다.
+        if (t < 0 || t > 1) continue;
 
         const footX = seg.x1 + t*sdx;
         const footY = seg.y1 + t*sdy;
@@ -1142,26 +1176,13 @@
     }
   }
 
-  /* ── 단순 실 제약 ──
-   * 거리 > ropeLength 일 때만 장력 작용 (이완 시 완전 무시)
-   * vRel > 0: 두 앵커가 서로 멀어지고 있는 상황 → 속도 보정
-   */
-  function _simpleRopeConstraint(rope, fixedPulleys) {
-    fixedPulleys = fixedPulleys || _EMPTY_SET;
-    const A = getAttachPhysPos(rope.anchorA);
-    const B = getAttachPhysPos(rope.anchorB);
-    if (!A || !B) return;
+  // 실 길이 하한 — 실은 음의 길이를 가질 수 없으므로 앵커가 서로를 통과해
+  // 반대편으로 역전(뒤집힘)하지 못하도록 거리 0 근방에서 걸어 멈춘다.
+  const _ROPE_MIN_LEN = 1e-3;
 
-    const dx = B.x - A.x, dy = B.y - A.y;
-    const dist = Math.hypot(dx, dy);
-    // calibratedLength: 시뮬 시작 시 실측된 거리 (없으면 ropeLength 폴백)
-    const maxLen = rope.calibratedLength ?? rope.ropeLength;
-    if (dist <= maxLen + 1e-6 || dist < 1e-9) return;
-
-    const excess = dist - maxLen;
-    const nx = dx / dist, ny = dy / dist;
-
-    // 무질량 중계점 통일 규칙: 고정=0, 움직 도르래=중계(큰 역질량), 유한=1/m
+  /** excess(위반량)를 방향(nx,ny)을 따라 위치+속도로 보정.
+   *  excess>0: 상한 초과(당겨서 줄임, 분리 속도 제거) / excess<0: 하한 미달(밀어서 늘림, 접근 속도 제거) */
+  function _resolveRopeExcess(rope, fixedPulleys, nx, ny, excess) {
     const w1 = _nodeInvMass(rope.anchorA.elementId, fixedPulleys);
     const w2 = _nodeInvMass(rope.anchorB.elementId, fixedPulleys);
     const wSum = w1 + w2;
@@ -1183,13 +1204,53 @@
     const vBx = elBObj ? (elBObj.vx||0) : 0, vBy = elBObj ? (elBObj.vy||0) : 0;
     const vRel = (vBx - vAx)*nx + (vBy - vAy)*ny;
 
-    if (vRel > 1e-9) {
+    if ((excess > 0 && vRel > 1e-9) || (excess < 0 && vRel < -1e-9)) {
       const effInvSum = iv1 + iv2;
       if (effInvSum >= 1e-12) {
         const J = vRel / effInvSum;   // 충격량 크기 (scalar)
         if (aFinite) { elAObj.vx += nx * J * iv1; elAObj.vy += ny * J * iv1; }
         if (bFinite) { elBObj.vx -= nx * J * iv2; elBObj.vy -= ny * J * iv2; }
       }
+    }
+  }
+
+  /* ── 단순 실 제약 ──
+   * 상한(늘어남): 거리 > ropeLength 일 때만 장력 작용, 현재 방향 기준(스윙 등 정상
+   *   방향 변화 반영). 하한(0): 실이 반대편 앵커를 통과해 뒤집히지 못하도록,
+   *   서브스텝 사이 안정 구간에서만 갱신되는 기준 방향(rope._refDirX/Y)에 대한
+   *   "부호 있는 투영 거리"로 판정한다. 한 서브스텝에 반대편으로 순간 이동
+   *   (터널링)해도 투영값이 크게 음수가 되어 반드시 걸린다 — 항상 양수인
+   *   Math.hypot 거리만으로는 통과 여부를 알 수 없기 때문.
+   */
+  function _simpleRopeConstraint(rope, fixedPulleys) {
+    fixedPulleys = fixedPulleys || _EMPTY_SET;
+    const A = getAttachPhysPos(rope.anchorA);
+    const B = getAttachPhysPos(rope.anchorB);
+    if (!A || !B) return;
+
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const dist = Math.hypot(dx, dy);
+    // calibratedLength: 시뮬 시작 시 실측된 거리 (없으면 ropeLength 폴백)
+    const maxLen = rope.calibratedLength ?? rope.ropeLength;
+
+    if (dist > maxLen + 1e-6) {
+      if (dist < 1e-9) return;
+      const nx = dx / dist, ny = dy / dist;
+      _resolveRopeExcess(rope, fixedPulleys, nx, ny, dist - maxLen);
+      return;
+    }
+
+    if (rope._refDirX == null) return;   // 기준 방향 미보정 — 하한 판정 불가
+
+    const signedDist = dx * rope._refDirX + dy * rope._refDirY;
+    if (signedDist < _ROPE_MIN_LEN - 1e-6) {
+      _resolveRopeExcess(rope, fixedPulleys, rope._refDirX, rope._refDirY, signedDist - _ROPE_MIN_LEN);
+      return;
+    }
+
+    // 안정 구간(하한에서 충분히 떨어짐): 다음 판정을 위해 기준 방향 갱신
+    if (dist > _ROPE_MIN_LEN * 4) {
+      rope._refDirX = dx / dist; rope._refDirY = dy / dist;
     }
   }
 
@@ -1355,6 +1416,11 @@
         : null;
       if (!leftEl && !rightEl) continue;   // id는 있으나 대상 소실
 
+      // 시뮬 중 한쪽이 밀려나 분리된 용수철: 그 끝단은 아무것도 붙어있지 않은
+      // 자유단 → 질량 0인 용수철은 힘을 전달할 수 없다. 자연길이로 복귀만 하고
+      // 남은 물체는 분리 시점의 운동량을 그대로 유지한다.
+      if (spring._leftDetached || spring._rightDetached) { spring.L = spring.L0; continue; }
+
       // 부착 면: 가로 → left의 오른쪽 면 / right의 왼쪽 면.
       //          세로 → 위(left)의 아래 면 / 아래(right)의 위 면.
       const leftSide  = spring.isVertical ? 'bottom' : 'right';
@@ -1379,6 +1445,17 @@
       // sForce > 0: 늘어남(양끝 서로 당김) / < 0: 압축(양끝 서로 밀어냄)
       const sForce = spring.k * (dist - spring.L0);
 
+      // ── 미체결 + 인장(sForce>0): 미체결(접촉만 하던) 쪽이 이 순간 분리 ──
+      //   분리 = 그 끝단이 "진짜 자유단"이 된다는 뜻. 이 시뮬의 용수철은 질량 0
+      //   이므로 자유단에는 힘이 걸릴 수 없고(F=ma=0), 따라서 용수철은 그 즉시
+      //   자연길이로 돌아가며 남은 물체에 아무 힘도 주지 못한다. 분리 순간의
+      //   운동량 그대로 남은 물체가 진행해야 하므로, 이번 서브스텝의 힘 적용도
+      //   건너뛴다. (미연결로 배치된 끝단 = 벽에 고정된 핀으로 보는 #3 규칙과
+      //   구분하기 위해 별도 플래그를 쓴다.)
+      if (leftEl  && !spring.leftLocked  && sForce > 0) { spring.leftElementId  = null; spring._leftDetached  = true; }
+      if (rightEl && !spring.rightLocked && sForce > 0) { spring.rightElementId = null; spring._rightDetached = true; }
+      if (spring._leftDetached || spring._rightDetached) { spring.L = spring.L0; continue; }
+
       // 체결(locked): 인장·압축 모두 전달. 미체결: 압축(밀어냄, sForce<0)만.
       const leftTransmit  = spring.leftLocked  || sForce < 0;
       const rightTransmit = spring.rightLocked || sForce < 0;
@@ -1391,9 +1468,6 @@
         rightEl.ax -= sForce * ux / rightEl.mass;
         rightEl.ay -= sForce * uy / rightEl.mass;
       }
-      // 미체결 + 인장(sForce>0): 미체결(연결된) 쪽 분리 (당길 수 없음)
-      if (leftEl  && !spring.leftLocked  && sForce > 0) spring.leftElementId  = null;
-      if (rightEl && !spring.rightLocked && sForce > 0) spring.rightElementId = null;
 
       spring.L = Math.max(0.01, dist);
     }
