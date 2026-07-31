@@ -304,6 +304,56 @@
     return { snapped: true, ...best, rotRad: best.angle };
   }
 
+  /* ════════════════════════════════
+     도르래 rim 정렬 스냅
+  ════════════════════════════════
+     도르래에 실로 연결된 상대 앵커와 rim 앵커의 높이(또는 가로 위치)를 정확히
+     맞춰준다. 반칸 격자만으로도 정렬은 "가능"하지만 손으로 맞추기 어렵기 때문에,
+     근처까지 끌고 오면 자석처럼 달라붙게 한다.
+
+       · 실이 도르래 left/right rim 에 걸림  → rim y 를 상대 앵커 y 에 맞춤 (수평 실)
+       · 실이 도르래 top/bottom rim 에 걸림  → rim x 를 상대 앵커 x 에 맞춤 (수직 실)
+
+     상대가 도르래 자신이면(도르래끼리 연결) 건너뛴다.
+
+     주의: 반칸 스냅을 적용하기 *전*의 원시 좌표에 대해 판정한다. 반칸 스냅 뒤에
+     걸면 정렬 위치의 좌우 ±0.5칸 자리까지 함께 흡수돼 배치 불가능해진다.
+     허용치를 0.5칸 미만으로 두는 것도 같은 이유 — 인접 반칸 자리를 남겨둔다. */
+  const RIM_ALIGN_CELLS = 0.35;   // 정렬 스냅 활성화 거리 [격자 칸] (< 0.5)
+
+  function _applyPulleyRimAlign(pulley, gx, gy) {
+    const cs  = CONFIG.cellSize;
+    const tol = RIM_ALIGN_CELLS;
+    let outX = gx, outY = gy;
+    let bestX = null, bestY = null;
+
+    for (const rope of STATE.ropes) {
+      let mine = null, other = null;
+      if (rope.anchorA.elementId === pulley.id) { mine = rope.anchorA; other = rope.anchorB; }
+      else if (rope.anchorB.elementId === pulley.id) { mine = rope.anchorB; other = rope.anchorA; }
+      if (!mine || mine.attachPoint === 'center') continue;      // center = 고정용, rim 아님
+      if (other.elementId === pulley.id) continue;
+
+      const w = rope._getAnchorWorld(other);
+      if (!w) continue;
+
+      if (mine.attachPoint === 'left' || mine.attachPoint === 'right') {
+        // rim y = gy + gridH/2  →  상대 앵커 y 와 일치시킨다
+        const targetGY = w.y / cs - pulley.gridH / 2;
+        const d = Math.abs(targetGY - gy);
+        if (d <= tol && (bestY === null || d < bestY.d)) bestY = { d, v: targetGY };
+      } else if (mine.attachPoint === 'top' || mine.attachPoint === 'bottom') {
+        const targetGX = w.x / cs - pulley.gridW / 2;
+        const d = Math.abs(targetGX - gx);
+        if (d <= tol && (bestX === null || d < bestX.d)) bestX = { d, v: targetGX };
+      }
+    }
+
+    if (bestY) outY = bestY.v;
+    if (bestX) outX = bestX.v;
+    return { gx: outX, gy: outY, alignedX: !!bestX, alignedY: !!bestY };
+  }
+
   /** 더블탭 → 요소별 방향 전환
    * spring    : 가로↔세로 (isVertical 토글 + gridW↔gridH 교환)
    * rect      : 90° 회전 (gridW↔gridH 교환)
@@ -772,15 +822,27 @@
 
       const newWX = world.x - STATE.dragOffset.x;
       const newWY = world.y - STATE.dragOffset.y;
+      const rawGX = newWX / cs, rawGY = newWY / cs;   // 스냅 전 원시 격자 좌표
+
+      // 도르래: 연결된 실의 상대 앵커와 rim 을 자석 정렬 (원시 좌표 기준 판정)
+      const align = _dragEl.type === 'pulley'
+        ? _applyPulleyRimAlign(_dragEl, rawGX, rawGY)
+        : { alignedX: false, alignedY: false };
+
       let newGX, newGY;
-      if (_dragEl.type === 'extforce') {
-        // 외력(ExtForce)은 0.5칸 격자에도 배치 가능 (도르래 rim ↔ 물체 중심 양쪽 정렬용)
-        newGX = clamp(Math.round((newWX / cs) * 2) / 2, 0, GS - _dragEl.gridW);
-        newGY = clamp(Math.round((newWY / cs) * 2) / 2, 0, GS - _dragEl.gridH);
+      if (HALF_SNAP_TYPES.includes(_dragEl.type)) {
+        // 0.5칸 격자 배치 (도르래 rim ↔ 물체 중심 정렬용, HALF_SNAP_TYPES 참고)
+        newGX = Math.round(rawGX * 2) / 2;
+        newGY = Math.round(rawGY * 2) / 2;
       } else {
-        newGX = clamp(snapToGridIndex(newWX / cs * cs), 0, GS - _dragEl.gridW);
-        newGY = clamp(snapToGridIndex(newWY / cs * cs), 0, GS - _dragEl.gridH);
+        newGX = snapToGridIndex(newWX / cs * cs);
+        newGY = snapToGridIndex(newWY / cs * cs);
       }
+      if (align.alignedX) newGX = align.gx;   // 정렬이 걸린 축만 격자 스냅을 대체
+      if (align.alignedY) newGY = align.gy;
+      newGX = clamp(newGX, 0, GS - _dragEl.gridW);
+      newGY = clamp(newGY, 0, GS - _dragEl.gridH);
+
       _dragEl.gridX = newGX;
       _dragEl.gridY = newGY;
       if (_dragEl.type === 'pulley') syncPulleyPhys();
