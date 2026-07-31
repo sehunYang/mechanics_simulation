@@ -12,6 +12,7 @@ mechanics_simulation/
 ├── js/                 로드 순서 = 아래 순서 (index.html 하단에서 순차 로드)
 │   ├── config.js       CONFIG / VIEWPORT / STATE / DOM 참조 (전역 상수·상태)
 │   ├── coords.js       좌표 변환 유틸 (월드/화면/물리/격자) + 기하 헬퍼
+│   ├── svg-shapes.js   수능 작도 규격 도형을 SVG path 로 정의 (Path2D 로 렌더)
 │   ├── canvas.js       캔버스 초기화·리사이즈 + 격자 렌더링
 │   ├── render.js       rAF 렌더 루프 + 씬/요소/오버레이 드로잉
 │   ├── elements.js     Element 기반 클래스 + 요소/Connection 클래스
@@ -19,7 +20,7 @@ mechanics_simulation/
 │   ├── interaction.js  포인터 이벤트 (줌·팬·드래그·선택·리와이어)
 │   ├── ui-controls.js  팔레트/하단 버튼 + addElement + 시뮬 제어
 │   ├── physics.js      시뮬레이션 스텝·중력·충돌·실/도르래/용수철·검증
-│   ├── capture.js      PNG 선화 캡처
+│   ├── capture.js      SVG 선화 내보내기 (흰 바탕·흑백)
 │   ├── panel.js        속성 패널 렌더링 + 선택 삭제
 │   └── boot.js         모바일 사이드바 토글 + load 부트스트랩
 ├── test/               물리 정합성 검증 스위트 (Node, 의존성 없음)
@@ -30,13 +31,14 @@ mechanics_simulation/
 │   └── mechanics_simulation_2026-07-05.html   분리 전 단일 파일 원본(백업)
 ├── QC_Report_v1.md     품질 점검 보고서 + 수정 내역
 ├── Physics_Verification_Report.md   조합 매트릭스 검증 + 결함 수정 기록
+├── Design_Suneung_Comparison.md     수능 물리 문항 작도 규격 대조 + 적용 기록
 └── README.md
 ```
 
 ## 물리 검증
 
 ```
-node test/run-all.js            # 155개 항목, 실제 물리 공식과 수치 비교
+node test/run-all.js            # 156개 항목, 실제 물리 공식과 수치 비교
 node test/run-all.js --verbose
 ```
 
