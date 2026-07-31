@@ -13,6 +13,7 @@ const SUITES = [
   ['spec4', '기하 일치 (렌더 ↔ 히트테스트 ↔ 물리 곡면)'],
   ['spec5', '화면 픽셀 단위 검증'],
   ['spec6', '단면 바닥 규약 · 정지마찰 고정 · 직렬 도르래 · 남은 조합'],
+  ['spec7', '실체면 빗금 방향 ↔ 충돌 법선 일치'],
 ];
 
 const verbose = process.argv.includes('--verbose');

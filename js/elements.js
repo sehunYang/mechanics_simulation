@@ -737,11 +737,59 @@
       this._tracePath(ctx, ax, ay, bx, by);
       ctx.stroke();
 
+      // ── 실체면 빗금 (바닥이면 아래, 천장이면 위) ──
+      this._drawSolidSideHatch(ctx, ax, ay, bx, by, s);
+
       // ── 마찰 해치 오버레이 ──
       if (this.isFriction) {
         this._drawFrictionHatch(ctx, ax, ay, bx, by, s);
       }
 
+      ctx.restore();
+    }
+
+    /**
+     * 실체면(solid side) 빗금 — 이 면이 "어느 쪽에서 막히는지"를 눈으로 알려준다.
+     *
+     * 바닥면은 단면(single-sided) 충돌이라 법선 쪽에서만 물체를 막는다. 법선은
+     * 그리는 방향(A→B)의 반시계 90°로 정해지는데, 화면에는 아무 표시가 없어서
+     * 사용자가 의도와 반대로 그리면 물체가 그대로 통과해 버렸다.
+     * 그래서 자유면(법선 쪽)의 반대편 = 실체면에 토목 도면의 지반 해칭처럼
+     * 45° 빗금을 일정 간격으로 그린다.
+     *   · 바닥(법선이 위)   → 선 아래에 빗금
+     *   · 천장(법선이 아래) → 선 위에  빗금
+     *   · 벽(법선이 옆)     → 막히지 않는 반대쪽에 빗금
+     *
+     * 화면 좌표 기준 자유면 = (ty, −tx), 실체면 = (−ty, tx).
+     *   (물리 좌표의 법선 (−dy_p, dx_p)/L 을 y 반전해 화면 좌표로 옮긴 것.
+     *    _samplePath 의 접선 진행 방향이 getPhysicsSegments 의 세그먼트 방향과
+     *    같은 순서라 그대로 대응된다 — test/spec7.js 가 이 대응을 검증한다.)
+     */
+    _drawSolidSideHatch(ctx, ax, ay, bx, by, s, color) {
+      const len = 5 / s;   // 빗금 길이 (화면 px 고정)
+      // 간격도 화면 px 고정(8/s)이되, 아주 길거나 확대된 면에서 선 개수가
+      // 폭주하지 않도록 세그먼트당 약 400개로 제한한다.
+      const chord   = Math.hypot(bx - ax, by - ay);
+      const roughLen = chord * (this.pathType.startsWith('ARC') ? 2.5 : 2);
+      const spacing = Math.max(8 / s, roughLen / 400);
+      const pts = this._samplePath(ax, ay, bx, by, spacing);
+      if (pts.length === 0) return;
+
+      ctx.save();
+      ctx.strokeStyle = color || ((STATE.selected === this)
+        ? 'rgba(59,130,246,0.6)'      // 선택 시 본선과 같은 파랑 계열
+        : 'rgba(130,130,130,0.5)');
+      ctx.lineWidth = 1 / s;
+      ctx.beginPath();
+      for (const p of pts) {
+        const sx = -p.ty, sy = p.tx;                       // 실체면 단위벡터
+        // 45°: 실체면 방향 + 진행 반대 방향 (해칭이 한쪽으로 일관되게 기울도록)
+        const hx = (sx - p.tx) * Math.SQRT1_2;
+        const hy = (sy - p.ty) * Math.SQRT1_2;
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + hx * len, p.y + hy * len);
+      }
+      ctx.stroke();
       ctx.restore();
     }
 

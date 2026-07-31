@@ -35,6 +35,8 @@
       tc.beginPath();
       seg._tracePath(tc, ax, ay, bx, by);
       tc.stroke();
+      // 실체면 빗금 — 교과서 도해처럼 어느 쪽이 막히는 면인지 표시
+      seg._drawSolidSideHatch(tc, ax, ay, bx, by, s, '#000000');
       tc.restore();
     }
 
