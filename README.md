@@ -22,11 +22,29 @@ mechanics_simulation/
 │   ├── capture.js      PNG 선화 캡처
 │   ├── panel.js        속성 패널 렌더링 + 선택 삭제
 │   └── boot.js         모바일 사이드바 토글 + load 부트스트랩
+├── test/               물리 정합성 검증 스위트 (Node, 의존성 없음)
+│   ├── harness.js      실제 js/*.js 를 그대로 로드하는 하네스 (DOM은 스텁)
+│   ├── spec*.js        조합 시나리오 140개
+│   └── run-all.js      전체 실행
 ├── backup/
 │   └── mechanics_simulation_2026-07-05.html   분리 전 단일 파일 원본(백업)
 ├── QC_Report_v1.md     품질 점검 보고서 + 수정 내역
+├── Physics_Verification_Report.md   조합 매트릭스 검증 + 결함 수정 기록
 └── README.md
 ```
+
+## 물리 검증
+
+```
+node test/run-all.js            # 140개 항목, 실제 물리 공식과 수치 비교
+node test/run-all.js --verbose
+```
+
+`test/harness.js`는 `js/config.js` · `coords.js` · `elements.js` · `physics.js` ·
+`hit-test.js`를 **수정 없이** Node `vm` 컨텍스트에 올리고 DOM만 스텁으로 대체한다.
+즉 브라우저에서 도는 것과 동일한 코드를 검증한다. 물리 코드를 손볼 때는 이 스위트를
+먼저 돌려 회귀를 확인하세요. 자세한 내용과 알려진 한계는
+`Physics_Verification_Report.md` 참고.
 
 ## 아키텍처 노트 (⚠️ 유지보수 시 필독)
 

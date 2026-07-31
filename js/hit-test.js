@@ -84,14 +84,20 @@
     else                           { cX = mx - nx * h; cY = my - ny * h; }
 
     const sa = Math.atan2(ay - cY, ax - cX);
-    const ea = Math.atan2(by - cY, bx - cX);
-    let diff = ea - sa;
-    while (diff >  Math.PI) diff -= 2*Math.PI;
-    while (diff < -Math.PI) diff += 2*Math.PI;
-    const shortSign = Math.sign(diff) || 1;
-    // θ≤π: 짧은 호 그대로 / θ>π: 반대 방향으로 돌아 긴 호(major arc) 사용
-    const sweepSign = (theta <= Math.PI) ? shortSign : -shortSign;
-    const sweep = sweepSign * theta;
+
+    // ── 스윕 방향: 호의 볼록한 쪽(apex)으로 직접 판정 ──
+    //   화면 좌표에서 중심은 ARC_UP → mid + n·h 이므로 apex = mid − wantSign·n·(R − h).
+    //   ⚠ 예전에는 끝점 각도차 부호로 정했는데, curvature=1.0(반원)에서는 h≈0이
+    //     배정밀도에서 흡수돼 각도차가 ±π가 되고 방향이 임의로 뒤집혔다.
+    //     그러면 그려진 호와 클릭 판정/마찰 해치가 서로 반대쪽을 가리킨다.
+    //     (physics.js의 _arcPhysPoints와 동일한 규칙 — 세 구현이 같은 곡선을 써야 함)
+    const wantSign = (seg.pathType === 'ARC_UP') ? 1 : -1;
+    const apexX = mx - wantSign * nx * (R_px - h);
+    const apexY = my - wantSign * ny * (R_px - h);
+    let dApex = Math.atan2(apexY - cY, apexX - cX) - sa;
+    while (dApex >  Math.PI) dApex -= 2*Math.PI;
+    while (dApex < -Math.PI) dApex += 2*Math.PI;
+    const sweep = (Math.sign(dApex) || 1) * theta;
 
     const pts = [];
     for (let i = 0; i <= n; i++) {

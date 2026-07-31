@@ -122,6 +122,8 @@
         el.L = el.L0;
       }
     }
+    // 바닥면과 이미 겹쳐 배치된 물체를 표면 밖으로 1회 밀어냄 (단면 판정 기준 정렬)
+    _depenetrateInitial();
     // 시뮬 시작 시점 실제 물리 거리로 보정
     calibrateRopeLengths();
   }
@@ -266,7 +268,7 @@
       applyForces(subDt);
       integrate(subDt);
       updateExtForceAnchors();   // 외력 앵커가 물체를 따라 이동 (실 방향 유지)
-      resolveFloorCollisions();
+      resolveFloorCollisions(subDt);
       resolveBodyCollisions();
       resolveRopeConstraints(subDt);
     }
@@ -484,14 +486,22 @@
     else                             { cX = mx - nx*h; cY = my - ny*h; }
 
     const sa = Math.atan2(A.y - cY, A.x - cX);
-    const ea = Math.atan2(B.y - cY, B.x - cX);
-    let diff = ea - sa;
-    while (diff >  Math.PI) diff -= 2*Math.PI;
-    while (diff < -Math.PI) diff += 2*Math.PI;
-    const shortSign = Math.sign(diff) || 1;
-    // θ≤π: 짧은 호 그대로 / θ>π: 반대 방향으로 돌아 긴 호(major arc) 사용
-    const sweepSign = (theta <= Math.PI) ? shortSign : -shortSign;
-    const sweep = sweepSign * theta;
+
+    // ── 스윕 방향: 호의 "볼록한 쪽(apex)"으로 직접 판정 ──
+    //   apex = mid + wantSign·n·(R − h)  — h의 부호나 0 여부와 무관하게 항상 정의됨.
+    //     (h>0: 중심이 반대쪽 → apex는 +wantSign·n 쪽 / h<0: major arc라 더 멀리)
+    //   ⚠ 예전에는 끝점 각도차의 부호(shortSign)로 방향을 정했는데, curvature=1.0
+    //     (반원)에서는 h=R·cos(π/2)≈1e-15 가 배정밀도에서 흡수돼 중심이 현의 중점과
+    //     정확히 일치하고, 그러면 각도차가 ±π가 되어 부호가 임의로 정해졌다.
+    //     그 결과 ARC_DOWN(골짜기)이 물리에서만 언덕으로 뒤집혀, 골짜기 위에 놓인
+    //     물체가 지형 내부로 판정돼 그대로 낙하했다 (렌더는 골짜기로 그려짐).
+    const wantSign = (seg.pathType === 'ARC_UP') ? 1 : -1;
+    const apexX = mx + wantSign * nx * (R - h);
+    const apexY = my + wantSign * ny * (R - h);
+    let dApex = Math.atan2(apexY - cY, apexX - cX) - sa;
+    while (dApex >  Math.PI) dApex -= 2*Math.PI;
+    while (dApex < -Math.PI) dApex += 2*Math.PI;
+    const sweep = (Math.sign(dApex) || 1) * theta;
 
     const pts = [];
     for (let i = 0; i <= n; i++) {
@@ -503,7 +513,7 @@
   }
 
   /* ── 6-5. FloorSegment 충돌 처리 ── */
-  function resolveFloorCollisions() {
+  function resolveFloorCollisions(dt) {
     const allSegs = [];
     for (const fseg of STATE.floorSegments) {
       allSegs.push(...getPhysicsSegments(fseg));
@@ -511,13 +521,72 @@
     if (allSegs.length === 0) return;
 
     for (const el of STATE.elements) {
-      if (el.type === 'circle') _resolveCircleFloor(el, allSegs);
-      if (el.type === 'rect')   _resolveRectFloor(el, allSegs);
+      if (el.type === 'circle') _resolveCircleFloor(el, allSegs, dt);
+      if (el.type === 'rect')   _resolveRectFloor(el, allSegs, dt);
     }
   }
 
+  /* 시뮬 시작 시 겹침 해소 패스에서만 true — 아래 _depenetrateInitial 참조 */
+  let _ALLOW_BACKFACE = false;
+
+  /**
+   * 단면(single-sided) 바닥의 "뒷면 통과" 판정 — true면 이 세그먼트는 무시.
+   *
+   * 바닥면은 법선 쪽(앞면)에서만 실체다. 판정 기준은 **이번 서브스텝이 시작될 때**
+   * 물체 중심이 앞면에 있었는가: integrate()가 방금 v·dt 만큼 옮겼으므로
+   * 이전 위치 = 현재 − v·dt 로 정확히 복원된다.
+   *   · 이전에 앞면  → 처리 (접촉 침투는 물론, 한 스텝에 뚫고 지나간 고속 관통도 배출)
+   *   · 이전에 뒷면  → 무시 (뒤에서 온 물체는 그대로 통과)
+   *
+   * ⚠ 이 가드가 없으면 바닥 "아래"를 지나가는 물체가 표면 반지름 안에 들어오는
+   *   순간 침투로 오판돼 바닥 위로 솟구친다 (도달하지도 못한 천장을 뚫고 올라감).
+   * ⚠ 속도 부호(법선 방향으로 나가는 중인가)로 판정하면 최고점(v≈0)에서 부호가
+   *   무너져 그대로 솟구친다 — 그래서 위치 기준으로 판정한다.
+   */
+  function _backFaceSkip(el, seg, dt) {
+    if (_ALLOW_BACKFACE) return false;
+    const d = dt || 0;
+    const sgn = (x, y) => (x - seg.x1) * seg.normalX + (y - seg.y1) * seg.normalY;
+
+    if (el.type === 'circle') {
+      // 원: 접촉 판정 기준점이 중심이므로 중심의 앞/뒤로 판정.
+      //   (중심이 계속 뒷면에 머무는 동안은 표면 반지름 안에 들어와도 통과)
+      const now  = sgn(el.physX, el.physY);
+      const prev = sgn(el.physX - (el.vx || 0) * d, el.physY - (el.vy || 0) * d);
+      return now < 0 && prev < 0;
+    }
+
+    // 사각형: 접촉 판정 기준점이 네 모서리 → 모서리 중 하나라도 앞면이면 접촉 대상.
+    //   (경사면에 얹힌 사각형은 중심이 면 아래라도 위쪽 모서리가 앞면이다)
+    const maxSigned = (ox, oy) => {
+      const x0 = el.physX + ox, y0 = el.physY + oy;
+      return Math.max(
+        sgn(x0,             y0),
+        sgn(x0 + el.gridW,  y0),
+        sgn(x0,             y0 + el.gridH),
+        sgn(x0 + el.gridW,  y0 + el.gridH));
+    };
+    if (maxSigned(0, 0) >= 0) return false;
+    return maxSigned(-(el.vx || 0) * d, -(el.vy || 0) * d) < 0;
+  }
+
+  /**
+   * 시뮬 시작 시 1회: 바닥면과 이미 겹쳐 배치된 물체를 표면 밖으로 밀어낸다.
+   * (격자 스냅 때문에 경사·곡면 위 물체는 조금 파묻힌 채 배치되기 쉽다)
+   * 단면 가드를 끄고 속도를 0으로 둔 채 위치만 보정하므로 반발/마찰은 발생하지 않는다.
+   * 이 과정을 거쳐야 이후 매 스텝의 "뒷면 통과" 판정이 올바른 쪽에서 시작한다.
+   */
+  function _depenetrateInitial() {
+    const saved = STATE.elements.map(e => ({ e, vx: e.vx, vy: e.vy }));
+    for (const s of saved) { s.e.vx = 0; s.e.vy = 0; }
+    _ALLOW_BACKFACE = true;
+    for (let i = 0; i < 4; i++) resolveFloorCollisions(0);
+    _ALLOW_BACKFACE = false;
+    for (const s of saved) { s.e.vx = s.vx; s.e.vy = s.vy; }
+  }
+
   /** CircleBody — 원-선분 최근접점 거리 충돌 */
-  function _resolveCircleFloor(el, segs) {
+  function _resolveCircleFloor(el, segs, dt) {
     const r   = el.gridW / 2;
     const m   = el.mass;
     const I   = 0.5 * m * r * r;   // 균일 원판 관성 모멘트
@@ -533,6 +602,7 @@
       const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
       const lenSq = sdx*sdx + sdy*sdy;
       if (lenSq < 1e-12) continue;
+      if (_backFaceSkip(el, seg, dt)) continue;   // 뒷면 통과
 
       const t = ((el.physX - seg.x1)*sdx + (el.physY - seg.y1)*sdy) / lenSq;
       if (t < 0 || t > 1) continue;
@@ -567,6 +637,7 @@
     //   엣지와 달리 고정 법선이 없으므로 이 방식이 기하학적으로 올바름.
     for (let i = 0; i < segs.length; i++) {
       const seg = segs[i];
+      if (_backFaceSkip(el, seg, dt)) continue;   // 뒷면 통과
       const candidates = (i === 0) ? [{x:seg.x1,y:seg.y1}, {x:seg.x2,y:seg.y2}] : [{x:seg.x2,y:seg.y2}];
       for (const v of candidates) {
         const dx = el.physX - v.x, dy = el.physY - v.y;
@@ -596,7 +667,11 @@
     const vn = el.vx*nx + el.vy*ny;
     if (vn >= 0) return;
 
-    const e_c = Math.sqrt(el.e);
+    // 반발계수: 패널의 e는 "물체 ↔ 바닥" 쌍의 반발계수 그 자체.
+    //   v' = e·v, 반등 높이 = e²·h  (교과서 정의)
+    //   ⚠ 예전에는 바닥을 e=1인 물체로 보고 sqrt(e·1)을 썼는데, 그러면 e=0.25에서
+    //     반등 높이가 0.0625h가 아니라 0.25h가 되어 물리 공식과 어긋났다.
+    const e_c = el.e;
     const jn  = -(1 + e_c) * vn / (1/m);
 
     el.vx += jn/m * nx;
@@ -629,7 +704,8 @@
   }
 
   /** RectBody — 단면 충돌: 법선 방향 위의 물체만 처리 */
-  function _resolveRectFloor(el, segs) {
+  function _resolveRectFloor(el, segs, dt) {
+    const cxEl = el.physX + el.gridW / 2, cyEl = el.physY + el.gridH / 2;
     const corners = [
       { x: el.physX,           y: el.physY },
       { x: el.physX+el.gridW,  y: el.physY },
@@ -648,6 +724,7 @@
       const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
       const lenSq = sdx*sdx + sdy*sdy;
       if (lenSq < 1e-12) continue;
+      if (_backFaceSkip(el, seg, dt)) continue;   // 뒷면 통과
 
       const snx = seg.normalX, sny = seg.normalY;
 
@@ -688,6 +765,7 @@
     const rx1 = rx0 + el.gridW, ry1 = ry0 + el.gridH;
     for (let i = 0; i < segs.length; i++) {
       const seg = segs[i];
+      if (_backFaceSkip(el, seg, dt)) continue;   // 뒷면 통과
       const candidates = (i === 0) ? [{x:seg.x1,y:seg.y1}, {x:seg.x2,y:seg.y2}] : [{x:seg.x2,y:seg.y2}];
       for (const v of candidates) {
         if (v.x <= rx0 || v.x >= rx1 || v.y <= ry0 || v.y >= ry1) continue;
@@ -715,7 +793,8 @@
     el.gridX  = el.physX;
     el.gridY  = CONFIG.GRID_SIZE - el.physY - el.gridH;
 
-    const e_c = Math.sqrt(el.e * 1.0);
+    // 반발계수: 물체 ↔ 바닥 쌍의 반발계수 = el.e (원형과 동일 규약)
+    const e_c = el.e;
     const vn  = el.vx*bestNx + el.vy*bestNy;
     if (vn < 0) {
       const jn = -(1 + e_c) * vn * el.mass;
@@ -735,6 +814,19 @@
         let jt;
         if (jt_stop <= jt_static) {
           jt = jt_stop;
+          // ── 정지마찰 위치 고정 ──
+          // 접선속도를 완전히 없앤다 = 미끄러지지 않는다는 뜻. 그런데 이 서브스텝의
+          // integrate()는 이미 v_t·dt 만큼 물체를 접선 방향으로 옮겨 놓았으므로,
+          // 그 변위를 되돌려야 진짜로 "정지"한다.
+          //   ⚠ 이 보정이 없으면 경사면·벽에 정지해 있어야 할 물체가 매 서브스텝
+          //     v_t·dt 씩 기어간다 (g_t·dt ≈ 4cm/s, 눈에 보이는 크리프).
+          //     속도는 0으로 보이는데 위치만 계속 흐르는 형태라 더 이상하다.
+          if (dt > 0) {
+            el.physX -= vt_x * dt;
+            el.physY -= vt_y * dt;
+            el.gridX  = el.physX;
+            el.gridY  = CONFIG.GRID_SIZE - el.physY - el.gridH;
+          }
         } else {
           jt = muK * jn;
         }
@@ -1064,7 +1156,15 @@
     const dynamicRopeIds = new Set();
 
     for (const run of runs) {
-      if (!run.hasMovable) continue;
+      // 총길이 제약(Σd = L)으로 풀어야 하는 런:
+      //   · 움직도르래를 포함하거나
+      //   · 도르래를 2개 이상 거치는 경우(직렬 도르래)
+      // ⚠ 도르래별 쌍 Atwood(d_i + d_j = 일정)는 도르래가 하나일 때만 옳다.
+      //   실이 도르래 2개를 거치면 가운데 구간이 각 도르래에서 이중 계상되고,
+      //   그 구간이 고정도르래 사이라 길이가 상수이므로 양쪽 물체가 각각
+      //   "거리 일정"으로 묶여 계 전체가 얼어붙는다(가속도 0). 실제로는
+      //   |d1|+|d2|+|d3| = L 하나뿐이라 평범한 Atwood처럼 움직여야 한다.
+      if (!run.hasMovable && run.pulleys.length < 2) continue;
       constraints.push({ ropes: run.ropes, L: run.totalLen });
       for (const rope of run.ropes) {
         dynamicRopeIds.add(rope.id);
