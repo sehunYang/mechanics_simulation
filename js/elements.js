@@ -83,9 +83,13 @@
       };
     }
 
-    /** 순수 데이터 객체 */
+    /** 순수 데이터 객체
+     *  궤적(_trail)은 실행 중에만 쌓이는 휘발성 데이터라 제외한다 —
+     *  스냅샷·실행취소 기록에 수천 개 좌표가 딸려 들어가면 안 된다. */
     serialize() {
-      return { ...this };
+      const o = { ...this };
+      delete o._trail;
+      return o;
     }
 
     /** 깊은 복사 */
@@ -118,6 +122,8 @@
       this.vx0   = 0;
       this.vy0   = 0;
       this.e     = CONFIG.DEFAULT_E;
+      this.showTrail = true;   // 궤적 표시 (물체별 토글)
+      this._trail = [];        // 궤적 좌표 [격자 칸] — 휘발성, serialize 제외
       // 런타임 (시뮬레이션)
       this.vx = 0; this.vy = 0;
       this.ax = 0; this.ay = 0;
@@ -175,6 +181,8 @@
       this.vx0   = 0;
       this.vy0   = 0;
       this.e     = CONFIG.DEFAULT_E;
+      this.showTrail = true;   // 궤적 표시 (물체별 토글)
+      this._trail = [];        // 궤적 좌표 [격자 칸] — 휘발성, serialize 제외
       this.vx = 0; this.vy = 0;
       this.ax = 0; this.ay = 0;
       this.physX = 0; this.physY = 0;

@@ -93,6 +93,15 @@
       }
     }
 
+    /* ── 궤적 (표시 중인 물체만) — 물체·실 아래에 깔린다 ── */
+    for (const el of STATE.elements) {
+      if (!el.showTrail || !el._trail || el._trail.length < 2) continue;
+      const d = svgPolyline(el._trail.map(p => ({ x: p.x * cs, y: p.y * cs })));
+      doc.path(d, `fill="none" stroke="#000000" stroke-opacity="0.42"`
+        + ` stroke-width="${_lw(1.2)}" stroke-dasharray="${_lw(5)},${_lw(4)}"`
+        + ` stroke-linejoin="round" stroke-linecap="round"`);
+    }
+
     /* ── 실 ── */
     for (const rope of STATE.ropes) {
       const A = rope._getAnchorWorld(rope.anchorA);

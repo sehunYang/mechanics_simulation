@@ -222,6 +222,7 @@
     if (STATE.interactionMode !== 'ROPE_DRAW') {
       _drawFloorPins(ctx);
     }
+    _drawTrails(ctx);   // 궤적은 실·물체 아래에 깔아 가리지 않게
     for (const rope of STATE.ropes) {
       if (rope.draw) rope.draw(ctx);
     }
@@ -234,6 +235,33 @@
     _drawResizeHandles(ctx);    // 핸들 점 (선택 요소 위에)
     _drawDeleteZone(ctx);       // 삭제 존 (롱프레스 시)
     _drawRopeWireAnchors(ctx);  // 실 재연결 앵커 포인트
+  }
+
+  /**
+   * 물체 궤적 렌더 — showTrail 이 켜진 물체만.
+   * 기록은 항상 되고 있으므로(physics.recordTrails) 토글은 순수 표시 전환이다.
+   * 좌표는 격자 칸 단위라 cellSize 를 곱해 월드로 옮긴다.
+   * 점 수가 많아 Path2D 캐시(같은 d 재사용)가 의미 없으므로 직접 그린다.
+   */
+  function _drawTrails(ctx) {
+    const cs = CONFIG.cellSize;
+    const s  = VIEWPORT.scale;
+    for (const el of STATE.elements) {
+      if (!el.showTrail || !el._trail || el._trail.length < 2) continue;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,0,0,0.42)';
+      ctx.lineWidth   = 1.2 / s;
+      ctx.lineJoin    = 'round';
+      ctx.lineCap     = 'round';
+      ctx.setLineDash([5 / s, 4 / s]);
+      ctx.beginPath();
+      ctx.moveTo(el._trail[0].x * cs, el._trail[0].y * cs);
+      for (let i = 1; i < el._trail.length; i++) {
+        ctx.lineTo(el._trail[i].x * cs, el._trail[i].y * cs);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   /** FloorSegment 끝점 고정 핀 렌더 (소형 회색 다이아몬드)

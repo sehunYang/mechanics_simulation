@@ -8,6 +8,7 @@
 
   /* ── 시뮬 제어 ── */
   function startSimulation() {
+    clearTrails();          // saveSnapshot 이전에 비워 스냅샷이 깨끗하도록
     saveSnapshot();
     initPhysics();
     STATE.simTime = 0;
@@ -78,6 +79,7 @@
     });
 
     STATE.selected = null;
+    clearTrails();
     validateAll();
   }
 
@@ -273,6 +275,38 @@
       resolveBodyCollisions();
       resolveRopeConstraints(subDt);
     }
+    recordTrails();
+  }
+
+  /* ================================================================
+     [TRAILS] — 물체별 궤적
+     표시 여부(showTrail)와 무관하게 **항상 기록**한다. 껐다 켜도 지나온
+     경로가 그대로 남아, 꺼둔 구간이 직선으로 이어지는 거짓 궤적이 생기지 않는다.
+     좌표는 격자 칸 단위(중심) — 줌·리사이즈로 cellSize 가 바뀌어도 유효하다.
+  ================================================================ */
+
+  function recordTrails() {
+    const minStep2 = Math.pow(CONFIG.TRAIL_MIN_STEP || 0.04, 2);
+    const cap      = CONFIG.TRAIL_MAX_POINTS || 4000;
+    for (const el of STATE.elements) {
+      if (el.type !== 'rect' && el.type !== 'circle') continue;
+      if (!el._trail) el._trail = [];
+      const t  = el._trail;
+      const cx = el.gridX + el.gridW / 2;
+      const cy = el.gridY + el.gridH / 2;
+      if (t.length) {
+        const last = t[t.length - 1];
+        const dx = cx - last.x, dy = cy - last.y;
+        if (dx * dx + dy * dy < minStep2) continue;   // 정지·미세 진동은 쌓지 않음
+      }
+      t.push({ x: cx, y: cy });
+      if (t.length > cap) t.splice(0, Math.floor(cap * 0.25));   // 앞쪽부터 버림
+    }
+  }
+
+  /** 모든 물체의 궤적 비우기 (실행 시작 / 초기화) */
+  function clearTrails() {
+    for (const el of STATE.elements) if (el._trail) el._trail.length = 0;
   }
 
   /* ── 힘 적용 (중력 + ForceZone + 용수철) ── */

@@ -203,5 +203,154 @@ scenario('RUN-BADGE-RESTART', '재실행 시 시뮬 시간이 0부터 다시 시
   expect('재실행 시 0으로 리셋', a.evalIn(`STATE.simTime`), 0, 1e-12, 's');
 });
 
+/* ════════════════════════════════════════════════════════════
+   물체 궤적 (물체별 표시 토글)
+   ════════════════════════════════════════════════════════════ */
+
+scenario('TRAIL-RECORD', '실행하면 물체마다 궤적이 쌓인다', () => {
+  const a = app();
+  const r = a.evalIn(`
+    STATE.elements = [];
+    const b = new RectBody();   b.gridX = 50; b.gridY = 20; b.mass = 1; STATE.elements.push(b);
+    const c = new CircleBody(); c.gridX = 30; c.gridY = 20; c.mass = 1; c.vx0 = 4; STATE.elements.push(c);
+    startSimulation();
+    const before = b._trail.length;
+    for (let i = 0; i < 120; i++) simStep(CONFIG.FIXED_DT);   // 2초 자유낙하
+    ({ before, rect: b._trail.length, circ: c._trail.length,
+       first: b._trail[0], last: b._trail[b._trail.length - 1],
+       cx: b.gridX + b.gridW/2, cy: b.gridY + b.gridH/2 });`);
+  note('점 개수 (사각/원)', `${r.rect} / ${r.circ}`);
+  expect('시작 시 비어 있음', r.before, 0, 0, '개');
+  expect('사각형 궤적 기록됨', r.rect > 10 ? 1 : 0, 1, 0, '');
+  expect('원 궤적도 기록됨',   r.circ > 10 ? 1 : 0, 1, 0, '');
+  expect('마지막 점 = 현재 중심 x', r.last.x, r.cx, 1e-9, '칸');
+  expect('마지막 점 = 현재 중심 y', r.last.y, r.cy, 1e-9, '칸');
+  expect('자유낙하라 아래로 진행', r.last.y > r.first.y ? 1 : 0, 1, 0, '');
+});
+
+scenario('TRAIL-TOGGLE', '표시 토글은 기록을 멈추지 않는다 (껐다 켜도 경로 유지)', () => {
+  const a = app();
+  const r = a.evalIn(`
+    STATE.elements = [];
+    const b = new RectBody(); b.gridX = 50; b.gridY = 20; STATE.elements.push(b);
+    startSimulation();
+    for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
+    const onCount = b._trail.length;
+    b.showTrail = false;                                   // 표시만 끔
+    for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
+    const offCount = b._trail.length;
+    b.showTrail = true;                                    // 다시 켬
+    ({ onCount, offCount, defaultOn: (new RectBody()).showTrail });`);
+  note('끄기 전/후 점 개수', `${r.onCount} → ${r.offCount}`);
+  expect('기본값은 표시 ON', r.defaultOn ? 1 : 0, 1, 0, '');
+  expect('꺼둔 동안에도 계속 기록', r.offCount > r.onCount ? 1 : 0, 1, 0, '');
+});
+
+scenario('TRAIL-DRAW', '표시 여부에 따라 그려지거나 빠진다', () => {
+  const a = app();
+  // drawScene 이 실제로 그리는 선분 수를 세어 확인
+  const count = (showA, showB) => a.evalIn(`
+    STATE.elements = [];
+    const b1 = new RectBody(); b1.gridX = 40; b1.gridY = 20; STATE.elements.push(b1);
+    const b2 = new RectBody(); b2.gridX = 60; b2.gridY = 20; STATE.elements.push(b2);
+    startSimulation();
+    for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
+    b1.showTrail = ${showA}; b2.showTrail = ${showB};
+    let strokes = 0, moves = 0;
+    const real = mainCtx.beginPath;
+    const rec = { n: 0 };
+    // _drawTrails 만 따로 호출해 moveTo 횟수로 궤적 개수를 센다
+    const probe = new Proxy({}, { get: (t, k) => {
+      if (k === 'moveTo') return () => { rec.n++; };
+      if (k === 'setLineDash') return () => {};
+      return () => {};
+    }});
+    _drawTrails(probe);
+    rec.n;`);
+  const both = count('true', 'true');
+  const one  = count('true', 'false');
+  const none = count('false', 'false');
+  note('그려진 궤적 수 (둘/하나/없음)', `${both} / ${one} / ${none}`);
+  expect('둘 다 켜면 2개', both, 2, 0, '개');
+  expect('하나만 켜면 1개', one, 1, 0, '개');
+  expect('둘 다 끄면 0개', none, 0, 0, '개');
+});
+
+scenario('TRAIL-RESET', '재실행·초기화 시 궤적이 지워진다', () => {
+  const a = app();
+  const r = a.evalIn(`
+    STATE.elements = [];
+    const b = new RectBody(); b.gridX = 50; b.gridY = 20; STATE.elements.push(b);
+    startSimulation();
+    for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
+    const grew = b._trail.length;
+    startSimulation();                       // 재실행
+    const afterRestart = b._trail.length;
+    for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
+    restoreSnapshot();                       // 초기화 버튼 경로
+    const afterReset = STATE.elements[0]._trail ? STATE.elements[0]._trail.length : 0;
+    ({ grew, afterRestart, afterReset });`);
+  note('쌓임 / 재실행 후 / 초기화 후', `${r.grew} / ${r.afterRestart} / ${r.afterReset}`);
+  expect('실행 중 쌓임', r.grew > 10 ? 1 : 0, 1, 0, '');
+  expect('재실행 시 0', r.afterRestart, 0, 0, '개');
+  expect('초기화 시 0', r.afterReset, 0, 0, '개');
+});
+
+scenario('TRAIL-SERIALIZE', '궤적은 스냅샷·실행취소 기록에 들어가지 않는다', () => {
+  const a = app();
+  const r = a.evalIn(`
+    STATE.elements = [];
+    const b = new RectBody(); b.gridX = 50; b.gridY = 20; STATE.elements.push(b);
+    startSimulation();
+    for (let i = 0; i < 300; i++) simStep(CONFIG.FIXED_DT);
+    const n = b._trail.length;
+    const ser = b.serialize();
+    saveSnapshot();
+    ({ n, hasTrail: '_trail' in ser, snapLen: STATE.snapshot.length,
+       snapHasTrail: STATE.snapshot.includes('_trail'),
+       keepsShowTrail: 'showTrail' in ser });`);
+  note('점 개수 / 스냅샷 크기', `${r.n} / ${r.snapLen} bytes`);
+  expect('궤적 점이 충분히 쌓임', r.n > 50 ? 1 : 0, 1, 0, '');
+  expect('serialize 에 _trail 없음', r.hasTrail ? 1 : 0, 0, 0, '');
+  expect('스냅샷에도 _trail 없음', r.snapHasTrail ? 1 : 0, 0, 0, '');
+  expect('표시 설정(showTrail)은 보존', r.keepsShowTrail ? 1 : 0, 1, 0, '');
+});
+
+scenario('TRAIL-STATIONARY', '정지 물체는 점을 무한히 쌓지 않는다', () => {
+  const a = app();
+  const r = a.evalIn(`
+    STATE.elements = []; STATE.floorSegments = [];
+    STATE.floorSegments.push(new FloorSegment(0, 60, 100, 60));
+    const b = new RectBody(); b.gridX = 50; b.gridY = 59; b.e = 0; STATE.elements.push(b);
+    startSimulation();
+    for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
+    const settled = b._trail.length;
+    for (let i = 0; i < 1800; i++) simStep(CONFIG.FIXED_DT);   // 30초 더
+    ({ settled, after: b._trail.length, cap: CONFIG.TRAIL_MAX_POINTS });`);
+  note('안정 후 / 30초 뒤', `${r.settled} / ${r.after}`);
+  expect('정지 후 점이 늘지 않음', r.after - r.settled, 0, 0, '개');
+  expect('상한 이하', r.after <= r.cap ? 1 : 0, 1, 0, '');
+});
+
+scenario('TRAIL-SVG', 'SVG 내보내기에 궤적이 포함된다 (표시 중인 것만)', () => {
+  const a = app();
+  const r = a.evalIn(`
+    CONFIG.cellSize = 8; VIEWPORT.scale = 1; VIEWPORT.offsetX = 0; VIEWPORT.offsetY = 0;
+    STATE.elements = []; STATE.floorSegments = []; STATE.ropes = [];
+    const b1 = new RectBody(); b1.gridX = 40; b1.gridY = 20; STATE.elements.push(b1);
+    const b2 = new RectBody(); b2.gridX = 60; b2.gridY = 20; STATE.elements.push(b2);
+    startSimulation();
+    for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
+    b2.showTrail = false;
+    const svg = buildSceneSVG();
+    ({ dashed: (svg.match(/stroke-dasharray/g) || []).length,
+       chromatic: /stroke="#(?!000000)[0-9a-f]{6}"/i.test(svg),
+       hasNaN: /NaN|undefined/.test(svg) });`);
+  note('점선 path 수', r.dashed);
+  expect('표시 중인 1개만 점선 궤적으로 출력', r.dashed, 1, 0, '개');
+  expect('여전히 흑백', r.chromatic ? 1 : 0, 0, 0, '');
+  expect('NaN 없음', r.hasNaN ? 1 : 0, 0, 0, '');
+});
+
 report();
 process.exit(0);
