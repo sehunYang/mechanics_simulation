@@ -818,31 +818,32 @@
     }
 
     /**
-     * 마찰 해치: 경로를 따라 5/scale px 간격으로 수직 단선 (길이 4/scale px)
-     * strokeStyle '#ef4444', lineWidth 1/scale
+     * 마찰 해치: 경로를 따라 5/scale px 간격의 수직 단선 (길이 3.5/scale px).
+     *
+     * 실체면 쪽으로만 뻗는다 — 예전에는 선을 가로질러 양쪽으로 그려서
+     * 자유면(물체가 놓이는 쪽)까지 침범했고, 실체면 빗금과 방향이 어긋나
+     * "어느 쪽이 막히는 면인지"를 오히려 흐렸다. 이제 45° 실체면 빗금과
+     * 같은 쪽에 모여, 빨강 수직선 = 거친 표면 / 회색 45° = 지반 으로 읽힌다.
+     * 방향 규약은 _drawSolidSideHatch 와 동일: 실체면 = (−ty, tx).
      */
     _drawFrictionHatch(ctx, ax, ay, bx, by, s) {
       const spacing = 5 / s;
-      const halfLen = 2 / s;   // 단선 절반 길이 (총 4/s)
+      const len     = 3.5 / s;
 
-      // 경로 샘플 포인트 생성
       const pts = this._samplePath(ax, ay, bx, by, spacing);
+      if (pts.length === 0) return;
 
+      ctx.save();
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth   = 1 / s;
-
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
-        // 진행 방향 tangent
-        const tx = p.tx, ty = p.ty;
-        // 수직 벡터
-        const nx = -ty, ny = tx;
-
-        ctx.beginPath();
-        ctx.moveTo(p.x + nx * halfLen, p.y + ny * halfLen);
-        ctx.lineTo(p.x - nx * halfLen, p.y - ny * halfLen);
-        ctx.stroke();
+      ctx.beginPath();
+      for (const p of pts) {
+        const sx = -p.ty, sy = p.tx;   // 실체면 단위벡터 (경로에 수직)
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + sx * len, p.y + sy * len);
       }
+      ctx.stroke();
+      ctx.restore();
     }
 
     /**

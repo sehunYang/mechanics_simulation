@@ -23,8 +23,10 @@ function makeCtx() {
   return c;
 }
 
-/** 세그먼트를 그려 빗금 선분 목록 [{p:{x,y}, q:{x,y}}] 을 캡처 (월드=격자 좌표) */
-function captureHatch(c, segOpts) {
+/** 세그먼트를 그려 빗금 선분 목록 [{p:{x,y}, q:{x,y}}] 을 캡처 (월드=격자 좌표)
+ *  method: '_drawSolidSideHatch'(기본) 또는 '_drawFrictionHatch' */
+function captureHatch(c, segOpts, method) {
+  const fn = method || '_drawSolidSideHatch';
   return vm.runInContext(`{
     reset();
     const seg = addFloor(${segOpts.x1}, ${segOpts.y1}, ${segOpts.x2}, ${segOpts.y2},
@@ -38,7 +40,7 @@ function captureHatch(c, segOpts) {
       set strokeStyle(v){}, get strokeStyle(){ return ''; },
       set lineWidth(v){},   get lineWidth(){ return 1; },
     };
-    seg._drawSolidSideHatch(rec, seg.x1, seg.y1, seg.x2, seg.y2, 1);
+    seg.${fn}(rec, seg.x1, seg.y1, seg.x2, seg.y2, 1);
     ({ ticks, physSegs: getPhysicsSegments(seg) });
   }`, c);
 }
@@ -47,8 +49,10 @@ function captureHatch(c, segOpts) {
  *  tol: 45° 공칭값(−1/√2)과의 허용 편차. 곡면은 빗금 샘플링(간격 8px)과
  *       물리 미세 세그먼트(20분할)의 이산화가 달라 조금 벌어지므로 넉넉히 준다.
  *       방향이 뒤집히면 부호 자체가 양수가 되므로 이 검사로도 충분히 잡힌다. */
-function checkSide(label, cap, tol) {
+function checkSide(label, cap, tol, expected) {
   const { ticks, physSegs } = cap;
+  const nominal = expected ?? -Math.SQRT1_2;   // 45° 빗금. 마찰 해치(수직)는 −1
+  const wantLen = expected === -1 ? 3.5 : 5;
   if (ticks.length === 0) { expect(label + ' — 빗금 생성됨', 0, 1, 0, ''); return; }
 
   let worstDot = -Infinity, minLen = Infinity, maxLen = -Infinity;
@@ -71,9 +75,9 @@ function checkSide(label, cap, tol) {
     // 정규화한 방향 · 법선 : 실체면이면 음수 (자유면 반대)
     worstDot = Math.max(worstDot, (d.x * best.normalX + d.y * best.normalY) / (L || 1));
   }
-  // 45° 빗금이므로 법선 성분은 −1/√2 ≈ −0.707 이어야 한다 (부호가 핵심)
-  expect(label + ' — 모든 빗금이 실체면 쪽', worstDot, -Math.SQRT1_2, tol ?? 0.02, '·n̂');
-  expect(label + ' — 빗금 길이 일정(5px)', minLen, 5, 0.01, 'px');
+  // 법선 성분은 음수(실체면 쪽)여야 한다 — 방향이 뒤집히면 양수가 되어 바로 걸린다
+  expect(label + ' — 모든 빗금이 실체면 쪽', worstDot, nominal, tol ?? 0.02, '·n̂');
+  expect(label + ` — 길이 일정(${wantLen}px)`, minLen, wantLen, 0.01, 'px');
   expect(label + ' — 길이 편차 없음', maxLen - minLen, 0, 1e-9, 'px');
 }
 
@@ -139,7 +143,34 @@ scenario('HATCH-ARC-TILT', '기울어진 곡면 + 역방향으로 그린 곡면'
   checkSide('ARC_DOWN 역방향',   captureHatch(c, { x1: 70, y1: 35, x2: 30, y2: 70, o: { pathType: 'ARC_DOWN', curvature: 0.6 } }), 0.12);
 });
 
-/* ── 6. 물리 거동과의 대조: 빗금이 가리키는 쪽에서 물체가 막히는가 ── */
+/* ── 6. 마찰 해치도 실체면 쪽으로만 (자유면 침범 없음) ── */
+scenario('HATCH-FRICTION', '마찰 해치 — 실체면 쪽 수직선, 자유면 침범 없음', () => {
+  const c = makeCtx();
+  const F = { isFriction: true, muS: 0.4, muK: 0.3 };
+  const CASES = [
+    ['바닥',   { x1: 20, y1: 60, x2: 80, y2: 60, o: F }],
+    ['천장',   { x1: 80, y1: 30, x2: 20, y2: 30, o: F }],
+    ['벽',     { x1: 60, y1: 70, x2: 60, y2: 30, o: F }],
+    ['경사',   { x1: 20, y1: 60, x2: 70, y2: 35, o: F }],
+    ['ELBOW_H',{ x1: 20, y1: 60, x2: 60, y2: 40, o: { ...F, pathType: 'ELBOW_H' } }],
+  ];
+  // 수직(perpendicular) 이므로 법선 성분 = −1
+  for (const [label, o] of CASES) checkSide(label, captureHatch(c, o, '_drawFrictionHatch'), 0.02, -1);
+  for (const [label, o] of [['ARC_UP', { x1: 20, y1: 60, x2: 80, y2: 60, o: { ...F, pathType: 'ARC_UP', curvature: 0.6 } }],
+                            ['ARC_DOWN', { x1: 20, y1: 40, x2: 80, y2: 40, o: { ...F, pathType: 'ARC_DOWN', curvature: 0.6 } }]]) {
+    checkSide(label, captureHatch(c, o, '_drawFrictionHatch'), 0.12, -1);
+  }
+
+  // 마찰 해치와 실체면 빗금이 같은 쪽인지 (부호 일치) 직접 대조
+  const seg = { x1: 20, y1: 60, x2: 80, y2: 60, o: F };
+  const fr = captureHatch(c, seg, '_drawFrictionHatch').ticks[0];
+  const so = captureHatch(c, seg, '_drawSolidSideHatch').ticks[0];
+  note('마찰 / 실체면 빗금 dy', `${(fr.q.y - fr.p.y).toFixed(2)} / ${(so.q.y - so.p.y).toFixed(2)}`);
+  expect('두 표시가 같은 쪽', Math.sign(fr.q.y - fr.p.y), Math.sign(so.q.y - so.p.y), 0, '');
+  expect('마찰 해치가 선 위(자유면)로 넘어가지 않음', Math.min(fr.p.y, fr.q.y) >= 60 - 1e-9 ? 1 : 0, 1, 0, '');
+});
+
+/* ── 7. 물리 거동과의 대조: 빗금이 가리키는 쪽에서 물체가 막히는가 ── */
 scenario('HATCH-PHYS', '빗금 반대쪽(자유면)에서 떨어뜨린 물체는 막히고, 빗금 쪽은 통과', () => {
   const c = makeCtx();
   // 천장(오→왼, 법선 아래 = 자유면 아래). 빗금은 위쪽에 그려져야 하고,
