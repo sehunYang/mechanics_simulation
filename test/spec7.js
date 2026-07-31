@@ -1,8 +1,8 @@
 /* ============================================================
-   test/spec7.js — 실체면 빗금이 실제 충돌면과 같은 쪽을 가리키는가
-     FloorSegment._drawSolidSideHatch 가 캔버스에 그리는 선분을 그대로 캡처해,
-     각 빗금이 getPhysicsSegments 의 법선 **반대쪽**(= 막히는 쪽)으로 향하는지
-     모든 pathType · 그리는 방향 · 곡률에 대해 검증한다.
+   test/spec7.js — 수능 작도 규격 도형 + 실체면 방향 + SVG 내보내기
+     · svg-shapes.js 의 path 빌더가 규격대로 기하를 만드는지
+     · 실체면 회색 띠가 실제 충돌 법선의 반대쪽(막히는 쪽)을 덮는지
+     · 촬영이 만들어내는 SVG 가 올바르고 흑백인지
    실행: node test/spec7.js
    ============================================================ */
 'use strict';
@@ -10,228 +10,246 @@ const fs   = require('fs');
 const path = require('path');
 const vm   = require('vm');
 const { scenario, expect, note, report, loadEngine, SCENE_API } = require('./harness');
+const { loadApp } = require('./dom-harness');
 
 const ROOT = path.resolve(__dirname, '..');
 const GS   = 100;
 
+/** physics + svg-shapes + hit-test 가 올라간 컨텍스트 (격자 1칸 = 월드 1px) */
 function makeCtx() {
   const c = loadEngine();
   vm.runInContext(SCENE_API, c);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/hit-test.js'), 'utf8'), c, { filename: 'js/hit-test.js' });
-  // 격자 1칸 = 월드 1px 로 두면 월드좌표 = 격자좌표라 검산이 단순해진다
+  for (const f of ['js/svg-shapes.js', 'js/hit-test.js']) {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), c, { filename: f });
+  }
   vm.runInContext(`CONFIG.cellSize = 1; VIEWPORT.scale = 1; VIEWPORT.offsetX = 0; VIEWPORT.offsetY = 0;`, c);
   return c;
 }
 
-/** 세그먼트를 그려 빗금 선분 목록 [{p:{x,y}, q:{x,y}}] 을 캡처 (월드=격자 좌표)
- *  method: '_drawSolidSideHatch'(기본) 또는 '_drawFrictionHatch' */
-function captureHatch(c, segOpts, method) {
-  const fn = method || '_drawSolidSideHatch';
-  return vm.runInContext(`{
-    reset();
-    const seg = addFloor(${segOpts.x1}, ${segOpts.y1}, ${segOpts.x2}, ${segOpts.y2},
-                         ${JSON.stringify(segOpts.o || {})});
-    const ticks = [];
-    let cur = null;
-    const rec = {
-      save(){}, restore(){}, beginPath(){ }, stroke(){},
-      moveTo(x,y){ cur = {x,y}; },
-      lineTo(x,y){ if (cur) { ticks.push({ p: cur, q: {x,y} }); cur = null; } },
-      set strokeStyle(v){}, get strokeStyle(){ return ''; },
-      set lineWidth(v){},   get lineWidth(){ return 1; },
-    };
-    seg.${fn}(rec, seg.x1, seg.y1, seg.x2, seg.y2, 1);
-    ({ ticks, physSegs: getPhysicsSegments(seg) });
-  }`, c);
+/** path d 문자열 → 각 명령의 **끝점** 좌표 배열
+ *  (A 는 인자가 7개라 숫자를 2개씩 끊으면 안 된다) */
+function pts(d) {
+  const out = [];
+  let cur = { x: 0, y: 0 };
+  const tokens = d.match(/[MLHVAZmlhvaz]|-?\d+(?:\.\d+)?/g) || [];
+  let i = 0;
+  const num = () => Number(tokens[i++]);
+  while (i < tokens.length) {
+    const c = tokens[i++];
+    switch (c) {
+      case 'M': case 'L': cur = { x: num(), y: num() }; out.push(cur); break;
+      case 'H': cur = { x: num(), y: cur.y }; out.push(cur); break;
+      case 'V': cur = { x: cur.x, y: num() }; out.push(cur); break;
+      case 'A': num(); num(); num(); num(); num();          // rx ry rot large sweep
+                cur = { x: num(), y: num() }; out.push(cur); break;
+      case 'Z': break;
+      default: break;   // 숫자 연속(암묵 L) — 이 프로젝트 path 에는 없음
+    }
+  }
+  return out;
 }
 
-/** 빗금이 전부 법선 반대쪽(실체면)을 향하는지 확인
- *  tol: 45° 공칭값(−1/√2)과의 허용 편차. 곡면은 빗금 샘플링(간격 8px)과
- *       물리 미세 세그먼트(20분할)의 이산화가 달라 조금 벌어지므로 넉넉히 준다.
- *       방향이 뒤집히면 부호 자체가 양수가 되므로 이 검사로도 충분히 잡힌다. */
-function checkSide(label, cap, tol, expected) {
-  const { ticks, physSegs } = cap;
-  const nominal = expected ?? -Math.SQRT1_2;   // 45° 빗금. 마찰 해치(수직)는 −1
-  const wantLen = expected === -1 ? 3.5 : 5;
-  if (ticks.length === 0) { expect(label + ' — 빗금 생성됨', 0, 1, 0, ''); return; }
+/* ════════════════════════════════════════════════════════════
+   A. 실체면 회색 띠가 막히는 쪽을 덮는가 (표시 ↔ 물리 일치)
+   ════════════════════════════════════════════════════════════ */
 
-  let worstDot = -Infinity, minLen = Infinity, maxLen = -Infinity;
-  for (const t of ticks) {
-    // 월드(화면, y 아래로 증가) → 물리(y 위로 증가)
-    const p = { x: t.p.x, y: GS - t.p.y };
-    const d = { x: t.q.x - t.p.x, y: -(t.q.y - t.p.y) };
-    const L = Math.hypot(d.x, d.y);
-    minLen = Math.min(minLen, L); maxLen = Math.max(maxLen, L);
+/** 세그먼트의 실체면 띠를 만들어, 띠가 법선 반대쪽으로 뻗는지 확인 */
+function checkBand(c, label, seg, tol) {
+  const r = vm.runInContext(`{
+    reset();
+    const s = addFloor(${seg.x1}, ${seg.y1}, ${seg.x2}, ${seg.y2}, ${JSON.stringify(seg.o || {})});
+    const pts = s._samplePath(s.x1, s.y1, s.x2, s.y2, 4);
+    ({ band: svgBand(pts, 6, +1), samples: pts.map(p => ({x:p.x, y:p.y, tx:p.tx, ty:p.ty})),
+       physSegs: getPhysicsSegments(s) });
+  }`, c);
 
-    // 빗금 시작점에 가장 가까운 물리 미세 세그먼트를 찾는다
+  if (r.samples.length < 2) { expect(label + ' — 샘플 생성', 0, 1, 0, ''); return; }
+
+  let worst = -Infinity;
+  for (const p of r.samples) {
+    // 띠가 뻗는 방향 (svgBand 의 side=+1 규약)
+    const d = { x: -p.ty, y: p.tx };
+    // 물리 좌표로 변환 (화면 y 아래 → 물리 y 위)
+    const dp = { x: d.x, y: -d.y };
+    const pp = { x: p.x, y: GS - p.y };
     let best = null, bestD = Infinity;
-    for (const s of physSegs) {
-      const sx = s.x2 - s.x1, sy = s.y2 - s.y1;
-      const l2 = sx * sx + sy * sy;
-      const u  = l2 > 1e-12 ? Math.max(0, Math.min(1, ((p.x - s.x1) * sx + (p.y - s.y1) * sy) / l2)) : 0;
-      const dd = Math.hypot(p.x - (s.x1 + u * sx), p.y - (s.y1 + u * sy));
+    for (const s of r.physSegs) {
+      const sx = s.x2 - s.x1, sy = s.y2 - s.y1, l2 = sx * sx + sy * sy;
+      const u  = l2 > 1e-12 ? Math.max(0, Math.min(1, ((pp.x - s.x1) * sx + (pp.y - s.y1) * sy) / l2)) : 0;
+      const dd = Math.hypot(pp.x - (s.x1 + u * sx), pp.y - (s.y1 + u * sy));
       if (dd < bestD) { bestD = dd; best = s; }
     }
-    // 정규화한 방향 · 법선 : 실체면이면 음수 (자유면 반대)
-    worstDot = Math.max(worstDot, (d.x * best.normalX + d.y * best.normalY) / (L || 1));
+    worst = Math.max(worst, dp.x * best.normalX + dp.y * best.normalY);
   }
-  // 법선 성분은 음수(실체면 쪽)여야 한다 — 방향이 뒤집히면 양수가 되어 바로 걸린다
-  expect(label + ' — 모든 빗금이 실체면 쪽', worstDot, nominal, tol ?? 0.02, '·n̂');
-  expect(label + ` — 길이 일정(${wantLen}px)`, minLen, wantLen, 0.01, 'px');
-  expect(label + ' — 길이 편차 없음', maxLen - minLen, 0, 1e-9, 'px');
+  // 법선의 정반대여야 하므로 −1
+  expect(label + ' — 띠가 실체면 쪽', worst, -1, tol ?? 0.02, '·n̂');
 }
 
-/* ── 1. 직선: 그리는 방향에 따라 실체면이 뒤집히는가 ── */
-scenario('HATCH-LINE', '직선 바닥/천장/벽 — 그리는 방향별 실체면', () => {
+scenario('SN-BAND-LINE', '직선 바닥/천장/벽/경사 — 실체면 띠 방향', () => {
   const c = makeCtx();
   const CASES = [
-    ['바닥 (왼→오, 법선 위)',   { x1: 20, y1: 60, x2: 80, y2: 60 }],
-    ['천장 (오→왼, 법선 아래)', { x1: 80, y1: 30, x2: 20, y2: 30 }],
-    ['벽 (아래→위, 법선 왼)',   { x1: 60, y1: 70, x2: 60, y2: 30 }],
-    ['벽 (위→아래, 법선 오른)', { x1: 40, y1: 30, x2: 40, y2: 70 }],
-    ['경사 (왼→오 오르막)',     { x1: 20, y1: 60, x2: 60, y2: 40 }],
-    ['경사 (오→왼 내리막)',     { x1: 60, y1: 40, x2: 20, y2: 60 }],
+    ['바닥 (왼→오)',   { x1: 20, y1: 60, x2: 80, y2: 60 }],
+    ['천장 (오→왼)',   { x1: 80, y1: 30, x2: 20, y2: 30 }],
+    ['벽 (아래→위)',   { x1: 60, y1: 70, x2: 60, y2: 30 }],
+    ['벽 (위→아래)',   { x1: 40, y1: 30, x2: 40, y2: 70 }],
+    ['경사 오르막',    { x1: 20, y1: 60, x2: 60, y2: 40 }],
+    ['경사 내리막',    { x1: 60, y1: 40, x2: 20, y2: 60 }],
+    ['마찰 바닥',      { x1: 20, y1: 60, x2: 80, y2: 60, o: { isFriction: true } }],
   ];
-  for (const [label, o] of CASES) checkSide(label, captureHatch(c, o));
+  for (const [l, s] of CASES) checkBand(c, l, s);
 });
 
-/* ── 2. 직선 4방향의 빗금이 실제로 기대한 화면 방향인가 (육안 대응 확인) ── */
-scenario('HATCH-DIR', '빗금이 향하는 화면 방향 (아래/위/오른쪽/왼쪽)', () => {
+scenario('SN-BAND-CURVE', 'ELBOW / ARC — 실체면 띠 방향 (곡률 전 구간)', () => {
   const c = makeCtx();
-  const dirOf = (cap) => {
-    const t = cap.ticks[Math.floor(cap.ticks.length / 2)];
-    return { dx: t.q.x - t.p.x, dy: t.q.y - t.p.y };   // 화면 좌표 (y 아래로 +)
-  };
-  const floor   = dirOf(captureHatch(c, { x1: 20, y1: 60, x2: 80, y2: 60 }));
-  const ceiling = dirOf(captureHatch(c, { x1: 80, y1: 30, x2: 20, y2: 30 }));
-  const wallL   = dirOf(captureHatch(c, { x1: 60, y1: 70, x2: 60, y2: 30 }));
-  const wallR   = dirOf(captureHatch(c, { x1: 40, y1: 30, x2: 40, y2: 70 }));
-  note('바닥 빗금 방향',  `(${floor.dx.toFixed(2)}, ${floor.dy.toFixed(2)})`);
-  note('천장 빗금 방향',  `(${ceiling.dx.toFixed(2)}, ${ceiling.dy.toFixed(2)})`);
-  expect('바닥 → 선 아래로 (화면 +y)',      Math.sign(floor.dy),   +1, 0, '');
-  expect('천장 → 선 위로 (화면 −y)',        Math.sign(ceiling.dy), -1, 0, '');
-  expect('법선 왼쪽 벽 → 오른쪽에 빗금',    Math.sign(wallL.dx),   +1, 0, '');
-  expect('법선 오른쪽 벽 → 왼쪽에 빗금',    Math.sign(wallR.dx),   -1, 0, '');
-});
-
-/* ── 3. 꺾인 바닥: 두 다리 각각 올바른 쪽 ── */
-scenario('HATCH-ELBOW', 'ELBOW_H / ELBOW_V — 꺾인 두 구간 모두 실체면 쪽', () => {
-  const c = makeCtx();
-  checkSide('ELBOW_H (바닥+오른쪽 벽)', captureHatch(c, { x1: 20, y1: 60, x2: 60, y2: 40, o: { pathType: 'ELBOW_H' } }));
-  checkSide('ELBOW_V (왼쪽 벽+바닥)',   captureHatch(c, { x1: 30, y1: 40, x2: 70, y2: 60, o: { pathType: 'ELBOW_V' } }));
-  checkSide('ELBOW_H (반대 방향)',      captureHatch(c, { x1: 60, y1: 40, x2: 20, y2: 60, o: { pathType: 'ELBOW_H' } }));
-  checkSide('ELBOW_V (반대 방향)',      captureHatch(c, { x1: 70, y1: 60, x2: 30, y2: 40, o: { pathType: 'ELBOW_V' } }));
-});
-
-/* ── 4. 곡면: 곡률 전 구간에서 법선 반대쪽 ── */
-scenario('HATCH-ARC', 'ARC_UP / ARC_DOWN — 곡률 6종 전 구간 실체면 쪽', () => {
-  const c = makeCtx();
-  for (const pathType of ['ARC_UP', 'ARC_DOWN']) {
-    for (const curvature of [0.2, 0.5, 1.0, 1.3, 1.9]) {
-      checkSide(`${pathType} cv=${curvature}`,
-        captureHatch(c, { x1: 30, y1: 50, x2: 70, y2: 50, o: { pathType, curvature } }), 0.12);
+  checkBand(c, 'ELBOW_H', { x1: 20, y1: 60, x2: 60, y2: 40, o: { pathType: 'ELBOW_H' } });
+  checkBand(c, 'ELBOW_V', { x1: 30, y1: 40, x2: 70, y2: 60, o: { pathType: 'ELBOW_V' } });
+  for (const pt of ['ARC_UP', 'ARC_DOWN']) {
+    for (const cv of [0.2, 0.6, 1.0, 1.5]) {
+      checkBand(c, `${pt} cv=${cv}`, { x1: 30, y1: 50, x2: 70, y2: 50, o: { pathType: pt, curvature: cv } }, 0.12);
     }
   }
 });
 
-/* ── 5. 기울어진 현 + 역방향 곡면 ── */
-scenario('HATCH-ARC-TILT', '기울어진 곡면 + 역방향으로 그린 곡면', () => {
+scenario('SN-BAND-DIR', '띠가 향하는 화면 방향 (바닥=아래 / 천장=위)', () => {
   const c = makeCtx();
-  checkSide('ARC_UP 기울어짐',   captureHatch(c, { x1: 30, y1: 70, x2: 70, y2: 35, o: { pathType: 'ARC_UP',   curvature: 0.6 } }), 0.12);
-  checkSide('ARC_DOWN 기울어짐', captureHatch(c, { x1: 30, y1: 70, x2: 70, y2: 35, o: { pathType: 'ARC_DOWN', curvature: 0.6 } }), 0.12);
-  checkSide('ARC_UP 역방향',     captureHatch(c, { x1: 70, y1: 35, x2: 30, y2: 70, o: { pathType: 'ARC_UP',   curvature: 0.6 } }), 0.12);
-  checkSide('ARC_DOWN 역방향',   captureHatch(c, { x1: 70, y1: 35, x2: 30, y2: 70, o: { pathType: 'ARC_DOWN', curvature: 0.6 } }), 0.12);
-});
-
-/* ── 6. 마찰면: 빗금이 빨강으로 바뀌되 기하는 동일 ── */
-scenario('HATCH-FRICTION', '마찰면 — 빗금 색만 빨강, 위치·방향은 매끄러운 면과 동일', () => {
-  const c = makeCtx();
-  const F = { isFriction: true, muS: 0.4, muK: 0.3 };
-
-  // 기하는 마찰 여부와 무관해야 한다 (실체면 쪽 45°)
-  const CASES = [
-    ['마찰 바닥',   { x1: 20, y1: 60, x2: 80, y2: 60, o: F }],
-    ['마찰 천장',   { x1: 80, y1: 30, x2: 20, y2: 30, o: F }],
-    ['마찰 벽',     { x1: 60, y1: 70, x2: 60, y2: 30, o: F }],
-    ['마찰 경사',   { x1: 20, y1: 60, x2: 70, y2: 35, o: F }],
-    ['마찰 ELBOW_H',{ x1: 20, y1: 60, x2: 60, y2: 40, o: { ...F, pathType: 'ELBOW_H' } }],
-  ];
-  for (const [label, o] of CASES) checkSide(label, captureHatch(c, o));
-  checkSide('마찰 ARC_DOWN',
-    captureHatch(c, { x1: 20, y1: 40, x2: 80, y2: 40, o: { ...F, pathType: 'ARC_DOWN', curvature: 0.6 } }), 0.12);
-
-  // 마찰/비마찰 빗금의 좌표가 완전히 동일한지 (색만 달라야 함)
-  const base = { x1: 20, y1: 60, x2: 80, y2: 60 };
-  const plain = captureHatch(c, base).ticks;
-  const fric  = captureHatch(c, { ...base, o: F }).ticks;
-  expect('빗금 개수 동일', fric.length, plain.length, 0, '개');
-  let maxD = 0;
-  for (let i = 0; i < plain.length; i++) {
-    maxD = Math.max(maxD,
-      Math.hypot(fric[i].p.x - plain[i].p.x, fric[i].p.y - plain[i].p.y),
-      Math.hypot(fric[i].q.x - plain[i].q.x, fric[i].q.y - plain[i].q.y));
-  }
-  expect('빗금 좌표 완전 동일', maxD, 0, 1e-12, 'px');
-
-  // 색 검증: 마찰이면 빨강 계열, 아니면 회색 계열. 별도 수직 해치는 없어야 한다.
-  const styleOf = (o) => vm.runInContext(`{
+  const dirOf = (seg) => vm.runInContext(`{
     reset();
-    const s = addFloor(20,60,80,60, ${JSON.stringify(o)});
-    const seen = [];
-    const rec = {
-      save(){}, restore(){}, beginPath(){}, stroke(){}, fill(){}, closePath(){}, setLineDash(){},
-      moveTo(){}, lineTo(){}, arc(){},
-      set strokeStyle(v){ seen.push(v); }, get strokeStyle(){ return ''; },
-      set lineWidth(v){}, get lineWidth(){ return 1; },
-      set fillStyle(v){}, get fillStyle(){ return ''; },
-      set font(v){}, set textAlign(v){}, set textBaseline(v){}, fillText(){},
-    };
-    s.draw(rec);
-    seen;
+    const s = addFloor(${seg.x1}, ${seg.y1}, ${seg.x2}, ${seg.y2});
+    const p = s._samplePath(s.x1, s.y1, s.x2, s.y2, 4)[1];
+    ({ dx: -p.ty, dy: p.tx });
   }`, c);
-  const plainStyles = styleOf({});
-  const fricStyles  = styleOf(F);
-  note('비마찰 strokeStyle', JSON.stringify(plainStyles));
-  note('마찰   strokeStyle', JSON.stringify(fricStyles));
-  expect('마찰면 빗금은 빨강',   fricStyles.some(s => /239,68,68/.test(s))   ? 1 : 0, 1, 0, '');
-  expect('비마찰 빗금은 회색',   plainStyles.some(s => /130,130,130/.test(s)) ? 1 : 0, 1, 0, '');
-  expect('마찰면에 회색 빗금 없음', fricStyles.some(s => /130,130,130/.test(s)) ? 1 : 0, 0, 0, '');
-  expect('별도 수직 해치(#ef4444) 없음', fricStyles.includes('#ef4444') ? 1 : 0, 0, 0, '');
+  const floor   = dirOf({ x1: 20, y1: 60, x2: 80, y2: 60 });
+  const ceiling = dirOf({ x1: 80, y1: 30, x2: 20, y2: 30 });
+  const wall    = dirOf({ x1: 60, y1: 70, x2: 60, y2: 30 });
+  note('바닥/천장 띠 방향', `(${floor.dx},${floor.dy}) / (${ceiling.dx},${ceiling.dy})`);
+  expect('바닥 → 선 아래(+y)', Math.sign(floor.dy),   +1, 0, '');
+  expect('천장 → 선 위(−y)',  Math.sign(ceiling.dy), -1, 0, '');
+  expect('벽 → 오른쪽(+x)',   Math.sign(wall.dx),    +1, 0, '');
 });
 
-/* ── 7. 물리 거동과의 대조: 빗금이 가리키는 쪽에서 물체가 막히는가 ── */
-scenario('HATCH-PHYS', '빗금 반대쪽(자유면)에서 떨어뜨린 물체는 막히고, 빗금 쪽은 통과', () => {
+/* ════════════════════════════════════════════════════════════
+   B. 수능 규격 도형 기하
+   ════════════════════════════════════════════════════════════ */
+
+scenario('SN-COIL', '용수철 — 지그재그가 아닌 나선 코일', () => {
   const c = makeCtx();
-  // 천장(오→왼, 법선 아래 = 자유면 아래). 빗금은 위쪽에 그려져야 하고,
-  // 아래에서 올라오는 물체는 막히고, 위에서 떨어지는 물체는 통과해야 한다.
-  const cap = captureHatch(c, { x1: 80, y1: 40, x2: 20, y2: 40 });
-  const t = cap.ticks[Math.floor(cap.ticks.length / 2)];
-  expect('천장 빗금은 선 위쪽', Math.sign(t.q.y - t.p.y), -1, 0, '');
+  const d = vm.runInContext(`svgCoil(0, 0, 100, 0, 8, 7)`, c);
+  const P = pts(d);
+  expect('경로 생성됨', P.length > 40 ? 1 : 0, 1, 0, '');
+  expect('시작점 = A', Math.hypot(P[0].x - 0, P[0].y - 0), 0, 1e-9, 'px');
+  expect('끝점 = B', Math.hypot(P[P.length - 1].x - 100, P[P.length - 1].y - 0), 0, 1e-9, 'px');
 
-  // 아래(자유면)에서 위로 던진 물체 → 천장에 막힘
-  const up = vm.runInContext(`{
-    reset(); CONFIG.cellSize = 1;
-    addFloor(80,40,20,40);                       // phys y=60, 법선 (0,−1)
-    const b = addCircle({ gridX: 49.5, gridY: 55, gridW:1, gridH:1, mass:1, e:0, vy0: 20 });
-    begin();
-    let mx = -1e9;
-    for (let i=0;i<400;i++){ simStep(CONFIG.FIXED_DT); mx = Math.max(mx, b.physY); }
-    mx;
-  }`, c);
-  note('아래에서 올라온 공 최고점', up.toFixed(4));
-  expect('자유면(아래)에서 온 물체는 천장에 막힘', up, 59.5, 0.05);
+  // 코일 판정: 축 방향 진행이 되돌아가는(역행) 구간이 있어야 고리가 겹친다.
+  //   지그재그(사인파)는 x 가 단조증가 → 역행 0회.
+  let back = 0;
+  for (let i = 1; i < P.length; i++) if (P[i].x < P[i - 1].x - 1e-9) back++;
+  note('축 역행 구간 수', back);
+  expect('고리가 겹침 (역행 존재)', back > 10 ? 1 : 0, 1, 0, '');
 
-  // 위(실체면=빗금 쪽)에서 떨어뜨린 물체 → 통과
-  const down = vm.runInContext(`{
-    reset(); CONFIG.cellSize = 1;
-    addFloor(80,40,20,40);
-    const b = addCircle({ gridX: 49.5, gridY: 20, gridW:1, gridH:1, mass:1, e:0 });
-    begin();
-    for (let i=0;i<300;i++) simStep(CONFIG.FIXED_DT);
-    b.physY;
-  }`, c);
-  note('위에서 떨어뜨린 공 y', down.toFixed(4));
-  expect('실체면(위, 빗금 쪽)에서 온 물체는 통과 (단면 규약)', down < 55 ? 1 : 0, 1, 0, '');
+  // 진폭이 amp 를 넘지 않아야 함
+  const maxAmp = Math.max(...P.map(p => Math.abs(p.y)));
+  expect('가로 진폭 = amp', maxAmp, 8, 0.01, 'px');
+});
+
+scenario('SN-PULLEY', '도르래 — 동심원 3겹 + 요크 브래킷', () => {
+  const c = makeCtx();
+  const w = vm.runInContext(`svgPulleyWheel(50, 50, 10)`, c);
+  const radius = (d) => {
+    const P = pts(d);
+    return Math.max(...P.map(p => Math.hypot(p.x - 50, p.y - 50)));
+  };
+  expect('외륜 r',   radius(w.rim),   10,  0.01, 'px');
+  expect('내륜 0.78r', radius(w.inner), 7.8, 0.01, 'px');
+  expect('허브 0.30r', radius(w.hub),   3.0, 0.01, 'px');
+  expect('축핀 0.10r', radius(w.axle),  1.0, 0.01, 'px');
+
+  const y = vm.runInContext(`svgPulleyYoke(50, 50, 10, -Math.PI/2, 15)`, c);
+  const A = pts(y.arms);
+  expect('요크 2줄 (점 4개)', A.length, 4, 0, '개');
+  expect('요크 반폭 0.30r', Math.abs(A[0].x - 50), 3, 0.01, 'px');
+  const pin = pts(y.pin);
+  const pinC = { x: (Math.min(...pin.map(p=>p.x)) + Math.max(...pin.map(p=>p.x))) / 2,
+                 y: (Math.min(...pin.map(p=>p.y)) + Math.max(...pin.map(p=>p.y))) / 2 };
+  expect('핀이 브래킷 끝(위 15px)', pinC.y, 35, 0.05, 'px');
+});
+
+scenario('SN-ARROW', '힘 화살표 — 가는 선 + 속 찬 삼각 화살촉', () => {
+  const c = makeCtx();
+  const a = vm.runInContext(`svgArrow(0, 0, 100, 0, 12, 5)`, c);
+  const shaft = pts(a.shaft), head = pts(a.head);
+  expect('샤프트 2점', shaft.length, 2, 0, '개');
+  expect('샤프트가 화살촉 앞에서 끝남', shaft[1].x, 88, 0.01, 'px');
+  expect('화살촉 삼각형 3점', head.length, 3, 0, '개');
+  expect('화살촉 끝 = 목표점', head[0].x, 100, 0.01, 'px');
+  expect('화살촉 반폭', Math.abs(head[1].y - head[2].y) / 2, 5, 0.01, 'px');
+});
+
+/* ════════════════════════════════════════════════════════════
+   C. SVG 내보내기
+   ════════════════════════════════════════════════════════════ */
+
+scenario('SN-SVG-EXPORT', '촬영 → SVG 문자열이 유효하고 흑백인가', () => {
+  const a = loadApp();
+  if (a.errors.length) { expect('앱 로드', 0, 1, 0, ''); return; }
+  const svg = a.evalIn(`
+    CONFIG.cellSize = 8; VIEWPORT.scale = 1; VIEWPORT.offsetX = 0; VIEWPORT.offsetY = 0;
+    STATE.elements = []; STATE.floorSegments = []; STATE.ropes = [];
+    const f  = new FloorSegment(20, 60, 80, 60); f.isFriction = true; STATE.floorSegments.push(f);
+    const r  = new RectBody();   r.gridX = 30; r.gridY = 59; STATE.elements.push(r);
+    const ci = new CircleBody(); ci.gridX = 50; ci.gridY = 40; STATE.elements.push(ci);
+    const p  = new Pulley();     p.gridX = 60; p.gridY = 30; STATE.elements.push(p);
+    const sp = new Spring();     sp.gridX = 35; sp.gridY = 50; STATE.elements.push(sp);
+    const ef = new ExtForce();   ef.gridX = 70; ef.gridY = 55; STATE.elements.push(ef);
+    const fz = new ForceZone();  fz.gridX = 20; fz.gridY = 20; STATE.elements.push(fz);
+    buildSceneSVG();
+  `);
+  note('SVG 크기', svg.length + ' bytes');
+
+  expect('XML 선언', /^<\?xml/.test(svg) ? 1 : 0, 1, 0, '');
+  expect('svg 루트 + 네임스페이스', /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/.test(svg) ? 1 : 0, 1, 0, '');
+  expect('viewBox 존재', /viewBox="[-\d.]+ [-\d.]+ [\d.]+ [\d.]+"/.test(svg) ? 1 : 0, 1, 0, '');
+  expect('닫힘 태그', /<\/svg>\s*$/.test(svg) ? 1 : 0, 1, 0, '');
+  expect('태그 개폐 균형', (svg.match(/</g) || []).length, (svg.match(/>/g) || []).length, 0, '개');
+
+  const paths = (svg.match(/<path /g) || []).length;
+  note('path 개수', paths);
+  expect('요소들이 path 로 출력됨', paths >= 12 ? 1 : 0, 1, 0, '');
+  expect('흰 바탕 배경 사각형', /<rect [^>]*fill="#ffffff"/.test(svg) ? 1 : 0, 1, 0, '');
+  expect('마찰 라벨 포함', svg.includes('마찰') ? 1 : 0, 1, 0, '');
+
+  // 흑백 검증: 유채색(빨강/파랑/초록 계열) 이 없어야 한다
+  const colors = [...svg.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{3,6}|rgba?\([^)]*\))"/g)].map(m => m[1]);
+  const chromatic = colors.filter(v => {
+    const m = /^#([0-9a-fA-F]{6})$/.exec(v);
+    if (!m) return false;
+    const r = parseInt(m[1].slice(0,2),16), g = parseInt(m[1].slice(2,4),16), b = parseInt(m[1].slice(4,6),16);
+    return Math.max(r,g,b) - Math.min(r,g,b) > 8;   // 무채색이면 R=G=B
+  });
+  note('사용된 색', [...new Set(colors)].join(' '));
+  expect('유채색 없음 (완전 흑백)', chromatic.length, 0, 0, '개');
+
+  // NaN/Infinity 가 좌표에 새어나오지 않아야 함
+  expect('NaN 없음', /NaN|Infinity|undefined/.test(svg) ? 1 : 0, 0, 0, '');
+});
+
+scenario('SN-SVG-GEOM', 'SVG 내보내기 기하 = 화면 기하 (물체 좌표 일치)', () => {
+  const a = loadApp();
+  const r = a.evalIn(`
+    CONFIG.cellSize = 8; VIEWPORT.scale = 1; VIEWPORT.offsetX = 0; VIEWPORT.offsetY = 0;
+    STATE.elements = []; STATE.floorSegments = []; STATE.ropes = [];
+    const b = new RectBody(); b.gridX = 10; b.gridY = 20; b.gridW = 2; b.gridH = 3; STATE.elements.push(b);
+    const svg = buildSceneSVG();
+    ({ svg, expect: { x: 10*8, y: 20*8, w: 2*8, h: 3*8 } });
+  `);
+  // 사각형 path 는 M x y H x+w V y+h H x Z
+  const m = /<path d="M ([\d.]+) ([\d.]+) H ([\d.]+) V ([\d.]+) H ([\d.]+) Z"/.exec(r.svg);
+  expect('사각형 path 존재', m ? 1 : 0, 1, 0, '');
+  if (m) {
+    expect('좌상 x', +m[1], r.expect.x, 1e-9, 'px');
+    expect('좌상 y', +m[2], r.expect.y, 1e-9, 'px');
+    expect('우변 x', +m[3], r.expect.x + r.expect.w, 1e-9, 'px');
+    expect('하변 y', +m[4], r.expect.y + r.expect.h, 1e-9, 'px');
+  }
 });
 
 report();

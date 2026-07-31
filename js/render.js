@@ -86,8 +86,8 @@
     if (STATE.simMode === 'RUNNING' || STATE.simMode === 'PAUSED') {
       ctx.save();
       ctx.strokeStyle = STATE.simMode === 'RUNNING'
-        ? 'rgba(16,185,129,0.55)'
-        : 'rgba(251,191,36,0.5)';
+        ? 'rgba(5,150,105,0.75)'
+        : 'rgba(217,119,6,0.7)';
       ctx.lineWidth = 3;
       ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
       ctx.restore();
@@ -138,7 +138,7 @@
         const pr = isPending ? r * 1.4 : r;   // pending 시 더 크게
 
         ctx.save();
-        ctx.fillStyle   = isPending ? '#3b82f6' : '#94a3b8';
+        ctx.fillStyle   = isPending ? '#2563eb' : '#94a3b8';
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth   = 1.5 / s;
         ctx.beginPath();
@@ -151,7 +151,7 @@
         ctx.stroke();
 
         // "고정" 레이블
-        ctx.fillStyle    = isPending ? '#dbeafe' : '#e2e8f0';
+        ctx.fillStyle    = isPending ? '#1d4ed8' : '#334155';
         ctx.font         = `${7 / s}px 'Courier New', monospace`;
         ctx.textAlign    = 'center';
         ctx.textBaseline = 'bottom';
@@ -219,8 +219,8 @@
       const pts = getFloorSegAttachPoints(seg);
       for (const pt of pts) {
         ctx.save();
-        ctx.fillStyle   = 'rgba(148,163,184,0.55)';   // slate-400
-        ctx.strokeStyle = 'rgba(100,116,139,0.8)';
+        ctx.fillStyle   = 'rgba(0,0,0,0.35)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
         ctx.lineWidth   = 1 / s;
         ctx.beginPath();
         ctx.moveTo(pt.worldX,     pt.worldY - r);

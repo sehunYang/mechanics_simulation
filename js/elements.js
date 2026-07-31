@@ -145,21 +145,16 @@
         ctx.translate(-cx, -cy);
       }
 
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth   = 2 / s;
-      ctx.fillStyle   = 'rgba(226,232,240,0.08)';
-      ctx.beginPath();
-      ctx.rect(bx, by, bw, bh);
-      ctx.fill();
-      ctx.stroke();
-
-      // 질량 레이블
-      const fontSize = Math.max(8, Math.min(14, bh * 0.35));
-      ctx.fillStyle  = '#94a3b8';
-      ctx.font       = `${fontSize / s}px 'Courier New', monospace`;
-      ctx.textAlign  = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(this.mass + 'kg', cx, cy);
+      // 수능 규격: 가는 검정 테두리 + 연회색 채움
+      snShape(ctx, svgRect(bx, by, bw, bh), SN.bodyFill, SN.lwGeom);
+      // 라벨: 안에 들어가면 안쪽, 아니면 물체 위 (수능도 좁으면 밖에 쓴다)
+      const _t = this.mass + ' kg';
+      const _fs = Math.max(7, Math.min(13, bh * 0.34 * s));
+      if (snLabelFits(_t, _fs, bw * s)) {
+        snLabel(ctx, _t, cx, cy, _fs, { italic: true });
+      } else {
+        snLabel(ctx, _t, cx, by - 4 / s, _fs, { italic: true, baseline: 'bottom', halo: 3 });
+      }
 
       ctx.restore();
 
@@ -207,26 +202,27 @@
         ctx.translate(-cx, -cy);
       }
 
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth   = 2 / s;
-      ctx.fillStyle   = 'rgba(226,232,240,0.08)';
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      // 수능 규격: 가는 검정 테두리 + 연회색 채움
+      snShape(ctx, svgCircle(cx, cy, r), SN.bodyFill, SN.lwGeom);
 
-      // 질량 레이블 — theta만큼 회전하여 굴림 운동 시각화
+      // 굴림 표시: 반지름 하나를 그어 회전각을 보이게 (수능은 정지 그림이라
+      // 회전 표시가 없지만, 시뮬에서는 구름/미끄러짐 구분에 필요)
       const thetaRender = this.theta || 0;
-      const fontSize = Math.max(8, Math.min(14, r * 0.7));
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(-thetaRender);   // 화면 y반전 보정: 물리 반시계 = 화면 시계
-      ctx.fillStyle    = '#94a3b8';
-      ctx.font         = `bold ${fontSize / s}px 'Courier New', monospace`;
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(this.mass + 'kg', 0, 0);
-      ctx.restore();
+      if (Math.abs(thetaRender) > 1e-9) {
+        snStroke(ctx, `M ${cx} ${cy} L ${cx + r * Math.cos(-thetaRender)} ${cy + r * Math.sin(-thetaRender)}`,
+                 SN.lwThin, 'rgba(0,0,0,0.45)');
+      }
+      const _t = this.mass + ' kg';
+      const _fs = Math.max(7, Math.min(12, r * 0.66 * s));
+      if (snLabelFits(_t, _fs, 2 * r * s * 0.85)) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-thetaRender);   // 화면 y반전 보정: 물리 반시계 = 화면 시계
+        snLabel(ctx, _t, 0, 0, _fs, { italic: true, halo: 2.5 });
+        ctx.restore();
+      } else {
+        snLabel(ctx, _t, cx, cy - r - 4 / s, _fs, { italic: true, baseline: 'bottom', halo: 3 });
+      }
 
       ctx.restore();
 
@@ -257,41 +253,28 @@
       const cx = bx + bw / 2;
       const cy = by + bh / 2;
 
-      // 반투명 파란 채우기
-      ctx.save();
-      ctx.fillStyle   = 'rgba(59,130,246,0.12)';
-      ctx.strokeStyle = 'rgba(59,130,246,0.5)';
-      ctx.lineWidth   = 1.5 / s;
-      ctx.setLineDash([4 / s, 3 / s]);
-      ctx.beginPath();
-      ctx.rect(bx, by, bw, bh);
-      ctx.fill();
-      ctx.stroke();
-      ctx.setLineDash([]);
+      // ── 수능 규격: 연회색 영역 + 가는 점선 테두리 (자기장 영역 표기와 같은 계열) ──
+      const box = svgRect(bx, by, bw, bh);
+      snFill(ctx, box, 'rgba(0,0,0,0.07)');
+      snStroke(ctx, box, SN.lwThin, 'rgba(0,0,0,0.55)', SN.ghostDash);
 
-      // "F" 레이블
-      ctx.fillStyle    = 'rgba(147,197,253,0.8)';
-      ctx.font         = `bold ${Math.max(10, bh * 0.25) / s}px 'Courier New', monospace`;
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText('F', bx + 3 / s, by + 3 / s);
-
-      // 힘 화살표 (fx, fy 방향)
+      // 힘 화살표 (fx, fy 방향) — 속 찬 삼각 화살촉
       const fxN = this.fx, fyN = this.fy;
       const mag = Math.hypot(fxN, fyN);
       if (mag > 0) {
-        const arrowLen = Math.min(bw, bh) * 0.35;
+        const arrowLen = Math.min(bw, bh) * 0.4;
         const ux = fxN / mag;
         const uy = -fyN / mag;  // 화면 y축 반전 (fy 양수 = 위쪽 = 화면 -y)
-        drawArrow(ctx,
-          cx - ux * arrowLen * 0.3,
-          cy - uy * arrowLen * 0.3,
-          cx + ux * arrowLen * 0.7,
-          cy + uy * arrowLen * 0.7,
-          'rgba(147,197,253,0.9)'
-        );
+        const a = svgArrow(cx - ux * arrowLen * 0.35, cy - uy * arrowLen * 0.35,
+                           cx + ux * arrowLen * 0.75, cy + uy * arrowLen * 0.75,
+                           8 / s, 3.4 / s);
+        snStroke(ctx, a.shaft, SN.lwGeom, SN.ink);
+        snFill(ctx, a.head, SN.ink);
       }
-      ctx.restore();
+
+      // 크기 라벨 — 이탤릭 세리프 (F = …N)
+      snLabel(ctx, `F = ${(+mag.toFixed(3))} N`, cx, by + 8 / s, 9,
+              { italic: true, halo: 3 });
 
       if (STATE.selected === this) this.drawSelection(ctx);
     }
@@ -330,7 +313,6 @@
       const bx = this.gridX * cs, by = this.gridY * cs;
       const bw = this.gridW * cs, bh = this.gridH * cs;
       const cx = bx + bw / 2, cy = by + bh / 2;
-      const color = '#fb923c';   // orange-400 (ForceZone 파랑과 구분)
 
       // 화살표 방향: 부착 물체 → 앵커(바깥 방향, 실 따라). 실 없으면 위쪽 기본.
       let ux = 0, uy = -1;
@@ -342,26 +324,21 @@
         if (len > 1e-6) { ux = dx / len; uy = dy / len; }
       }
 
-      const arrowLen = cs * 1.3;
+      const arrowLen = cs * 1.4;
+      const tipX = cx + ux * arrowLen, tipY = cy + uy * arrowLen;
 
-      ctx.save();
-      // 앵커 점 (작은 원)
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 3 / s, 0, Math.PI * 2);
-      ctx.fill();
+      // ── 수능 규격: 가는 검정 선 + 속 찬 삼각 화살촉, 라벨은 꼬리쪽 ──
+      const a = svgArrow(cx, cy, tipX, tipY, 10 / s, 4 / s);
+      snStroke(ctx, a.shaft, SN.lwGeom, SN.ink);
+      snFill(ctx, a.head, SN.ink);
+      snFill(ctx, svgCircle(cx, cy, 2.2 / s), SN.ink);   // 부착점 표시
 
-      // 벡터 화살표 (앵커에서 바깥 방향)
-      drawArrow(ctx, cx, cy, cx + ux * arrowLen, cy + uy * arrowLen, color);
-
-      // 크기 레이블 (N)
-      ctx.fillStyle    = color;
-      ctx.font         = `${Math.max(9, cs * 0.28) / s}px 'Courier New', monospace`;
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(this.forceN + 'N',
-        cx + ux * (arrowLen + 8 / s), cy + uy * (arrowLen + 8 / s));
-      ctx.restore();
+      // 크기 라벨 — 화살표 옆(수직으로 비켜) 이탤릭 세리프
+      const px = -uy, py = ux;
+      snLabel(ctx, `${this.forceN} N`,
+              cx + ux * arrowLen * 0.55 + px * (10 / s),
+              cy + uy * arrowLen * 0.55 + py * (10 / s),
+              10, { italic: true, halo: 3 });
 
       if (STATE.selected === this) this.drawSelection(ctx);
     }
@@ -405,27 +382,29 @@
         ctx.translate(-cx, -cy);
       }
 
-      // 외곽 원
-      ctx.strokeStyle = '#fbbf24';
-      ctx.lineWidth   = 2 / s;
-      ctx.fillStyle   = 'rgba(251,191,36,0.1)';
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      // ── 수능 규격 도르래: 동심원 3겹 + 축핀, 고정점 쪽으로 2줄 요크 브래킷 ──
+      // 요크 방향: center 앵커 실이 연결된 상대 쪽. 없으면 위쪽.
+      let yokeAngle = -Math.PI / 2;
+      const cRope = STATE.ropes.find(rp =>
+        (rp.anchorA.elementId === this.id && rp.anchorA.attachPoint === 'center') ||
+        (rp.anchorB.elementId === this.id && rp.anchorB.attachPoint === 'center'));
+      if (cRope) {
+        const other = cRope.anchorA.elementId === this.id ? cRope.anchorB : cRope.anchorA;
+        const w = cRope._getAnchorWorld(other);
+        if (w) {
+          const dx = w.x - cx, dy = w.y - cy;
+          if (Math.hypot(dx, dy) > 1e-6) yokeAngle = Math.atan2(dy, dx);
+        }
+      }
+      const yoke = svgPulleyYoke(cx, cy, r, yokeAngle, r * 1.5);
+      snStroke(ctx, yoke.arms, SN.lwGeom, SN.ink);
+      snShape(ctx, yoke.pin, '#ffffff', SN.lwThin);
 
-      // 내부 링
-      ctx.strokeStyle = 'rgba(251,191,36,0.5)';
-      ctx.lineWidth   = 1 / s;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // 중심 핀
-      ctx.fillStyle = '#fbbf24';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 2.5 / s, 0, Math.PI * 2);
-      ctx.fill();
+      const wheel = svgPulleyWheel(cx, cy, r);
+      snShape(ctx, wheel.rim, '#ffffff', SN.lwGeom);
+      snStroke(ctx, wheel.inner, SN.lwThin, SN.ink);
+      snShape(ctx, wheel.hub, SN.bodyFill, SN.lwThin);
+      snFill(ctx, wheel.axle, SN.ink);
 
       ctx.restore();
 
@@ -612,12 +591,7 @@
       const cs  = CONFIG.cellSize;
       const s   = VIEWPORT.scale;
 
-      // 압축/신장 색상
-      const stretched  = this.L > this.L0 * 1.05;
-      const compressed = this.L < this.L0 * 0.95;
-      const color = stretched  ? 'rgba(252,165,165,0.85)'
-                  : compressed ? 'rgba(134,239,172,0.85)'
-                  : '#a78bfa';
+      // 수능 지면은 흑백 — 압축/신장은 색이 아니라 코일 간격(감김 수)으로 드러난다
 
       // ── 부착점 기반 2D 축 (양끝 연결 시) / 편집용 bbox 폴백 ──
       const ep = this.getEndpointsWorld();
@@ -637,38 +611,21 @@
       const px = -uy, py = ux;              // 수직 방향
       // 코일 진폭: 용수철 두께(min 변) 기준
       const thick = Math.min(this.gridW, this.gridH) * cs;
-      const amp   = Math.max(thick * 0.30, 2 / s);
-      const along = (t) => ({ x: ax + ux * t, y: ay + uy * t });
+      const amp   = Math.max(thick * 0.38, 3.5 / s);
 
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = 2 / s;
+      // ── 수능 규격: 나선 코일 ──
+      // 감김 수를 자연길이 대비 현재 길이로 정해, 늘어나면 성기고 눌리면 촘촘해진다.
+      const ratio = this.L0 > 1e-6 ? (this.L / this.L0) : 1;
+      const coils = Math.max(4, Math.min(11, Math.round(7 / Math.max(0.45, ratio))));
+      snStroke(ctx, svgCoil(ax, ay, bx2, by2, amp, coils), SN.lwGeom, SN.ink);
 
-      const coils  = 6;
-      const margin = Math.min(len * 0.1, cs * 0.3);
-      const p0 = along(margin), p1 = along(len - margin);
-      const span = Math.max(len - 2 * margin, 1);
-      const step = span / (coils * 2);
-
-      ctx.beginPath();
-      ctx.moveTo(ax, ay); ctx.lineTo(p0.x, p0.y);
-      for (let i = 0; i < coils * 2; i++) {
-        const c = along(margin + step * (i + 0.5));
-        const a = (i % 2 === 0 ? -amp : amp);
-        ctx.lineTo(c.x + px * a, c.y + py * a);
-      }
-      ctx.lineTo(p1.x, p1.y); ctx.lineTo(bx2, by2);
-      ctx.stroke();
-
-      // k 레이블 — 축 중앙에서 수직으로 살짝 띄움
-      const mid = along(len / 2);
-      ctx.fillStyle    = color;
-      ctx.font         = `${Math.max(7, thick * 0.28) / s}px 'Courier New', monospace`;
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`k=${this.k}`, mid.x + px * (amp + 6 / s), mid.y + py * (amp + 6 / s));
-
-      ctx.restore();
+      // k 레이블 — 축 중앙에서 수직으로 살짝 띄움 (이탤릭 세리프)
+      const mid = { x: ax + ux * len / 2, y: ay + uy * len / 2 };
+      snLabel(ctx, `k = ${this.k}`,
+              mid.x + px * (amp + 9 / VIEWPORT.scale),
+              mid.y + py * (amp + 9 / VIEWPORT.scale),
+              Math.max(7, Math.min(12, thick * 0.30 * VIEWPORT.scale)),
+              { italic: true, halo: 2.5 });
 
       if (STATE.selected === this) {
         drawSelectionBox(ctx, b.x, b.y, b.w, b.h);
@@ -729,69 +686,69 @@
 
       ctx.save();
 
-      // ── 본선 ──
-      ctx.strokeStyle = isSelected ? '#3b82f6' : '#555555';
-      ctx.lineWidth   = (isSelected ? 3 : 2.5) / s;
+      // ── 실체면 표시 (수능 규격) ──
+      //    빗금이 아니라, 표면에서 멀어지며 흐려지는 회색 띠.
+      //    마찰면이면 표면에 덧댄 진한 회색 띠 + `마찰` 글자.
+      this._drawSurfaceShading(ctx, ax, ay, bx, by, s);
 
+      // ── 본선 ──
       ctx.beginPath();
       this._tracePath(ctx, ax, ay, bx, by);
+      ctx.strokeStyle = isSelected ? '#1d4ed8' : SN.ink;
+      ctx.lineWidth   = (isSelected ? SN.lwTerrain + 1.4 : SN.lwTerrain) / s;
+      ctx.lineJoin    = 'round';
+      ctx.lineCap     = 'round';
       ctx.stroke();
-
-      // ── 실체면 빗금 (바닥이면 아래, 천장이면 위) ──
-      //    마찰면이면 빗금 자체가 빨강 → 별도 오버레이 없이 한눈에 구분된다
-      this._drawSolidSideHatch(ctx, ax, ay, bx, by, s);
 
       ctx.restore();
     }
 
     /**
-     * 실체면(solid side) 빗금 — 이 면이 "어느 쪽에서 막히는지"를 눈으로 알려준다.
-     *
-     * 바닥면은 단면(single-sided) 충돌이라 법선 쪽에서만 물체를 막는다. 법선은
-     * 그리는 방향(A→B)의 반시계 90°로 정해지는데, 화면에는 아무 표시가 없어서
-     * 사용자가 의도와 반대로 그리면 물체가 그대로 통과해 버렸다.
-     * 그래서 자유면(법선 쪽)의 반대편 = 실체면에 토목 도면의 지반 해칭처럼
-     * 45° 빗금을 일정 간격으로 그린다.
-     *   · 바닥(법선이 위)   → 선 아래에 빗금
-     *   · 천장(법선이 아래) → 선 위에  빗금
-     *   · 벽(법선이 옆)     → 막히지 않는 반대쪽에 빗금
-     *
-     * 화면 좌표 기준 자유면 = (ty, −tx), 실체면 = (−ty, tx).
-     *   (물리 좌표의 법선 (−dy_p, dx_p)/L 을 y 반전해 화면 좌표로 옮긴 것.
-     *    _samplePath 의 접선 진행 방향이 getPhysicsSegments 의 세그먼트 방향과
-     *    같은 순서라 그대로 대응된다 — test/spec7.js 가 이 대응을 검증한다.)
-     *
-     * 색: 마찰면이면 빨강, 아니면 회색. 예전에는 회색 45° 빗금 위에 빨간 수직
-     * 해치를 따로 겹쳐 그렸는데, 두 벌이 뒤엉켜 오히려 읽기 어려웠다.
-     * 빗금 자체를 마찰 색으로 칠하면 "실체면 + 거친 면"을 한 번에 전달한다.
-     * (선택 여부는 본선 색으로 이미 드러나므로, 빗금은 표면 성질만 나타낸다)
+     * 실체면·마찰 표시 — 수능 작도 규격.
+     *   · 실체면(막히는 쪽): 표면에서 멀어지며 흐려지는 회색 그라데이션 띠
+     *     (2026 물리학Ⅰ 9번 천장, 2022 20번 벽과 같은 표현)
+     *   · 마찰 구간: 표면에 덧댄 진한 회색 띠 + `마찰` 글자
+     *     (2022 20번 "마찰 구간" 과 같은 표현)
+     * 방향 규약은 이전과 동일: 화면 좌표 실체면 = (−ty, tx).
      */
-    _drawSolidSideHatch(ctx, ax, ay, bx, by, s, color) {
-      const len = 5 / s;   // 빗금 길이 (화면 px 고정)
-      // 간격도 화면 px 고정(8/s)이되, 아주 길거나 확대된 면에서 선 개수가
-      // 폭주하지 않도록 세그먼트당 약 400개로 제한한다.
-      const chord   = Math.hypot(bx - ax, by - ay);
+    _drawSurfaceShading(ctx, ax, ay, bx, by, s) {
+      const chord    = Math.hypot(bx - ax, by - ay);
       const roughLen = chord * (this.pathType.startsWith('ARC') ? 2.5 : 2);
-      const spacing = Math.max(8 / s, roughLen / 400);
+      const spacing  = Math.max(3 / s, roughLen / 900);
       const pts = this._samplePath(ax, ay, bx, by, spacing);
-      if (pts.length === 0) return;
+      if (pts.length < 2) return;
 
+      const depth = 13 / s;    // 실체면 띠 깊이 (화면 px 고정)
+      const fricT = 4.5 / s;   // 마찰 띠 두께
+
+      // 실체면 그라데이션 — 세그먼트를 따라가며 조각별로 칠한다
       ctx.save();
-      ctx.strokeStyle = color || (this.isFriction
-        ? 'rgba(239,68,68,0.8)'       // 마찰면: 빨강
-        : 'rgba(130,130,130,0.5)');   // 매끄러운 면: 회색
-      ctx.lineWidth = (this.isFriction ? 1.2 : 1) / s;
-      ctx.beginPath();
-      for (const p of pts) {
-        const sx = -p.ty, sy = p.tx;                       // 실체면 단위벡터
-        // 45°: 실체면 방향 + 진행 반대 방향 (해칭이 한쪽으로 일관되게 기울도록)
-        const hx = (sx - p.tx) * Math.SQRT1_2;
-        const hy = (sy - p.ty) * Math.SQRT1_2;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p = pts[i], q = pts[i + 1];
+        const nx = -p.ty, ny = p.tx;                    // 실체면 방향
+        const g = snSolidGradient(ctx, p.x, p.y, nx, ny, depth, 0.17);
+        ctx.fillStyle = g;
+        ctx.beginPath();
         ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x + hx * len, p.y + hy * len);
+        ctx.lineTo(q.x, q.y);
+        ctx.lineTo(q.x + (-q.ty) * depth, q.y + (q.tx) * depth);
+        ctx.lineTo(p.x + nx * depth,      p.y + ny * depth);
+        ctx.closePath();
+        ctx.fill();
       }
-      ctx.stroke();
       ctx.restore();
+
+      // 마찰 구간 — 표면에 덧댄 진한 회색 띠
+      if (this.isFriction) {
+        snFill(ctx, svgBand(pts, fricT, +1), 'rgba(0,0,0,0.30)');
+        const m = pts[Math.floor(pts.length / 2)];
+        if (m) {
+          snLabel(ctx, '마찰',
+                  m.x + (-m.ty) * (depth + 8 / s),
+                  m.y + ( m.tx) * (depth + 8 / s),
+                  9, { ko: true, halo: 3, color: 'rgba(0,0,0,0.72)' });
+        }
+      }
     }
 
     /** 경로 타입에 따라 ctx에 path를 쌓는 헬퍼 (beginPath/stroke 없음) */
@@ -966,15 +923,9 @@
       const wB = this._getAnchorWorld(this.anchorB);
       if (!wA || !wB) return;
 
-      const s = VIEWPORT.scale;
-      ctx.save();
-      ctx.strokeStyle = this.selected ? '#3b82f6' : '#f59e0b';
-      ctx.lineWidth   = 1.5 / s;
-      ctx.beginPath();
-      ctx.moveTo(wA.x, wA.y);
-      ctx.lineTo(wB.x, wB.y);
-      ctx.stroke();
-      ctx.restore();
+      // 수능 규격: 가는 검정 실선 한 줄 (늘어짐·두께 없음)
+      snStroke(ctx, `M ${wA.x} ${wA.y} L ${wB.x} ${wB.y}`,
+               SN.lwGeom, this.selected ? '#1d4ed8' : SN.ink);
     }
 
     drawSelection(ctx) {}

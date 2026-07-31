@@ -13,7 +13,7 @@ const SUITES = [
   ['spec4', '기하 일치 (렌더 ↔ 히트테스트 ↔ 물리 곡면)'],
   ['spec5', '화면 픽셀 단위 검증'],
   ['spec6', '단면 바닥 규약 · 정지마찰 고정 · 직렬 도르래 · 남은 조합'],
-  ['spec7', '실체면 빗금 방향 ↔ 충돌 법선 일치'],
+  ['spec7', '수능 규격 도형 · 실체면 방향 · SVG 내보내기'],
   ['spec8', '실행 중 UI (카메라 조작 / 편집 차단 / 상태 배지)'],
 ];
 
@@ -25,7 +25,7 @@ const failedSuites = [];
 try {
   execFileSync(process.execPath, [path.join(__dirname, 'smoke-load.js')],
     { encoding: 'utf8', stdio: 'pipe' });
-  console.log(' ok   smoke   14/14  index.html 순서대로 전체 js 로드 + 1프레임 수행');
+  console.log(' ok   smoke   15/15  index.html 순서대로 전체 js 로드 + 1프레임 수행');
 } catch (err) {
   failedSuites.push('smoke-load');
   console.log('FAIL  smoke          index.html 로드 스모크');

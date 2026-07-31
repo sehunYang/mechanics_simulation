@@ -41,8 +41,14 @@ function loadApp() {
       querySelector() { return stubEl('span'); },
       querySelectorAll: () => [],
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 800, width: 800, height: 800 }),
-      getContext: () => new Proxy({ canvas: { width: 800, height: 800 } },
-        { get: (t, k) => (k in t ? t[k] : () => {}) }),
+      getContext: () => new Proxy({
+        canvas: { width: 800, height: 800 },
+        // 그라데이션·패턴은 객체를 돌려줘야 하므로 명시 스텁
+        createLinearGradient: () => ({ addColorStop() {} }),
+        createRadialGradient: () => ({ addColorStop() {} }),
+        createPattern: () => ({}),
+        measureText: () => ({ width: 10 }),
+      }, { get: (t, k) => (k in t ? t[k] : () => {}) }),
       toDataURL: () => 'data:,', toBlob(cb) { cb({ size: 0, type: 'image/png' }); },
       focus() {}, blur() {}, click() {},
       setPointerCapture() {}, releasePointerCapture() {}, hasPointerCapture: () => false,
@@ -78,6 +84,12 @@ function loadApp() {
     navigator: { userAgent: 'node', maxTouchPoints: 0 },
     location: { href: 'http://localhost/' },
     URL: { createObjectURL: () => 'blob:stub', revokeObjectURL() {} },
+    Blob: class Blob {
+      constructor(parts, opts) { this.parts = parts || []; this.type = (opts && opts.type) || ''; }
+      get size() { return this.parts.join('').length; }
+      text() { return Promise.resolve(this.parts.join('')); }
+    },
+    Path2D: class Path2D { constructor(d) { this.d = d; } },
     requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
     setTimeout, clearTimeout, setInterval, clearInterval,
     console, Math, Date, JSON, Set, Map, WeakMap, Array, Object, Number, String, Boolean,

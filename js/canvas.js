@@ -87,8 +87,8 @@
             STATE.pendingGridPoint.gridY === j) continue;
 
         ctx.fillStyle = isFloorMode
-          ? 'rgba(16,185,129,0.75)'   // #10b981
-          : 'rgba(100,100,100,0.35)';
+          ? 'rgba(16,120,80,0.8)'
+          : 'rgba(0,0,0,0.16)';       // 지면 테마: 아주 옅은 격자점
         ctx.beginPath();
         ctx.arc(i * cs, j * cs, r, 0, Math.PI * 2);
         ctx.fill();
@@ -97,7 +97,7 @@
 
     // 원점 강조
     if (!isFloorMode) {
-      ctx.fillStyle = 'rgba(100,100,255,0.25)';
+      ctx.fillStyle = 'rgba(0,0,180,0.28)';
       ctx.beginPath();
       ctx.arc(0, GS * cs, r * 2, 0, Math.PI * 2);
       ctx.fill();
