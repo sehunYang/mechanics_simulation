@@ -131,24 +131,66 @@ scenario('SN-BAND-DIR', '띠가 향하는 화면 방향 (바닥=아래 / 천장=
    B. 수능 규격 도형 기하
    ════════════════════════════════════════════════════════════ */
 
-scenario('SN-COIL', '용수철 — 지그재그가 아닌 나선 코일', () => {
+scenario('SN-COIL', '용수철 — 나선 코일 + 급격한 수직 리드', () => {
   const c = makeCtx();
-  const d = vm.runInContext(`svgCoil(0, 0, 100, 0, 8, 7)`, c);
+  const AMP = 8;
+  const d = vm.runInContext(`svgCoil(0, 0, 100, 0, ${AMP}, 7)`, c);
   const P = pts(d);
   expect('경로 생성됨', P.length > 40 ? 1 : 0, 1, 0, '');
   expect('시작점 = A', Math.hypot(P[0].x - 0, P[0].y - 0), 0, 1e-9, 'px');
   expect('끝점 = B', Math.hypot(P[P.length - 1].x - 100, P[P.length - 1].y - 0), 0, 1e-9, 'px');
 
-  // 코일 판정: 축 방향 진행이 되돌아가는(역행) 구간이 있어야 고리가 겹친다.
-  //   지그재그(사인파)는 x 가 단조증가 → 역행 0회.
+  // ── 리드(양끝) 형태: 축 직진 → 수직 급상승 → 수평 조금 → 코일 ──
+  const [l0, l1, l2, l3] = P;
+  expect('① 축을 따라 직진 (y 불변)', l1.y - l0.y, 0, 1e-9, 'px');
+  expect('② 급격한 상승 — 수직 (x 불변)', l2.x - l1.x, 0, 1e-9, 'px');
+  expect('② 상승 높이 = amp', Math.abs(l2.y - l1.y), AMP, 1e-9, 'px');
+  expect('③ 수평 구간 (y 불변)', l3.y - l2.y, 0, 1e-9, 'px');
+  expect('③ 수평이 앞으로 진행', l3.x > l2.x ? 1 : 0, 1, 0, '');
+  note('리드 좌표', `A(${l0.x},${l0.y}) → (${l1.x},${l1.y}) → (${l2.x},${l2.y}) → 코일시작(${l3.x},${l3.y})`);
+
+  const n = P.length;
+  const [r3, r2, r1, r0] = [P[n - 4], P[n - 3], P[n - 2], P[n - 1]];
+  expect('반대쪽 ③ 수평 (y 불변)', r2.y - r3.y, 0, 1e-9, 'px');
+  expect('반대쪽 ② 수직 하강 (x 불변)', r1.x - r2.x, 0, 1e-9, 'px');
+  expect('반대쪽 ① 축 직진 (y 불변)', r0.y - r1.y, 0, 1e-9, 'px');
+
+  // ── 수직 상승선이 코일과 겹치지 않아야 한다 ──
+  const coil = P.slice(4, n - 4);
+  const coilMinX = Math.min(...coil.map(p => p.x));
+  note('상승 위치 / 코일 최소 x', `${l1.x} / ${coilMinX.toFixed(4)}`);
+  expect('코일이 코일시작 x 앞으로 넘어오지 않음', coilMinX >= l3.x - 1e-6 ? 1 : 0, 1, 0, '');
+  expect('상승선이 코일보다 앞 (겹침 없음)', l1.x < coilMinX - 1e-6 ? 1 : 0, 1, 0, '');
+  expect('반대쪽 하강선도 코일 뒤', r1.x > Math.max(...coil.map(p => p.x)) - 1e-6 ? 1 : 0, 1, 0, '');
+
+  // ── 코일 판정: 축 방향 역행이 있어야 고리가 겹친다 (사인파는 역행 0회) ──
   let back = 0;
-  for (let i = 1; i < P.length; i++) if (P[i].x < P[i - 1].x - 1e-9) back++;
+  for (let i = 1; i < coil.length; i++) if (coil[i].x < coil[i - 1].x - 1e-9) back++;
   note('축 역행 구간 수', back);
   expect('고리가 겹침 (역행 존재)', back > 10 ? 1 : 0, 1, 0, '');
 
   // 진폭이 amp 를 넘지 않아야 함
-  const maxAmp = Math.max(...P.map(p => Math.abs(p.y)));
-  expect('가로 진폭 = amp', maxAmp, 8, 0.01, 'px');
+  expect('가로 진폭 = amp', Math.max(...P.map(p => Math.abs(p.y))), AMP, 0.01, 'px');
+});
+
+scenario('SN-FONT', '서체 — 영문·숫자 HYhwpEQ / 한글 신명 중명조', () => {
+  const c = makeCtx();
+  const f  = vm.runInContext(`SN.font`, c);
+  const fk = vm.runInContext(`SN.fontKo`, c);
+  note('라틴 스택', f);
+  note('한글 스택', fk);
+  expect('라틴 스택 첫 서체 = HyhwpEQ', /^'HyhwpEQ'/.test(f) ? 1 : 0, 1, 0, '');
+  expect('라틴 스택에 한글 명조 폴백', /HYSinMyeongJo-Medium/.test(f) ? 1 : 0, 1, 0, '');
+  expect('한글 스택 첫 서체 = 신명 중명조', /^'HYSinMyeongJo-Medium'/.test(fk) ? 1 : 0, 1, 0, '');
+  expect('두 스택 모두 serif 로 끝남', (/serif$/.test(f) && /serif$/.test(fk)) ? 1 : 0, 1, 0, '');
+
+  // 가독성: 라벨 최소 크기가 10px 이상
+  const fs = vm.runInContext(`SN_FS`, c);
+  note('라벨 크기 토큰', JSON.stringify(fs));
+  expect('물체 라벨 최소 ≥ 10px', fs.bodyMin >= 10 ? 1 : 0, 1, 0, '');
+  expect('용수철 라벨 최소 ≥ 10px', fs.springMin >= 10 ? 1 : 0, 1, 0, '');
+  expect('지면 글자 ≥ 12px', fs.surface >= 12 ? 1 : 0, 1, 0, '');
+  expect('힘 라벨 ≥ 12px', fs.force >= 12 ? 1 : 0, 1, 0, '');
 });
 
 scenario('SN-PULLEY', '도르래 — 동심원 3겹 + 요크 브래킷', () => {

@@ -149,7 +149,7 @@
       snShape(ctx, svgRect(bx, by, bw, bh), SN.bodyFill, SN.lwGeom);
       // 라벨: 안에 들어가면 안쪽, 아니면 물체 위 (수능도 좁으면 밖에 쓴다)
       const _t = this.mass + ' kg';
-      const _fs = Math.max(7, Math.min(13, bh * 0.34 * s));
+      const _fs = Math.max(SN_FS.bodyMin, Math.min(SN_FS.bodyMax, bh * 0.34 * s));
       if (snLabelFits(_t, _fs, bw * s)) {
         snLabel(ctx, _t, cx, cy, _fs, { italic: true });
       } else {
@@ -213,7 +213,7 @@
                  SN.lwThin, 'rgba(0,0,0,0.45)');
       }
       const _t = this.mass + ' kg';
-      const _fs = Math.max(7, Math.min(12, r * 0.66 * s));
+      const _fs = Math.max(SN_FS.bodyMin, Math.min(SN_FS.bodyMax, r * 0.66 * s));
       if (snLabelFits(_t, _fs, 2 * r * s * 0.85)) {
         ctx.save();
         ctx.translate(cx, cy);
@@ -273,8 +273,8 @@
       }
 
       // 크기 라벨 — 이탤릭 세리프 (F = …N)
-      snLabel(ctx, `F = ${(+mag.toFixed(3))} N`, cx, by + 8 / s, 9,
-              { italic: true, halo: 3 });
+      snLabel(ctx, `F = ${(+mag.toFixed(3))} N`, cx, by + 10 / s, SN_FS.force,
+              { italic: true, halo: 3.5 });
 
       if (STATE.selected === this) this.drawSelection(ctx);
     }
@@ -336,9 +336,9 @@
       // 크기 라벨 — 화살표 옆(수직으로 비켜) 이탤릭 세리프
       const px = -uy, py = ux;
       snLabel(ctx, `${this.forceN} N`,
-              cx + ux * arrowLen * 0.55 + px * (10 / s),
-              cy + uy * arrowLen * 0.55 + py * (10 / s),
-              10, { italic: true, halo: 3 });
+              cx + ux * arrowLen * 0.55 + px * (12 / s),
+              cy + uy * arrowLen * 0.55 + py * (12 / s),
+              SN_FS.force, { italic: true, halo: 3.5 });
 
       if (STATE.selected === this) this.drawSelection(ctx);
     }
@@ -622,10 +622,10 @@
       // k 레이블 — 축 중앙에서 수직으로 살짝 띄움 (이탤릭 세리프)
       const mid = { x: ax + ux * len / 2, y: ay + uy * len / 2 };
       snLabel(ctx, `k = ${this.k}`,
-              mid.x + px * (amp + 9 / VIEWPORT.scale),
-              mid.y + py * (amp + 9 / VIEWPORT.scale),
-              Math.max(7, Math.min(12, thick * 0.30 * VIEWPORT.scale)),
-              { italic: true, halo: 2.5 });
+              mid.x + px * (amp + 11 / VIEWPORT.scale),
+              mid.y + py * (amp + 11 / VIEWPORT.scale),
+              Math.max(SN_FS.springMin, Math.min(SN_FS.springMax, thick * 0.32 * VIEWPORT.scale)),
+              { italic: true, halo: 3 });
 
       if (STATE.selected === this) {
         drawSelectionBox(ctx, b.x, b.y, b.w, b.h);
@@ -744,9 +744,9 @@
         const m = pts[Math.floor(pts.length / 2)];
         if (m) {
           snLabel(ctx, '마찰',
-                  m.x + (-m.ty) * (depth + 8 / s),
-                  m.y + ( m.tx) * (depth + 8 / s),
-                  9, { ko: true, halo: 3, color: 'rgba(0,0,0,0.72)' });
+                  m.x + (-m.ty) * (depth + 10 / s),
+                  m.y + ( m.tx) * (depth + 10 / s),
+                  SN_FS.surface, { ko: true, halo: 3.5, color: 'rgba(0,0,0,0.78)' });
         }
       }
     }

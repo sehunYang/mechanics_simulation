@@ -152,7 +152,7 @@
 
         // "고정" 레이블
         ctx.fillStyle    = isPending ? '#1d4ed8' : '#334155';
-        ctx.font         = `${7 / s}px 'Courier New', monospace`;
+        ctx.font         = `${9 / s}px ${SN.fontKo}`;
         ctx.textAlign    = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillText('고정', pt.worldX, pt.worldY - pr - 1 / s);

@@ -44,7 +44,7 @@
         grow(x, y);
         const o = opt || {};
         parts.push(
-          `<text x="${_n2(x)}" y="${_n2(y)}" font-family="${o.ko ? 'Batang, serif' : 'Times New Roman, serif'}"`
+          `<text x="${_n2(x)}" y="${_n2(y)}" font-family="${_esc(o.ko ? SN.fontKo : SN.font)}"`
           + ` font-size="${_n2(size)}"${o.italic ? ' font-style="italic"' : ''}`
           + ` text-anchor="${o.align || 'middle'}" dominant-baseline="${o.baseline || 'middle'}"`
           + ` fill="${o.color || '#000'}">${_esc(t)}</text>`);
@@ -84,7 +84,7 @@
             doc.text('마찰',
               m.x + (-m.ty) * (20 / VIEWPORT.scale),
               m.y + ( m.tx) * (20 / VIEWPORT.scale),
-              _n2(9 / VIEWPORT.scale), { ko: true, color: 'rgba(0,0,0,0.75)' });
+              _n2(SN_FS.surface / VIEWPORT.scale), { ko: true, color: 'rgba(0,0,0,0.78)' });
           }
         }
         // 본선: 샘플 점을 그대로 이어 SVG path 로 (곡면도 동일 기하)
@@ -111,14 +111,14 @@
 
       if (el.type === 'rect') {
         doc.path(svgRect(bx, by, bw, bh), geomAttr);
-        const fs = Math.min(13, bh * 0.34);
+        const fs = Math.max(bh * 0.20, Math.min(18, bh * 0.34));
         if (snLabelFits(el.mass + ' kg', fs, bw)) doc.text(el.mass + ' kg', cx, cy, _n2(fs), { italic: true });
         else doc.text(el.mass + ' kg', cx, _n2(by - fs * 0.5), _n2(fs), { italic: true, baseline: 'auto' });
 
       } else if (el.type === 'circle') {
         const cr = bw / 2;
         doc.path(svgCircle(cx, cy, cr), geomAttr);
-        const fsc = Math.min(12, cr * 0.66);
+        const fsc = Math.max(cr * 0.36, Math.min(18, cr * 0.66));
         if (snLabelFits(el.mass + ' kg', fsc, 2 * cr * 0.85)) doc.text(el.mass + ' kg', cx, cy, _n2(fsc), { italic: true });
         else doc.text(el.mass + ' kg', cx, _n2(cy - cr - fsc * 0.5), _n2(fsc), { italic: true, baseline: 'auto' });
 
@@ -156,7 +156,7 @@
           doc.path(a.shaft, `fill="none" stroke="${INK}" stroke-width="${_lw(SN.lwGeom)}"`);
           doc.path(a.head,  `fill="${INK}" stroke="none"`);
         }
-        doc.text(`F = ${+mag.toFixed(3)} N`, cx, by + _n2(8 / VIEWPORT.scale), _n2(9 / VIEWPORT.scale), { italic: true });
+        doc.text(`F = ${+mag.toFixed(3)} N`, cx, by + _n2(10 / VIEWPORT.scale), _n2(SN_FS.force / VIEWPORT.scale), { italic: true });
 
       } else if (el.type === 'extforce') {
         let ux = 0, uy = -1;
@@ -176,7 +176,7 @@
         doc.text(`${el.forceN} N`,
           cx + ux * aLen * 0.55 + px * (10 / VIEWPORT.scale),
           cy + uy * aLen * 0.55 + py * (10 / VIEWPORT.scale),
-          _n2(10 / VIEWPORT.scale), { italic: true });
+          _n2(SN_FS.force / VIEWPORT.scale), { italic: true });
       }
     }
 

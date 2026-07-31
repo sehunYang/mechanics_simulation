@@ -31,8 +31,25 @@
     lwGeom:    1.3,         // 물체 윤곽·도르래·용수철
     lwTerrain: 1.7,         // 지형(바닥면)
     lwData:    2.2,         // 그래프 곡선급 강조
-    font:      "'Times New Roman', 'Batang', '바탕', serif",
-    fontKo:    "'Batang', '바탕', 'Nanum Myeongjo', serif",
+    /* 서체 — 수능 문항지 조판과 동일 계열
+       · 영문·숫자·수식 기호: HYhwpEQ (한글 수식 서체)
+       · 한글: SM 신명 중명조
+       브라우저는 글리프 단위로 폴백하므로 한 스택에 둘 다 넣으면
+       라틴/숫자는 HYhwpEQ, 한글은 중명조가 자동으로 잡힌다.
+       설치돼 있지 않은 환경을 위해 명조 계열 대체 서체를 뒤에 둔다. */
+    font:      "'HyhwpEQ', 'HYhwpEQ', "                                   // 영문·숫자·수식
+             + "'HYSinMyeongJo-Medium', 'HY신명조', 'SM중명조', 'SMJungMyungJo', "  // 한글 폴백
+             + "'Batang', '바탕', 'Nanum Myeongjo', serif",
+    fontKo:    "'HYSinMyeongJo-Medium', 'HY신명조', 'SM중명조', 'SMJungMyungJo', "  // 한글 우선
+             + "'HyhwpEQ', 'Batang', '바탕', 'Nanum Myeongjo', serif",
+  };
+
+  /* 라벨 크기 (화면 px 고정) — 가독성 우선으로 상·하한을 잡는다 */
+  const SN_FS = {
+    bodyMin:  10,  bodyMax: 18,   // 물체 질량
+    springMin: 10, springMax: 15, // 용수철 k
+    surface:  12,                 // 마찰 등 지면 글자
+    force:    13,                 // 힘 크기
   };
 
   /* Path2D 캐시 — 같은 d 문자열은 재사용 (매 프레임 생성 방지) */
@@ -88,27 +105,47 @@
     const px = -uy, py = ux;                 // 수직 방향
 
     const n    = Math.max(3, coils | 0);
-    const lead = Math.min(len * 0.14, amp * 1.6);   // 양끝 직선 리드
+    const lead = Math.min(len * 0.16, amp * 1.8);   // 양끝 리드 구간 전체 길이
     const span = Math.max(len - 2 * lead, len * 0.3);
     const c    = span / (2 * Math.PI * n);          // 한 라디안당 축 진행
     const b    = amp;                                // 가로(수직) 반경
-    const a    = Math.max(amp * 0.5, c * Math.PI * 1.25);   // 축방향 반경 → 겹침 보장
+    const a    = Math.max(amp * 0.85, c * Math.PI * 1.25);  // 축방향 반경 → 고리를 둥글게 + 겹침 보장
 
+    // 코일 좌표: along = lead + c·t + a·sin t, perp = b·cos t
+    //   t=0 과 t=2πn 에서 perp = +b (같은 쪽 극단), along 은 lead / lead+span.
+    //   along 의 최솟값은 t=0 (f(t)=c·t+a·sin t 는 f(0)=0 이 최소) 이므로
+    //   코일은 along < lead 영역으로 절대 넘어오지 않는다 → 리드와 겹치지 않음.
     const at = (t) => {
-      const along = lead + c * t + a * Math.sin(t) - a * Math.sin(0);
+      const along = lead + c * t + a * Math.sin(t);
       const perp  = b * Math.cos(t);
       return { x: ax + ux * along + px * perp, y: ay + uy * along + py * perp };
     };
+    // 축/수직 오프셋으로 점 만들기
+    const P = (along, perp) => ({ x: ax + ux * along + px * perp, y: ay + uy * along + py * perp });
 
-    const steps = Math.max(48, n * 16);
-    let d = `M ${_n(ax)} ${_n(ay)}`;
-    const p0 = at(0);
-    d += ` L ${_n(p0.x)} ${_n(p0.y)}`;
-    for (let i = 1; i <= steps; i++) {
-      const q = at((i / steps) * 2 * Math.PI * n);
-      d += ` L ${_n(q.x)} ${_n(q.y)}`;
-    }
-    d += ` L ${_n(bx)} ${_n(by)}`;
+    // ── 리드 형태 ──
+    // 비스듬한 45° 사선 대신, 축을 따라 곧게 간 뒤 **수직으로 급격히** 올라가고
+    // **수평으로 조금** 지나 코일에 물린다. 수직 상승 지점을 코일 시작(along=lead)
+    // 보다 hor 만큼 앞에 두므로 상승선이 코일과 겹치지 않는다.
+    const hor = Math.min(lead * 0.5, amp * 0.7);   // 코일 앞 수평 구간
+    const riseAlong = Math.max(0, lead - hor);     // 수직 상승이 일어나는 축 위치
+
+    const l0 = P(0, 0);                 // 끝점 A (축 위)
+    const l1 = P(riseAlong, 0);         // 축을 따라 직진
+    const l2 = P(riseAlong, b);         // 급격한 수직 상승
+    const l3 = P(lead, b);              // 수평으로 조금 → 코일 시작점과 일치
+
+    const r3 = P(lead + span, b);       // 코일 끝점 (perp = +b)
+    const r2 = P(lead + span + hor, b); // 수평으로 조금
+    const r1 = P(lead + span + hor, 0); // 급격한 수직 하강
+    const r0 = P(len, 0);               // 끝점 B (축 위)
+
+    const L = (p) => ` L ${_n(p.x)} ${_n(p.y)}`;
+
+    let d = `M ${_n(l0.x)} ${_n(l0.y)}` + L(l1) + L(l2) + L(l3);
+    const steps = Math.max(64, n * 28);   // 고리가 각져 보이지 않도록 촘촘히 샘플
+    for (let i = 1; i <= steps; i++) d += L(at((i / steps) * 2 * Math.PI * n));
+    d += L(r3) + L(r2) + L(r1) + L(r0);
     return d;
   }
 

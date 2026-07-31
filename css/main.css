@@ -56,7 +56,8 @@
       --panel-w: 200px;
       --sidebar-w: 64px;
       --bottom-h: 56px;
-      --font: 'Courier New', 'Consolas', monospace;
+      --font: 'HyhwpEQ', 'HYhwpEQ', 'HYSinMyeongJo-Medium', 'HY신명조',
+              'SM중명조', 'SMJungMyungJo', 'Batang', '바탕', 'Nanum Myeongjo', serif;
     }
 
     html, body {
