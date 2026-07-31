@@ -16,6 +16,7 @@ const SUITES = [
   ['spec7', '수능 규격 도형 · 실체면 방향 · SVG 내보내기'],
   ['spec8', '실행 중 UI (카메라 조작 / 편집 차단 / 상태 배지)'],
   ['spec9', '회전 인식 앵커 (렌더 ↔ 히트테스트 ↔ 물리 일치)'],
+  ['spec10','실 길이 보존 (물체가 도르래 림에 닿은 뒤)'],
 ];
 
 const verbose = process.argv.includes('--verbose');

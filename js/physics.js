@@ -1558,6 +1558,38 @@
    *       그대로 실의 기준점으로 사용.
    * 예: 왼쪽 앵커에 연결 → 기준점 = 도르래 왼쪽 림 → 물체가 정확히 아래면 n=(0,-1)
    */
+  /* ── Atwood 세그먼트 상태: 림 → body 방향과 길이 ──
+   * 거리 0 근방에서는 방향이 정의되지 않고, 한 서브스텝에 앵커가 림을 지나쳐
+   * 반대편으로 넘어가면 항상 양수인 Math.hypot 거리만으로는 통과 사실을 알 수
+   * 없다 (_simpleRopeConstraint 의 하한 판정과 똑같은 문제). 그래서 안정
+   * 구간에서만 갱신하는 기준 방향(rope._refDirX/Y — initPhysics 에서 림→body
+   * 방향으로 초기화)에 투영한 "부호 있는 길이"를 쓴다.
+   */
+  function _atwoodSeg(rope, rim, pos) {
+    const dx = pos.x - rim.x, dy = pos.y - rim.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > _ROPE_MIN_LEN * 4) {
+      // 안정 구간: 실제 방향을 쓰고 기준 방향도 갱신 (스윙 등 정상 회전 반영)
+      rope._refDirX = dx / dist; rope._refDirY = dy / dist;
+      return { d: dist, nx: rope._refDirX, ny: rope._refDirY };
+    }
+    if (rope._refDirX == null) return null;      // 기준 미보정 — 판정 불가
+    // 붕괴 근방: 기준 방향을 유지한 채 부호 있는 길이 (반대편으로 통과 시 음수)
+    return { d: dx * rope._refDirX + dy * rope._refDirY,
+             nx: rope._refDirX, ny: rope._refDirY };
+  }
+
+  /** 세그먼트가 하한 미만이면 body 를 림 바깥으로 밀어내고 접근 속도를 없앤다 */
+  function _atwoodClampMin(g, seg, fixedPulleys) {
+    if (!seg || seg.d >= _ROPE_MIN_LEN) return false;
+    // _resolveRopeExcess 의 방향 규약은 anchorA → anchorB
+    const bodyIsB = (g.rope.anchorB === g.bodyAnchor);
+    const sx = bodyIsB ? seg.nx : -seg.nx;
+    const sy = bodyIsB ? seg.ny : -seg.ny;
+    _resolveRopeExcess(g.rope, fixedPulleys, sx, sy, seg.d - _ROPE_MIN_LEN);
+    return true;
+  }
+
   function _atwoodConstraint(pulleyId, g0, g1, fixedPulleys) {
     fixedPulleys = fixedPulleys || _EMPTY_SET;
     const pulley = STATE.elements.find(e => e.id === pulleyId);
@@ -1574,13 +1606,27 @@
     const pos1 = getAttachPhysPos(g1.bodyAnchor);
     if (!pos0 || !pos1) return;
 
-    // 장력 방향: 림 포인트 → body 방향
-    const d0  = Math.hypot(pos0.x - rim0.x, pos0.y - rim0.y);
-    const d1  = Math.hypot(pos1.x - rim1.x, pos1.y - rim1.y);
-    if (d0 < 1e-9 || d1 < 1e-9) return;
+    // ── 장력 방향(림 → body)과 부호 있는 길이 ──
+    let s0 = _atwoodSeg(g0.rope, rim0, pos0);
+    let s1 = _atwoodSeg(g1.rope, rim1, pos1);
+    if (!s0 || !s1) return;
 
-    const n0x = (pos0.x - rim0.x) / d0, n0y = (pos0.y - rim0.y) / d0;
-    const n1x = (pos1.x - rim1.x) / d1, n1y = (pos1.y - rim1.y) / d1;
+    // ── 하한(0) 보정: 실은 음의 길이를 가질 수 없다 ──
+    // 물체가 림에 닿으면 그 세그먼트는 더 짧아질 수 없다. 예전에는 여기서
+    // 제약을 통째로 포기했는데(d < 1e-9 면 return), 그러면 반대쪽 물체가
+    // 자유로워져 실이 늘어나며 계속 내려갔다.
+    if (_atwoodClampMin(g0, s0, fixedPulleys)) s0 = _atwoodSeg(g0.rope, getAttachPhysPos(anchor0), getAttachPhysPos(g0.bodyAnchor));
+    if (_atwoodClampMin(g1, s1, fixedPulleys)) s1 = _atwoodSeg(g1.rope, getAttachPhysPos(anchor1), getAttachPhysPos(g1.bodyAnchor));
+    if (!s0 || !s1) return;
+
+    const d0 = s0.d, d1 = s1.d;
+    const n0x = s0.nx, n0y = s0.ny;
+    const n1x = s1.nx, n1y = s1.ny;
+
+    // 하한에 걸린 쪽은 더 짧아질 수 없으므로 합제약의 자유도에서 뺀다 →
+    // 남은 실 길이가 반대쪽의 상한이 되고, 보정이 전부 반대쪽 물체로 간다.
+    const bound0 = d0 <= _ROPE_MIN_LEN * 1.5;
+    const bound1 = d1 <= _ROPE_MIN_LEN * 1.5;
 
     const L0 = g0.rope.calibratedLength ?? g0.rope.ropeLength;
     const L1 = g1.rope.calibratedLength ?? g1.rope.ropeLength;
@@ -1594,10 +1640,11 @@
     // C = d0 + d1 - L_total.  ∇: body0=n0, body1=n1, 도르래 중심=-(n0+n1)
     // (림 위치는 도르래 중심을 따라 이동하므로 중심에 대한 기울기에 두 항이 합쳐짐)
     if (excess > 1e-6) {
-      const w0 = _nodeInvMass(g0.bodyAnchor.elementId, fixedPulleys);
-      const w1 = _nodeInvMass(g1.bodyAnchor.elementId, fixedPulleys);
+      const w0 = bound0 ? 0 : _nodeInvMass(g0.bodyAnchor.elementId, fixedPulleys);
+      const w1 = bound1 ? 0 : _nodeInvMass(g1.bodyAnchor.elementId, fixedPulleys);
       const wp = fixedPulleys.has(pulleyId) ? 0 : PULLEY_RELAY_INVMASS;
-      const gpx = -(n0x + n1x), gpy = -(n0y + n1y);
+      const gpx = -((bound0 ? 0 : n0x) + (bound1 ? 0 : n1x));
+      const gpy = -((bound0 ? 0 : n0y) + (bound1 ? 0 : n1y));
       const denom = w0 + w1 + wp * (gpx*gpx + gpy*gpy);
       if (denom > 1e-12) {
         const lambda = excess / denom;
@@ -1610,8 +1657,8 @@
     // ── 속도 보정: 팽팽 상태에서 ḋ0 + ḋ1 = 0 (유한 물체만; 도르래 속도는 위치 유도) ──
     if (d0 + d1 < L_total - 1e-4) return;
 
-    const inv0 = (el0 && ['rect','circle'].includes(el0.type)) ? 1 / (el0.mass || 1) : 0;
-    const inv1 = (el1 && ['rect','circle'].includes(el1.type)) ? 1 / (el1.mass || 1) : 0;
+    const inv0 = (!bound0 && el0 && ['rect','circle'].includes(el0.type)) ? 1 / (el0.mass || 1) : 0;
+    const inv1 = (!bound1 && el1 && ['rect','circle'].includes(el1.type)) ? 1 / (el1.mass || 1) : 0;
     const invSum = inv0 + inv1;
     if (invSum < 1e-12) return;
 
@@ -1619,11 +1666,14 @@
     const v0x = el0 ? (el0.vx||0) : 0, v0y = el0 ? (el0.vy||0) : 0;
     const v1x = el1 ? (el1.vx||0) : 0, v1y = el1 ? (el1.vy||0) : 0;
 
-    // ḋ_i = (v_body_i - v_pulley) · n_i
-    const dDot0 = (v0x - vpx)*n0x + (v0y - vpy)*n0y;
-    const dDot1 = (v1x - vpx)*n1x + (v1y - vpy)*n1y;
+    // ḋ_i = (v_body_i - v_pulley) · n_i  (하한에 걸린 쪽은 길이가 고정 → 0)
+    const dDot0 = bound0 ? 0 : (v0x - vpx)*n0x + (v0y - vpy)*n0y;
+    const dDot1 = bound1 ? 0 : (v1x - vpx)*n1x + (v1y - vpy)*n1y;
     const violation = dDot0 + dDot1;
     if (Math.abs(violation) < 1e-9) return;
+    // 한쪽이 하한에 걸리면 등식(d0+d1=L)이 아니라 부등식(≤L)이 된다 —
+    // 실이 느슨해지는 방향(violation<0)은 구속하지 않는다.
+    if ((bound0 || bound1) && violation < 0) return;
 
     const lambda = violation / invSum;
 
