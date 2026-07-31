@@ -307,51 +307,98 @@
   /* ════════════════════════════════
      도르래 rim 정렬 스냅
   ════════════════════════════════
-     도르래에 실로 연결된 상대 앵커와 rim 앵커의 높이(또는 가로 위치)를 정확히
-     맞춰준다. 반칸 격자만으로도 정렬은 "가능"하지만 손으로 맞추기 어렵기 때문에,
-     근처까지 끌고 오면 자석처럼 달라붙게 한다.
+     도르래에 실로 연결된 상대 앵커를 지나는 "목표 직선" 위에 rim 앵커를 올려
+     실이 그 직선과 정확히 겹치게 한다. 반칸 격자만으로도 정렬은 "가능"하지만
+     손으로 맞추기 어렵기 때문에, 근처까지 끌고 오면 자석처럼 달라붙게 한다.
 
-       · 실이 도르래 left/right rim 에 걸림  → rim y 를 상대 앵커 y 에 맞춤 (수평 실)
-       · 실이 도르래 top/bottom rim 에 걸림  → rim x 를 상대 앵커 x 에 맞춤 (수직 실)
+     목표 직선의 방향은 상대 물체가 무엇에 놓여 있느냐로 정한다:
+
+       · 상대가 바닥면에 스냅돼 있으면  → 그 바닥면의 방향
+         수평 바닥이면 수평, 빗면이면 빗면 기울기. 실이 바닥면과 평행해진다.
+       · 스냅돼 있지 않으면(매달린 물체 등) → rim 앵커의 축 방향
+         left/right rim 이면 수평, top/bottom rim 이면 수직.
+
+     축 정렬(수평/수직)은 이 직선 투영의 특수한 경우다 — 수평선에 수직 투영하면
+     y 만, 수직선에 투영하면 x 만 움직이므로 기존 동작이 그대로 보존된다.
+
+     제약이 둘이고 두 목표 직선이 나란하지 않으면 도르래 위치는 **유일하게**
+     결정된다 (미지수 2개 gx·gy, 일차식 2개). 수평 실 + 빗면 실이 바로 그
+     경우이고, 그 교점이 두 실을 동시에 각자의 바닥면과 평행하게 만드는 유일한
+     자리다. 순차 투영은 이 교점으로 한 번에 가지 못하므로 2×2 로 직접 푼다.
+     교점이 없거나(나란함) 너무 멀면 가장 가까운 직선 하나에 수직 투영한다.
 
      상대가 도르래 자신이면(도르래끼리 연결) 건너뛴다.
 
      주의: 반칸 스냅을 적용하기 *전*의 원시 좌표에 대해 판정한다. 반칸 스냅 뒤에
      걸면 정렬 위치의 좌우 ±0.5칸 자리까지 함께 흡수돼 배치 불가능해진다.
      허용치를 0.5칸 미만으로 두는 것도 같은 이유 — 인접 반칸 자리를 남겨둔다. */
-  const RIM_ALIGN_CELLS = 0.35;   // 정렬 스냅 활성화 거리 [격자 칸] (< 0.5)
+  const RIM_ALIGN_CELLS   = 0.35;   // 정렬 스냅 활성화 거리 [격자 칸] (< 0.5)
+  const RIM_ALIGN_MIN_SIN = 0.15;   // 두 직선을 독립으로 볼 최소 사잇각 (|sin|, ≈8.6°)
+
+  /** rim 앵커가 올라타야 할 목표 직선의 단위 방향 벡터 (월드 좌표계) */
+  function _rimTargetDir(otherAnchor, attachPoint) {
+    const el = STATE.elements.find(e => e.id === otherAnchor.elementId);
+    // 바닥면에 스냅된 물체 — 그 바닥면 방향으로 실을 눕힌다 (빗면 포함)
+    if (el && el._snapRotation !== null && el._snapRotation !== undefined) {
+      return { x: Math.cos(el._snapRotation), y: Math.sin(el._snapRotation) };
+    }
+    return (attachPoint === 'left' || attachPoint === 'right')
+      ? { x: 1, y: 0 }    // 수평 실
+      : { x: 0, y: 1 };   // 수직 실
+  }
 
   function _applyPulleyRimAlign(pulley, gx, gy) {
     const cs  = CONFIG.cellSize;
     const tol = RIM_ALIGN_CELLS;
-    let outX = gx, outY = gy;
-    let bestX = null, bestY = null;
 
+    // rim 앵커의 격자 좌표 = 도르래 좌상단 + 로컬 오프셋. 도르래를 Δ 만큼
+    // 옮기면 rim 도 그대로 Δ 만큼 움직이므로 오프셋 자체는 알 필요가 없다.
+    const off = {
+      left:   { x: 0,                y: pulley.gridH / 2 },
+      right:  { x: pulley.gridW,     y: pulley.gridH / 2 },
+      top:    { x: pulley.gridW / 2, y: 0 },
+      bottom: { x: pulley.gridW / 2, y: pulley.gridH },
+    };
+
+    // 각 제약을 직선 방정식 P·n = c 로 모은다 (P = 도르래 좌상단 격자좌표)
+    const cons = [];
     for (const rope of STATE.ropes) {
       let mine = null, other = null;
       if (rope.anchorA.elementId === pulley.id) { mine = rope.anchorA; other = rope.anchorB; }
       else if (rope.anchorB.elementId === pulley.id) { mine = rope.anchorB; other = rope.anchorA; }
-      if (!mine || mine.attachPoint === 'center') continue;      // center = 고정용, rim 아님
+      if (!mine || !off[mine.attachPoint]) continue;   // center = 고정용, rim 아님
       if (other.elementId === pulley.id) continue;
 
       const w = rope._getAnchorWorld(other);
       if (!w) continue;
 
-      if (mine.attachPoint === 'left' || mine.attachPoint === 'right') {
-        // rim y = gy + gridH/2  →  상대 앵커 y 와 일치시킨다
-        const targetGY = w.y / cs - pulley.gridH / 2;
-        const d = Math.abs(targetGY - gy);
-        if (d <= tol && (bestY === null || d < bestY.d)) bestY = { d, v: targetGY };
-      } else if (mine.attachPoint === 'top' || mine.attachPoint === 'bottom') {
-        const targetGX = w.x / cs - pulley.gridW / 2;
-        const d = Math.abs(targetGX - gx);
-        if (d <= tol && (bestX === null || d < bestX.d)) bestX = { d, v: targetGX };
+      const d = _rimTargetDir(other, mine.attachPoint);
+      const n = { x: -d.y, y: d.x };                   // 목표 직선의 법선 (단위벡터)
+      const o = off[mine.attachPoint];
+      cons.push({ n, c: (w.x / cs - o.x) * n.x + (w.y / cs - o.y) * n.y });
+    }
+    if (cons.length === 0) return { gx, gy, aligned: false };
+
+    // ① 독립인 두 직선의 교점 — 두 실을 동시에 평행하게 만드는 유일한 자리
+    for (let i = 0; i < cons.length; i++) {
+      for (let j = i + 1; j < cons.length; j++) {
+        const A = cons[i], B = cons[j];
+        const det = A.n.x * B.n.y - A.n.y * B.n.x;     // = sin(두 직선 사잇각)
+        if (Math.abs(det) < RIM_ALIGN_MIN_SIN) continue;
+        const sx = (A.c * B.n.y - B.c * A.n.y) / det;
+        const sy = (A.n.x * B.c - B.n.x * A.c) / det;
+        if (Math.hypot(sx - gx, sy - gy) <= tol) return { gx: sx, gy: sy, aligned: true };
       }
     }
 
-    if (bestY) outY = bestY.v;
-    if (bestX) outX = bestX.v;
-    return { gx: outX, gy: outY, alignedX: !!bestX, alignedY: !!bestY };
+    // ② 단일 제약 — 가장 가까운 직선에 수직 투영
+    let best = null;
+    for (const c of cons) {
+      const e = gx * c.n.x + gy * c.n.y - c.c;
+      if (Math.abs(e) <= tol && (!best || Math.abs(e) < Math.abs(best.e))) best = { e, n: c.n };
+    }
+    if (!best) return { gx, gy, aligned: false };
+    return { gx: gx - best.e * best.n.x, gy: gy - best.e * best.n.y, aligned: true };
   }
 
   /** 더블탭 → 요소별 방향 전환
@@ -827,10 +874,15 @@
       // 도르래: 연결된 실의 상대 앵커와 rim 을 자석 정렬 (원시 좌표 기준 판정)
       const align = _dragEl.type === 'pulley'
         ? _applyPulleyRimAlign(_dragEl, rawGX, rawGY)
-        : { alignedX: false, alignedY: false };
+        : { aligned: false };
 
       let newGX, newGY;
-      if (HALF_SNAP_TYPES.includes(_dragEl.type)) {
+      if (align.aligned) {
+        // 정렬이 걸리면 격자 스냅을 건너뛴다 — 목표 직선이 반칸 격자 위에
+        // 있으리란 보장이 없다 (빗면 위 물체가 대표적)
+        newGX = align.gx;
+        newGY = align.gy;
+      } else if (HALF_SNAP_TYPES.includes(_dragEl.type)) {
         // 0.5칸 격자 배치 (도르래 rim ↔ 물체 중심 정렬용, HALF_SNAP_TYPES 참고)
         newGX = Math.round(rawGX * 2) / 2;
         newGY = Math.round(rawGY * 2) / 2;
@@ -838,8 +890,6 @@
         newGX = snapToGridIndex(newWX / cs * cs);
         newGY = snapToGridIndex(newWY / cs * cs);
       }
-      if (align.alignedX) newGX = align.gx;   // 정렬이 걸린 축만 격자 스냅을 대체
-      if (align.alignedY) newGY = align.gy;
       newGX = clamp(newGX, 0, GS - _dragEl.gridW);
       newGY = clamp(newGY, 0, GS - _dragEl.gridH);
 
