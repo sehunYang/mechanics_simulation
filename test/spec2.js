@@ -525,10 +525,10 @@ scenario('T4', '장시간 안정성 — 정지 물체가 떨거나 가라앉지 
   expect('60초 후 속도', Math.abs(s.vy), 0, 1e-9, 'm/s');
 });
 
-/* 진자의 장시간 에너지 감소는 "위치 투영 제약 + 1차 적분"의 이산화 소산이며
-   dt에 정확히 비례해 0으로 수렴한다(SUBSTEPS 1→32 에서 5.77%→0.25%, 매번 절반).
-   즉 물리 모델의 오류가 아니라 적분 정밀도 문제 → 30초 드리프트 상한만 검증. */
-scenario('T5', '진자 장시간 에너지 드리프트 (30초) — 이산화 소산 상한 이내', ({ run }) => {
+/* 실 제약의 이산화 에너지 손실은 "장력은 계 전체에 일을 하지 않는다"는 불변식을
+   이용해 성분 단위로 되돌린다(physics.js _projectComponents). 그 결과 30초
+   드리프트가 1.85% → 0.009% 로 줄고, 수렴 차수도 1차에서 2차로 올라갔다. */
+scenario('T5', '진자 장시간 에너지 보존 (30초) — 드리프트가 무시할 수준', ({ run }) => {
   run(`reset();
        const seg = addFloor(50,20,52,20);
        const b = addCircle({ gridX: 59.5, gridY: 19.5, mass: 1 });   // 수평 출발, y=80
@@ -538,13 +538,18 @@ scenario('T5', '진자 장시간 에너지 드리프트 (30초) — 이산화 �
     const E = () => 0.5*(bb.vx*bb.vx + bb.vy*bb.vy) + 9.8*bb.physY;
     const E0 = E();
     for (let i=0;i<1800;i++) simStep(CONFIG.FIXED_DT);   // 30초
-    ({ loss: (E0 - E()) / E0 });`);
-  note('30초 에너지 손실', (r.loss * 100).toFixed(3) + ' %');
-  expect('에너지 증가 없음 (발산하지 않음)', r.loss >= 0 ? 1 : 0, 1, 0, '');
-  expect('30초 드리프트 ≤ 2.5%', r.loss <= 0.025 ? 1 : 0, 1, 0, '');
+    const loss = (E0 - E()) / E0;
+    let maxY = -1e9;
+    for (let i=0;i<600;i++){ simStep(CONFIG.FIXED_DT); maxY = Math.max(maxY, bb.physY); }
+    ({ loss, maxY });`);
+  note('30초 에너지 손실', (r.loss * 100).toFixed(4) + ' %');
+  note('30~40초 최고점 (시작 80)', r.maxY.toFixed(4));
+  expect('에너지 증가 없음 (발산하지 않음)', r.loss >= -1e-6 ? 1 : 0, 1, 0, '');
+  expect('30초 드리프트 ≤ 0.05%', r.loss <= 0.0005 ? 1 : 0, 1, 0, '');
+  expect('30초 뒤에도 최고점 ≈ 80', r.maxY, 80, 0.1);
 });
 
-scenario('T7', '에너지 드리프트가 dt에 비례 (1차 수렴) — 모델 오류가 아님', ({ ctx }) => {
+scenario('T7', '에너지 보정 후 — 남은 드리프트가 2차로 수렴', ({ ctx }) => {
   const vm = require('vm');
   const losses = [];
   for (const sub of [4, 8, 16]) {
@@ -561,9 +566,36 @@ scenario('T7', '에너지 드리프트가 dt에 비례 (1차 수렴) — 모델 
     }`, ctx));
   }
   vm.runInContext(`CONFIG.SUBSTEPS = 4;`, ctx);
-  note('손실 (SUBSTEPS 4/8/16)', losses.map(l => (l * 100).toFixed(3) + '%').join(' → '));
-  expect('dt 절반 → 손실 절반 (4→8)', losses[0] / losses[1], 2, '10%', '배');
-  expect('dt 절반 → 손실 절반 (8→16)', losses[1] / losses[2], 2, '10%', '배');
+  note('손실 (SUBSTEPS 4/8/16)', losses.map(l => (l * 100).toFixed(4) + '%').join(' → '));
+  expect('기본 설정(4)에서 30초 손실 ≤ 0.05%', losses[0] <= 0.0005 ? 1 : 0, 1, 0, '');
+  expect('dt 절반 → 손실 1/4 이하 (2차 수렴)', losses[0] / losses[1] >= 3 ? 1 : 0, 1, 0, '');
+  expect('모든 설정에서 에너지 증가 없음', losses.every(l => l >= -1e-6) ? 1 : 0, 1, 0, '');
+});
+
+scenario('T8', '실이 갑자기 팽팽해지는 순간(스냅)은 에너지가 실제로 줄어야 한다', ({ run }) => {
+  // 느슨한 실에 매달린 물체를 자유낙하시켜 실이 걸리게 한다 → 비탄성 흡수
+  run(`reset();
+       const seg = addFloor(50,20,52,20);                      // 피벗 phys (50,80)
+       const b = addCircle({ gridX: 49.5, gridY: 39.5, mass: 1 });  // phys (50,60), 실 길이 20
+       addRope(seg.id,'p1', b.id,'center');
+       begin();
+       // 실을 느슨하게 만든 뒤 옆으로 던져 스냅이 일어나게 함
+       STATE.elements[0].physY = 70; STATE.elements[0].vx = 6; STATE.elements[0].vy = 0;`);
+  const r = run(`
+    const b = STATE.elements[0];
+    const E = () => 0.5*(b.vx*b.vx + b.vy*b.vy) + 9.8*b.physY;
+    const E0 = E();
+    let snapped = false;
+    for (let i=0;i<900;i++){
+      simStep(CONFIG.FIXED_DT);
+      const d = Math.hypot(b.physX-50, b.physY-80);
+      if (d >= 19.99) snapped = true;
+    }
+    ({ E0, E1: E(), snapped, loss: (E0 - E()) / E0 });`);
+  note('스냅 발생 / 에너지 손실', `${r.snapped} / ${(r.loss*100).toFixed(3)}%`);
+  expect('실이 팽팽해짐', r.snapped ? 1 : 0, 1, 0, '');
+  expect('스냅에서 에너지가 줄어듦 (비탄성)', r.loss > 0.001 ? 1 : 0, 1, 0, '');
+  expect('에너지가 늘지는 않음', r.E1 <= r.E0 + 1e-9 ? 1 : 0, 1, 0, '');
 });
 
 scenario('T6', '높은 속도 관통 방지 — 빠른 물체가 바닥을 통과하지 않음', ({ run }) => {

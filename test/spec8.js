@@ -228,7 +228,7 @@ scenario('TRAIL-RECORD', '실행하면 물체마다 궤적이 쌓인다', () => 
   expect('자유낙하라 아래로 진행', r.last.y > r.first.y ? 1 : 0, 1, 0, '');
 });
 
-scenario('TRAIL-TOGGLE', '표시 토글은 기록을 멈추지 않는다 (껐다 켜도 경로 유지)', () => {
+scenario('TRAIL-TOGGLE', '표시를 끄면 기록도 멈추고 기존 궤적도 비운다', () => {
   const a = app();
   const r = a.evalIn(`
     STATE.elements = [];
@@ -236,14 +236,21 @@ scenario('TRAIL-TOGGLE', '표시 토글은 기록을 멈추지 않는다 (껐다
     startSimulation();
     for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
     const onCount = b._trail.length;
-    b.showTrail = false;                                   // 표시만 끔
+    b.showTrail = false;                                   // 끔
+    simStep(CONFIG.FIXED_DT);
+    const rightAfterOff = b._trail.length;
     for (let i = 0; i < 60; i++) simStep(CONFIG.FIXED_DT);
     const offCount = b._trail.length;
     b.showTrail = true;                                    // 다시 켬
-    ({ onCount, offCount, defaultOn: (new RectBody()).showTrail });`);
-  note('끄기 전/후 점 개수', `${r.onCount} → ${r.offCount}`);
+    for (let i = 0; i < 30; i++) simStep(CONFIG.FIXED_DT);
+    ({ onCount, rightAfterOff, offCount, backOn: b._trail.length,
+       defaultOn: (new RectBody()).showTrail });`);
+  note('켬 → 끈 직후 → 꺼둔 채 → 다시 켬', `${r.onCount} → ${r.rightAfterOff} → ${r.offCount} → ${r.backOn}`);
   expect('기본값은 표시 ON', r.defaultOn ? 1 : 0, 1, 0, '');
-  expect('꺼둔 동안에도 계속 기록', r.offCount > r.onCount ? 1 : 0, 1, 0, '');
+  expect('켜 두면 기록됨', r.onCount > 10 ? 1 : 0, 1, 0, '');
+  expect('끄면 기존 궤적도 비워짐', r.rightAfterOff, 0, 0, '개');
+  expect('꺼둔 동안 쌓이지 않음', r.offCount, 0, 0, '개');
+  expect('다시 켜면 그 시점부터 새로 기록', r.backOn > 0 ? 1 : 0, 1, 0, '');
 });
 
 scenario('TRAIL-DRAW', '표시 여부에 따라 그려지거나 빠진다', () => {

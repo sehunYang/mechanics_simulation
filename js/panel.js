@@ -265,7 +265,8 @@
         _slider(sel.e, 0.0, 1.0, 0.01, v => { sel.e = v; })));
 
       // ── 궤적 표시 (물체별 토글) ──
-      //   기록은 실행 중 항상 되므로, 껐다 켜도 지나온 경로가 그대로 보인다.
+      //   끄면 기록도 하지 않는다. 실행 중에는 물체를 선택할 수 없어
+      //   다시 켤 방법이 없으므로, 실행 전에 켜 둔 물체만 기록하면 된다.
       const n = (sel._trail && sel._trail.length) || 0;
       panelRight.appendChild(_row('궤적',
         _btn(sel.showTrail ? '● 표시 중 — 끄기' : '○ 숨김 — 켜기', '', () => {
@@ -274,9 +275,10 @@
         })));
       const trailInfo = document.createElement('div');
       trailInfo.style.cssText = 'color:var(--text-dim);font-size:10px;margin-top:-2px;margin-bottom:3px;';
-      trailInfo.textContent = n > 1
-        ? `기록된 점 ${n}개 — 실행 중 계속 쌓입니다`
-        : '실행하면 이 물체가 지나간 길이 기록됩니다';
+      trailInfo.textContent = !sel.showTrail
+        ? '꺼두면 기록하지 않습니다 (실행 전에 켜 두세요)'
+        : (n > 1 ? `기록된 점 ${n}개 — 실행 중 계속 쌓입니다`
+                 : '실행하면 이 물체가 지나간 길이 기록됩니다');
       panelRight.appendChild(trailInfo);
     }
 

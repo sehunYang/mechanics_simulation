@@ -268,20 +268,22 @@
     const sub = CONFIG.SUBSTEPS;
     const subDt = dt / sub;
     for (let i = 0; i < sub; i++) {
+      _clearStepFlags();
+      const _e0 = _stepEnergyBefore();
       applyForces(subDt);
       integrate(subDt);
       updateExtForceAnchors();   // 외력 앵커가 물체를 따라 이동 (실 방향 유지)
       resolveFloorCollisions(subDt);
       resolveBodyCollisions();
       resolveRopeConstraints(subDt);
+      _projectStepEnergy(_e0);
     }
     recordTrails();
   }
 
   /* ================================================================
      [TRAILS] — 물체별 궤적
-     표시 여부(showTrail)와 무관하게 **항상 기록**한다. 껐다 켜도 지나온
-     경로가 그대로 남아, 꺼둔 구간이 직선으로 이어지는 거짓 궤적이 생기지 않는다.
+     showTrail 이 켜진 물체만 기록한다 (꺼두면 메모리도 쓰지 않는다).
      좌표는 격자 칸 단위(중심) — 줌·리사이즈로 cellSize 가 바뀌어도 유효하다.
   ================================================================ */
 
@@ -291,6 +293,11 @@
     for (const el of STATE.elements) {
       if (el.type !== 'rect' && el.type !== 'circle') continue;
       if (!el._trail) el._trail = [];
+      // 표시를 끈 물체는 기록하지 않는다.
+      //   실행 중에는 물체를 선택할 수 없어(편집 차단) 궤적을 다시 켤 방법이 없다.
+      //   즉 토글은 실행 전에만 정해지므로, 꺼둔 물체의 좌표를 쌓아 둘 이유가 없다.
+      //   (끄면 그때까지의 궤적도 지운다 — 다시 켜면 그 시점부터 새로 그린다)
+      if (!el.showTrail) { if (el._trail.length) el._trail.length = 0; continue; }
       const t  = el._trail;
       const cx = el.gridX + el.gridW / 2;
       const cy = el.gridY + el.gridH / 2;
@@ -326,6 +333,7 @@
           if (_bboxOverlap(el, zone)) {
             el.ax += zone.fx / el.mass;
             el.ay += zone.fy / el.mass;
+            el._nonConservative = true;   // 보존력 아님 → 에너지 보정 대상 제외
           }
         }
       }
@@ -358,6 +366,7 @@
         if (!body || !['rect', 'circle'].includes(body.type)) continue;
         body.ax += (ef.forceN * t.fdx) / body.mass;
         body.ay += (ef.forceN * t.fdy) / body.mass;
+        body._nonConservative = true;
       }
     }
   }
@@ -689,6 +698,7 @@
     }
 
     if (!bestSeg || maxPen <= 0) return;
+    el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
 
     // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
     const nx = bestNx, ny = bestNy;
@@ -821,6 +831,7 @@
     }
 
     if (maxPen < 1e-9 || !bestSeg) return;
+    el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
 
     // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
     el.physX += bestNx * maxPen;
@@ -1230,7 +1241,151 @@
     return { component: { constraints, bodies: [...bodies], pulleys: [...pulleys] }, dynamicRopeIds };
   }
 
+  /* ================================================================
+     [ROPE ENERGY PROJECTION] — 실 제약의 수치 에너지 드리프트 보정
+
+     팽팽한 이상적인 실의 장력은 실 방향에 수직인 운동에 대해 일을 하지 않으며,
+     계 전체로 보면 **무일(no net work)** 이다 (Atwood 처럼 한쪽에 +, 다른쪽에
+     −로 일해도 총합은 0). 따라서 resolveRopeConstraints 앞뒤로 계의 역학적
+     에너지는 같아야 한다. 차이가 난다면 그건 물리가 아니라 이산화 오차다.
+
+     제약면은 J·v = 0 이라는 선형 조건이므로 v 를 **균일 배율**로 늘리거나 줄여도
+     제약은 그대로 만족된다. 그래서 그 유일한 자유도로 잃어버린 에너지를 되돌린다.
+
+     ⚠ 느슨하던 실이 이 스텝에 팽팽해지는 순간(스냅)은 다르다. 그때 실이 흡수하는
+       에너지는 비탄성 충격으로 **실제로** 사라져야 하므로 보정하지 않는다.
+       (rope._wasViolated 로 "이미 팽팽했는지"를 보고 구분한다)
+  ================================================================ */
+
+  /* ── 서브스텝 단위 에너지 보정 (2단계) ──
+     1단계(resolveRopeConstraints 내부)는 "실 제약 해소"가 무일임을 이용해
+     그 단계에서 샌 에너지를 되돌린다 — 접촉·마찰이 있어도 항상 안전하다.
+     2단계(여기)는 한 걸음 더 나아가, **중력과 실 장력만 받는** 물체에 대해
+     서브스텝 전체(힘·적분·제약)의 에너지 보존을 강제한다. 이상적인 진자·
+     Atwood 는 역학적 에너지가 정확히 보존되어야 하므로, 남은 차이는 전부
+     반음적 오일러가 곡선 경로를 접선으로 근사해 생긴 이산화 오차다.
+
+     _nonConservative 플래그가 하나라도 켜졌으면(접촉·마찰·용수철·외력·힘구간)
+     에너지가 실제로 변할 수 있으므로 보정하지 않는다. */
+
+  function _clearStepFlags() {
+    for (const el of STATE.elements) {
+      if (el.type === 'rect' || el.type === 'circle') el._nonConservative = false;
+    }
+  }
+
+  /** 서브스텝 시작 시점의 성분별 기준 에너지 */
+  function _stepEnergyBefore() {
+    return STATE.ropes.length ? _componentRefs() : null;
+  }
+
+  /** 서브스텝 전체(힘·적분·제약)의 이산화 오차를 성분 단위로 되돌린다 */
+  function _projectStepEnergy(refs) {
+    if (refs) _projectComponents(refs);
+  }
+
+  /**
+   * 실 네트워크의 **연결 성분**을 구한다.
+   *   [{ bodies: [유한 물체...], allTaut: 모든 실이 팽팽한가 }]
+   *
+   * ⚠ "장력은 일을 하지 않는다"는 **연결된 계 전체**에서만 성립한다.
+   *   Atwood 처럼 한쪽에 +일, 다른쪽에 −일을 하는 계에서 물체 하나만 떼어
+   *   에너지를 보존시키면 계에 에너지를 펌프질하게 된다(가속도가 2배로 튐).
+   *   그래서 반드시 성분 단위로 묶어서 본다.
+   */
+  function _ropeComponents() {
+    if (STATE.ropes.length === 0) return [];
+    const parent = new Map();
+    const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+    const add  = (x) => { if (!parent.has(x)) parent.set(x, x); };
+    for (const rope of STATE.ropes) {
+      add(rope.anchorA.elementId); add(rope.anchorB.elementId);
+      parent.set(find(rope.anchorA.elementId), find(rope.anchorB.elementId));
+    }
+    const comps = new Map();
+    const get = (root) => {
+      if (!comps.has(root)) comps.set(root, { bodies: [], seen: new Set(), allTaut: true });
+      return comps.get(root);
+    };
+    for (const rope of STATE.ropes) {
+      const c = get(find(rope.anchorA.elementId));
+      if (!rope._wasActive) c.allTaut = false;
+      for (const a of [rope.anchorA, rope.anchorB]) {
+        if (c.seen.has(a.elementId)) continue;
+        c.seen.add(a.elementId);
+        const el = STATE.elements.find(e => e.id === a.elementId);
+        if (el && (el.type === 'rect' || el.type === 'circle')) c.bodies.push(el);
+      }
+    }
+    return [...comps.values()].filter(c => c.bodies.length > 0);
+  }
+
+  /** 역학적 에너지 (운동 + 중력 퍼텐셜) */
+  function _ropeSystemEnergy(bodies) {
+    let e = 0;
+    for (const b of bodies) {
+      const m = b.mass || 1;
+      e += 0.5 * m * (b.vx * b.vx + b.vy * b.vy);
+      if (STATE.gravityOn) e += m * CONFIG.G * b.physY;
+    }
+    return e;
+  }
+
+  /**
+   * 각 실의 팽팽/느슨 상태를 갱신하고, 이번 서브스텝에 느슨→팽팽으로 바뀐
+   * 실이 있는지(스냅) 반환. 스냅은 비탄성 흡수라 에너지가 실제로 줄어야 한다.
+   */
+  function _ropeUpdateTautness() {
+    let snap = false;
+    for (const rope of STATE.ropes) {
+      const A = getAttachPhysPos(rope.anchorA);
+      const B = getAttachPhysPos(rope.anchorB);
+      if (!A || !B) { rope._wasActive = rope._active = false; continue; }
+      const maxLen = rope.calibratedLength ?? rope.ropeLength;
+      const active = Math.hypot(B.x - A.x, B.y - A.y) >= maxLen - 1e-4;
+      rope._wasActive = rope._active;      // 들어올 때 상태
+      rope._active    = active;
+      if (active && !rope._wasActive) snap = true;
+      rope._wasActive = active;            // 다음 서브스텝 기준
+    }
+    return snap;
+  }
+
+  /** 성분별 에너지 투영 — dEmap: Map(comp → 기준 에너지) */
+  function _projectComponents(refs) {
+    if (_ropeSnapFlag) return;
+    for (const { comp, e0 } of refs) {
+      if (!comp.allTaut) continue;
+      if (comp.bodies.some(b => b._nonConservative)) continue;
+      let ke = 0;
+      for (const b of comp.bodies) ke += 0.5 * (b.mass || 1) * (b.vx * b.vx + b.vy * b.vy);
+      if (ke <= 1e-12) continue;
+      const dE = e0 - _ropeSystemEnergy(comp.bodies);   // 양수 = 잃음
+      const s  = Math.sqrt(Math.max(0, 1 + dE / ke));
+      if (isFinite(s) && Math.abs(s - 1) < 0.02) {
+        for (const b of comp.bodies) { b.vx *= s; b.vy *= s; }
+      }
+    }
+  }
+
+  /** 성분별 기준 에너지 스냅샷 */
+  function _componentRefs() {
+    return _ropeComponents().map(comp => ({ comp, e0: _ropeSystemEnergy(comp.bodies) }));
+  }
+
+  let _ropeSnapFlag = false;   // 이번 서브스텝에 느슨→팽팽 전이가 있었는가
+
   function resolveRopeConstraints(subDt) {
+    // 1단계: "실 제약 해소는 무일" — 이 단계에서 샌 에너지만 되돌린다.
+    //        접촉·마찰이 함께 있어도 안전하다 (다른 단계는 건드리지 않으므로).
+    _ropeSnapFlag = _ropeUpdateTautness();
+    const refs = _componentRefs();
+    const r = _resolveRopeConstraintsCore(subDt);
+    _projectComponents(refs);
+    return r;
+  }
+
+  function _resolveRopeConstraintsCore(subDt) {
     /* ── 1. 도르래별 연결 실 그룹화 (림↔림 실은 양쪽 그룹에 등록) ── */
     const pulleyGroups = new Map();
     for (const el of STATE.elements) {
@@ -1599,10 +1754,12 @@
       if (leftTransmit  && leftEl  && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) {
         leftEl.ax  += sForce * ux / leftEl.mass;
         leftEl.ay  += sForce * uy / leftEl.mass;
+        leftEl._nonConservative = true;   // 용수철 퍼텐셜은 E 계산에 없음 → 제외
       }
       if (rightTransmit && rightEl && (rightEl.type === 'rect' || rightEl.type === 'circle')) {
         rightEl.ax -= sForce * ux / rightEl.mass;
         rightEl.ay -= sForce * uy / rightEl.mass;
+        rightEl._nonConservative = true;
       }
 
       spring.L = Math.max(0.01, dist);
@@ -1655,6 +1812,7 @@
     b.physX += nx * pen * (1/m2)/invM;
     b.physY += ny * pen * (1/m2)/invM;
     _syncGrid(a); _syncGrid(b);
+    a._nonConservative = b._nonConservative = true;
 
     // 충격량: vRel < 0 이면 서로 접근 중
     const vRel = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny;
@@ -1682,6 +1840,7 @@
     b.physX += nx * pen * (1/m2)/invM;
     b.physY += ny * pen * (1/m2)/invM;
     _syncGrid(a); _syncGrid(b);
+    a._nonConservative = b._nonConservative = true;
 
     const vRel = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny;
     if (vRel >= 0) return;
@@ -1712,6 +1871,7 @@
     circ.physX += nx * pen * (1/m2)/invM;
     circ.physY += ny * pen * (1/m2)/invM;
     _syncGrid(rect); _syncGrid(circ);
+    rect._nonConservative = circ._nonConservative = true;
 
     const vRel = (circ.vx-rect.vx)*nx + (circ.vy-rect.vy)*ny;
     if (vRel >= 0) return;
