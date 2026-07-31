@@ -614,10 +614,8 @@
       const amp   = Math.max(thick * 0.38, 3.5 / s);
 
       // ── 수능 규격: 나선 코일 ──
-      // 감김 수를 자연길이 대비 현재 길이로 정해, 늘어나면 성기고 눌리면 촘촘해진다.
-      const ratio = this.L0 > 1e-6 ? (this.L / this.L0) : 1;
-      const coils = Math.max(4, Math.min(11, Math.round(7 / Math.max(0.45, ratio))));
-      snStroke(ctx, svgCoil(ax, ay, bx2, by2, amp, coils), SN.lwGeom, SN.ink);
+      // 고리 개수는 용수철 상수 k 로 정한다 (k↑ → 고리 적음, svgCoilCountForK 참조)
+      snStroke(ctx, svgCoil(ax, ay, bx2, by2, amp, svgCoilCountForK(this.k)), SN.lwGeom, SN.ink);
 
       // k 레이블 — 축 중앙에서 수직으로 살짝 띄움 (이탤릭 세리프)
       const mid = { x: ax + ux * len / 2, y: ay + uy * len / 2 };

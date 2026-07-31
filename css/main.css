@@ -54,10 +54,9 @@
 
       /* 레이아웃 치수 */
       --panel-w: 200px;
-      --sidebar-w: 64px;
+      --sidebar-w: 76px;
       --bottom-h: 56px;
-      --font: 'HyhwpEQ', 'HYhwpEQ', 'HYSinMyeongJo-Medium', 'HY신명조',
-              'SM중명조', 'SMJungMyungJo', 'Batang', '바탕', 'Nanum Myeongjo', serif;
+      --font: 'HyhwpEQ', 'HYhwpEQ', 'Malgun Gothic', '맑은 고딕', sans-serif;
     }
 
     html, body {
@@ -118,31 +117,64 @@
     #sidebar-left::-webkit-scrollbar { display: none; }
 
     .palette-item {
-      width: 48px;
-      height: 48px;
+      width: 62px;
+      min-height: 52px;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 1px;
+      padding: 4px 2px 3px;
       border-radius: var(--radius-md);
       cursor: pointer;
       border: 1px solid var(--border);
       background: var(--surface2);
       color: var(--text);
-      font-size: 16px;
       transition: background 0.12s, border-color 0.12s, transform 0.08s;
       user-select: none;
       touch-action: manipulation;
       position: relative;
     }
+    /* 도구 아이콘 — 캔버스와 같은 작도 규격으로 그린다 */
+    .palette-item svg {
+      width: 32px;
+      height: 26px;
+      display: block;
+      flex: none;
+      overflow: visible;
+    }
+    .palette-item svg .fill      { fill: #e8e8e8; stroke: currentColor; stroke-width: 1.5; }
+    .palette-item svg .line,
+    .palette-item svg .line-only { fill: none;    stroke: currentColor; stroke-width: 1.5;
+                                   stroke-linecap: round; stroke-linejoin: round; }
+    .palette-item svg .solid     { fill: currentColor; stroke: none; }
+    .palette-item svg .band      { fill: none; stroke: currentColor; stroke-width: 7;
+                                   stroke-linecap: butt; stroke-linejoin: round;
+                                   opacity: 0.16; transform: translateY(3.5px); }
+    .palette-item svg .zone      { fill: currentColor; fill-opacity: 0.08;
+                                   stroke: currentColor; stroke-width: 1.2;
+                                   stroke-dasharray: 3 2.5; }
+    .palette-item svg .dot       { fill: #ffffff; stroke: currentColor; stroke-width: 1.3; }
+    .palette-item svg .anchor    { fill: #ffffff; stroke: currentColor; stroke-width: 1.6; }
+    /* 글자 라벨 — 아이콘만으로 모호한 도구를 확실히 구분 */
+    .palette-item > span {
+      font-size: 9.5px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: var(--text-dim);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .palette-item.active-mode > span { color: inherit; }
     .palette-item:hover {
       background: var(--btn-h);
       border-color: var(--border-active);
     }
     .palette-item.active-mode {
-      background: rgba(26,58,106,0.95);
+      background: #e3edfd;
       border: 1px solid var(--border-active);
       color: var(--text-accent);
-      box-shadow: 0 0 10px rgba(60,130,220,0.3);
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.18);
     }
     .palette-item:active {
       transform: scale(0.88);
@@ -160,13 +192,13 @@
       border: 1px solid var(--danger-border);
       background: var(--danger-bg);
       color: var(--danger-text);
-      font-size: 18px;
+      font-size: 9.5px; line-height: 1.15;
       transition: background 0.12s, border-color 0.12s, transform 0.08s;
       user-select: none;
       touch-action: manipulation;
       position: relative;
     }
-    .sidebar-danger-btn:hover { background: #4f1c1c; }
+    .sidebar-danger-btn:hover { background: #fbdada; border-color: #e09a9a; }
     .sidebar-danger-btn:active { transform: scale(0.88); }
 
     .palette-item[title]:hover::after,
@@ -190,7 +222,7 @@
     }
 
     .palette-separator {
-      width: 40px;
+      width: 52px;
       height: 1px;
       background: var(--border-dim);
       margin: 2px 0;
@@ -424,7 +456,7 @@
       /* 사이드바: 슬라이드 오버레이 */
       #sidebar-left {
         position: fixed; left: 0; top: 0; bottom: 0;
-        width: 72px; z-index: 200;
+        width: 84px; z-index: 200;
         transform: translateX(-100%);
         transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
         box-shadow: 4px 0 24px rgba(0,0,0,0.7);

@@ -138,9 +138,7 @@
         const A = ep ? { x: ep.ax, y: ep.ay } : { x: bx, y: cy };
         const B = ep ? { x: ep.bx, y: ep.by } : { x: bx + bw, y: cy };
         const amp   = Math.max(Math.min(el.gridW, el.gridH) * cs * 0.38, 3.5);
-        const ratio = el.L0 > 1e-6 ? (el.L / el.L0) : 1;
-        const coils = Math.max(4, Math.min(11, Math.round(7 / Math.max(0.45, ratio))));
-        doc.path(svgCoil(A.x, A.y, B.x, B.y, amp, coils),
+        doc.path(svgCoil(A.x, A.y, B.x, B.y, amp, svgCoilCountForK(el.k)),
                  `fill="none" stroke="${INK}" stroke-width="${_lw(SN.lwGeom)}" stroke-linejoin="round"`);
 
       } else if (el.type === 'forceZone') {

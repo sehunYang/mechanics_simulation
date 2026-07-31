@@ -31,17 +31,15 @@
     lwGeom:    1.3,         // 물체 윤곽·도르래·용수철
     lwTerrain: 1.7,         // 지형(바닥면)
     lwData:    2.2,         // 그래프 곡선급 강조
-    /* 서체 — 수능 문항지 조판과 동일 계열
-       · 영문·숫자·수식 기호: HYhwpEQ (한글 수식 서체)
-       · 한글: SM 신명 중명조
+    /* 서체
+       · 영문·숫자·수식 기호: HyhwpEQ (한글 수식 서체)
+       · 한글: 맑은 고딕
        브라우저는 글리프 단위로 폴백하므로 한 스택에 둘 다 넣으면
-       라틴/숫자는 HYhwpEQ, 한글은 중명조가 자동으로 잡힌다.
-       설치돼 있지 않은 환경을 위해 명조 계열 대체 서체를 뒤에 둔다. */
-    font:      "'HyhwpEQ', 'HYhwpEQ', "                                   // 영문·숫자·수식
-             + "'HYSinMyeongJo-Medium', 'HY신명조', 'SM중명조', 'SMJungMyungJo', "  // 한글 폴백
-             + "'Batang', '바탕', 'Nanum Myeongjo', serif",
-    fontKo:    "'HYSinMyeongJo-Medium', 'HY신명조', 'SM중명조', 'SMJungMyungJo', "  // 한글 우선
-             + "'HyhwpEQ', 'Batang', '바탕', 'Nanum Myeongjo', serif",
+       라틴/숫자는 HyhwpEQ, 한글은 맑은 고딕이 자동으로 잡힌다. */
+    font:      "'HyhwpEQ', 'HYhwpEQ', "                        // 영문·숫자·수식
+             + "'Malgun Gothic', '맑은 고딕', sans-serif",      // 한글 폴백
+    fontKo:    "'Malgun Gothic', '맑은 고딕', "                 // 한글 우선
+             + "'HyhwpEQ', sans-serif",
   };
 
   /* 라벨 크기 (화면 px 고정) — 가독성 우선으로 상·하한을 잡는다 */
@@ -109,7 +107,7 @@
     const span = Math.max(len - 2 * lead, len * 0.3);
     const c    = span / (2 * Math.PI * n);          // 한 라디안당 축 진행
     const b    = amp;                                // 가로(수직) 반경
-    const a    = Math.max(amp * 0.85, c * Math.PI * 1.25);  // 축방향 반경 → 고리를 둥글게 + 겹침 보장
+    const a    = Math.max(amp * 0.5, c * Math.PI * 1.25);   // 축방향 반경 → 겹침 보장
 
     // 코일 좌표: along = lead + c·t + a·sin t, perp = b·cos t
     //   t=0 과 t=2πn 에서 perp = +b (같은 쪽 극단), along 은 lead / lead+span.
@@ -124,29 +122,50 @@
     const P = (along, perp) => ({ x: ax + ux * along + px * perp, y: ay + uy * along + py * perp });
 
     // ── 리드 형태 ──
-    // 비스듬한 45° 사선 대신, 축을 따라 곧게 간 뒤 **수직으로 급격히** 올라가고
-    // **수평으로 조금** 지나 코일에 물린다. 수직 상승 지점을 코일 시작(along=lead)
-    // 보다 hor 만큼 앞에 두므로 상승선이 코일과 겹치지 않는다.
-    const hor = Math.min(lead * 0.5, amp * 0.7);   // 코일 앞 수평 구간
-    const riseAlong = Math.max(0, lead - hor);     // 수직 상승이 일어나는 축 위치
-
-    const l0 = P(0, 0);                 // 끝점 A (축 위)
-    const l1 = P(riseAlong, 0);         // 축을 따라 직진
-    const l2 = P(riseAlong, b);         // 급격한 수직 상승
-    const l3 = P(lead, b);              // 수평으로 조금 → 코일 시작점과 일치
-
-    const r3 = P(lead + span, b);       // 코일 끝점 (perp = +b)
-    const r2 = P(lead + span + hor, b); // 수평으로 조금
-    const r1 = P(lead + span + hor, 0); // 급격한 수직 하강
-    const r0 = P(len, 0);               // 끝점 B (축 위)
+    // 축을 따라 곧게 가다가 **살짝 둥글게 돌면서 확 치솟고**, 수평으로 조금 지나
+    // 코일에 물린다. 모서리는 직각이 아니라 반지름 rf 의 이차 베지에로 굴린다.
+    // 치솟는 지점을 코일 시작(along=lead)보다 hor 만큼 앞에 두므로
+    // 상승선이 코일과 겹치지 않는다.
+    const hor = Math.min(lead * 0.5, amp * 0.7);       // 코일 앞 수평 구간
+    const riseAlong = Math.max(0, lead - hor);         // 치솟는 축 위치
+    const rf = Math.min(hor * 0.55, b * 0.3, riseAlong * 0.8, (len - lead - span - hor) * 0.8);
 
     const L = (p) => ` L ${_n(p.x)} ${_n(p.y)}`;
+    // 둥근 모서리: 코너를 제어점으로 하는 이차 베지에
+    const Q = (ctrl, end) => ` Q ${_n(ctrl.x)} ${_n(ctrl.y)} ${_n(end.x)} ${_n(end.y)}`;
 
-    let d = `M ${_n(l0.x)} ${_n(l0.y)}` + L(l1) + L(l2) + L(l3);
-    const steps = Math.max(64, n * 28);   // 고리가 각져 보이지 않도록 촘촘히 샘플
+    let d = `M ${_n(P(0, 0).x)} ${_n(P(0, 0).y)}`;
+    // 시작 리드: 축 직진 → 둥근 턴 → 급상승 → 둥근 턴 → 수평 → 코일
+    d += L(P(riseAlong - rf, 0));
+    d += Q(P(riseAlong, 0), P(riseAlong, rf));
+    d += L(P(riseAlong, b - rf));
+    d += Q(P(riseAlong, b), P(riseAlong + rf, b));
+    d += L(P(lead, b));
+
+    const steps = Math.max(48, n * 16);
     for (let i = 1; i <= steps; i++) d += L(at((i / steps) * 2 * Math.PI * n));
-    d += L(r3) + L(r2) + L(r1) + L(r0);
+
+    // 끝 리드: 코일 → 수평 → 둥근 턴 → 급하강 → 둥근 턴 → 축 직진
+    const endA = lead + span + hor;
+    d += L(P(endA - rf, b));
+    d += Q(P(endA, b), P(endA, b - rf));
+    d += L(P(endA, rf));
+    d += Q(P(endA, 0), P(endA + rf, 0));
+    d += L(P(len, 0));
     return d;
+  }
+
+  /**
+   * 용수철 상수 k → 고리 개수.
+   * 나선 용수철은 k = G·d⁴ / (8·D³·n) 이라 **감김 수 n 이 많을수록 무르다**.
+   * 즉 k 가 클수록 고리가 적어야 물리적으로 맞다.
+   * 다만 1/k 를 그대로 쓰면 화면에서 변화가 과격하므로 √ 로 눌러 표현만 압축한다
+   * (증감 방향은 그대로 유지).
+   */
+  function svgCoilCountForK(k) {
+    const kRef = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_K) || 10;
+    const kk   = Math.max(0.2, k > 0 ? k : kRef);
+    return Math.max(4, Math.min(14, Math.round(7 * Math.sqrt(kRef / kk))));
   }
 
   /** 도르래 — 동심원 3겹 + 중심 축점 */

@@ -19,18 +19,79 @@
   <div id="app-wrapper">
 
     <!-- 사이드바 (팔레트) -->
+    <!-- 팔레트: 각 도구가 '무엇을 만드는지' 그대로 그린 아이콘 + 글자 라벨.
+         아이콘은 캔버스 렌더와 같은 수능 작도 규격(검정 선 + 연회색 채움)으로 그려서
+         버튼 모양과 실제로 생기는 요소가 일치하게 했다. -->
     <div id="sidebar-left">
-      <div class="palette-item" data-type="rect" title="네모 물체">■</div>
-      <div class="palette-item" data-type="circle" title="원 물체">●</div>
+      <div class="palette-item" data-type="rect" title="네모 물체 추가">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <rect x="7.5" y="6.5" width="17" height="13" class="fill"/>
+        </svg>
+        <span>네모</span>
+      </div>
+      <div class="palette-item" data-type="circle" title="원 물체 추가">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <circle cx="16" cy="13" r="7.5" class="fill"/>
+        </svg>
+        <span>원</span>
+      </div>
+
       <div class="palette-separator"></div>
-      <div class="palette-item" data-mode="floor_draw" title="바닥면 그리기">⌇</div>
-      <div class="palette-item" data-type="forceZone" title="힘 구간">F</div>
-      <div class="palette-item" data-type="extforce" title="외력">➜</div>
+
+      <div class="palette-item" data-mode="floor_draw" title="바닥면 그리기 (두 격자점 클릭)">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <path d="M3 8 L15 8 L29 18" class="band"/>
+          <path d="M3 8 L15 8 L29 18" class="line"/>
+          <circle cx="3" cy="8" r="2" class="dot"/><circle cx="29" cy="18" r="2" class="dot"/>
+        </svg>
+        <span>바닥면</span>
+      </div>
+      <div class="palette-item" data-type="forceZone" title="힘 구간 추가 (구간 안에서 일정한 힘)">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <rect x="5.5" y="4.5" width="21" height="17" class="zone"/>
+          <path d="M16 18 L16 10" class="line"/>
+          <path d="M16 6.5 L19 12 L13 12 Z" class="solid"/>
+        </svg>
+        <span>힘구간</span>
+      </div>
+      <div class="palette-item" data-type="extforce" title="외력 추가 (실로 물체를 당김)">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <circle cx="5" cy="13" r="2.2" class="solid"/>
+          <path d="M5 13 L22 13" class="line"/>
+          <path d="M28 13 L21 16.4 L21 9.6 Z" class="solid"/>
+        </svg>
+        <span>외력</span>
+      </div>
+
       <div class="palette-separator"></div>
-      <div class="palette-item" data-mode="rope_draw" title="실 그리기">∿</div>
-      <div class="palette-item" data-type="pulley" title="도르래">○</div>
-      <div class="palette-item" data-type="spring" title="용수철">≈</div>
-      <button id="btn-clear-all" class="sidebar-danger-btn" title="전체 삭제">🗑</button>
+
+      <div class="palette-item" data-mode="rope_draw" title="실 그리기 (앵커 두 곳 클릭)">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <path d="M6 6 L26 20" class="line"/>
+          <circle cx="6" cy="6" r="3" class="anchor"/><circle cx="26" cy="20" r="3" class="anchor"/>
+        </svg>
+        <span>실</span>
+      </div>
+      <div class="palette-item" data-type="pulley" title="도르래 추가">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <path d="M13.5 4 L13.5 11 M18.5 4 L18.5 11" class="line"/>
+          <circle cx="16" cy="4" r="1.8" class="fill"/>
+          <circle cx="16" cy="15" r="8" class="fill"/>
+          <circle cx="16" cy="15" r="6" class="line-only"/>
+          <circle cx="16" cy="15" r="2.4" class="fill"/>
+          <circle cx="16" cy="15" r="0.9" class="solid"/>
+        </svg>
+        <span>도르래</span>
+      </div>
+      <div class="palette-item" data-type="spring" title="용수철 추가">
+        <svg viewBox="0 0 32 26" aria-hidden="true">
+          <path d="M2 13 L5 13 Q6 13 6 12 L6 8 Q6 7 7 7
+                   C11 7 11 19 15 19 C19 19 19 7 23 7 C25 7 25.6 10 26 13
+                   L26 18 Q26 19 27 19 L30 19" class="line"/>
+        </svg>
+        <span>용수철</span>
+      </div>
+      <button id="btn-clear-all" class="sidebar-danger-btn" title="전체 삭제">전체<br>삭제</button>
     </div>
 
     <!-- 캔버스 래퍼 -->

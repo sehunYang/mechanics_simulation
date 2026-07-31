@@ -31,7 +31,7 @@ function makeCtx() {
 function pts(d) {
   const out = [];
   let cur = { x: 0, y: 0 };
-  const tokens = d.match(/[MLHVAZmlhvaz]|-?\d+(?:\.\d+)?/g) || [];
+  const tokens = d.match(/[MLHVAQZmlhvaqz]|-?\d+(?:\.\d+)?/g) || [];
   let i = 0;
   const num = () => Number(tokens[i++]);
   while (i < tokens.length) {
@@ -40,6 +40,8 @@ function pts(d) {
       case 'M': case 'L': cur = { x: num(), y: num() }; out.push(cur); break;
       case 'H': cur = { x: num(), y: cur.y }; out.push(cur); break;
       case 'V': cur = { x: cur.x, y: num() }; out.push(cur); break;
+      case 'Q': num(); num();                               // 제어점은 버리고
+                cur = { x: num(), y: num() }; out.push(cur); break;
       case 'A': num(); num(); num(); num(); num();          // rx ry rot large sweep
                 cur = { x: num(), y: num() }; out.push(cur); break;
       case 'Z': break;
@@ -140,28 +142,32 @@ scenario('SN-COIL', '용수철 — 나선 코일 + 급격한 수직 리드', () 
   expect('시작점 = A', Math.hypot(P[0].x - 0, P[0].y - 0), 0, 1e-9, 'px');
   expect('끝점 = B', Math.hypot(P[P.length - 1].x - 100, P[P.length - 1].y - 0), 0, 1e-9, 'px');
 
-  // ── 리드(양끝) 형태: 축 직진 → 수직 급상승 → 수평 조금 → 코일 ──
-  const [l0, l1, l2, l3] = P;
+  // ── 리드(양끝) 형태 ──
+  //   축 직진 → [둥근 턴] → 급상승(수직) → [둥근 턴] → 수평 조금 → 코일
+  expect('모서리가 둥긂 (Q 4개)', (d.match(/Q/g) || []).length, 4, 0, '개');
+
+  const [l0, l1, l2, l3, l4, l5] = P;
   expect('① 축을 따라 직진 (y 불변)', l1.y - l0.y, 0, 1e-9, 'px');
-  expect('② 급격한 상승 — 수직 (x 불변)', l2.x - l1.x, 0, 1e-9, 'px');
-  expect('② 상승 높이 = amp', Math.abs(l2.y - l1.y), AMP, 1e-9, 'px');
-  expect('③ 수평 구간 (y 불변)', l3.y - l2.y, 0, 1e-9, 'px');
-  expect('③ 수평이 앞으로 진행', l3.x > l2.x ? 1 : 0, 1, 0, '');
-  note('리드 좌표', `A(${l0.x},${l0.y}) → (${l1.x},${l1.y}) → (${l2.x},${l2.y}) → 코일시작(${l3.x},${l3.y})`);
+  expect('① 모서리 전에 멈춤 (둥근 턴 여유)', l1.x < l2.x ? 1 : 0, 1, 0, '');
+  expect('② 급상승 구간은 수직 (x 불변)', l3.x - l2.x, 0, 1e-9, 'px');
+  expect('② 총 상승 높이 = amp', Math.abs(l4.y - l1.y), AMP, 1e-9, 'px');
+  expect('③ 수평 구간 (y 불변)', l5.y - l4.y, 0, 1e-9, 'px');
+  expect('③ 수평이 앞으로 진행', l5.x > l4.x ? 1 : 0, 1, 0, '');
+  note('리드 좌표', `A(${l0.x},${l0.y}) →(${l1.x},${l1.y}) ↷(${l2.x},${l2.y}) ↑(${l3.x},${l3.y}) ↷(${l4.x},${l4.y}) →코일(${l5.x},${l5.y})`);
 
   const n = P.length;
-  const [r3, r2, r1, r0] = [P[n - 4], P[n - 3], P[n - 2], P[n - 1]];
-  expect('반대쪽 ③ 수평 (y 불변)', r2.y - r3.y, 0, 1e-9, 'px');
-  expect('반대쪽 ② 수직 하강 (x 불변)', r1.x - r2.x, 0, 1e-9, 'px');
-  expect('반대쪽 ① 축 직진 (y 불변)', r0.y - r1.y, 0, 1e-9, 'px');
+  const [r5, r4, r3, r2, r1] = [P[n - 6], P[n - 5], P[n - 4], P[n - 3], P[n - 2]];
+  expect('반대쪽 ③ 수평 (y 불변)', r4.y - r5.y, 0, 1e-9, 'px');
+  expect('반대쪽 ② 급하강은 수직 (x 불변)', r2.x - r3.x, 0, 1e-9, 'px');
+  expect('반대쪽 ① 축 직진 (y 불변)', P[n - 1].y - r1.y, 0, 1e-9, 'px');
 
-  // ── 수직 상승선이 코일과 겹치지 않아야 한다 ──
-  const coil = P.slice(4, n - 4);
+  // ── 급상승선이 코일과 겹치지 않아야 한다 ──
+  const coil = P.slice(6, n - 6);
   const coilMinX = Math.min(...coil.map(p => p.x));
-  note('상승 위치 / 코일 최소 x', `${l1.x} / ${coilMinX.toFixed(4)}`);
-  expect('코일이 코일시작 x 앞으로 넘어오지 않음', coilMinX >= l3.x - 1e-6 ? 1 : 0, 1, 0, '');
-  expect('상승선이 코일보다 앞 (겹침 없음)', l1.x < coilMinX - 1e-6 ? 1 : 0, 1, 0, '');
-  expect('반대쪽 하강선도 코일 뒤', r1.x > Math.max(...coil.map(p => p.x)) - 1e-6 ? 1 : 0, 1, 0, '');
+  note('급상승 x / 코일 최소 x', `${l3.x} / ${coilMinX.toFixed(4)}`);
+  expect('코일이 코일시작 x 앞으로 넘어오지 않음', coilMinX >= l5.x - 1e-6 ? 1 : 0, 1, 0, '');
+  expect('급상승선이 코일보다 앞 (겹침 없음)', l3.x < coilMinX - 1e-6 ? 1 : 0, 1, 0, '');
+  expect('반대쪽 급하강선도 코일 뒤', r3.x > Math.max(...coil.map(p => p.x)) - 1e-6 ? 1 : 0, 1, 0, '');
 
   // ── 코일 판정: 축 방향 역행이 있어야 고리가 겹친다 (사인파는 역행 0회) ──
   let back = 0;
@@ -173,16 +179,45 @@ scenario('SN-COIL', '용수철 — 나선 코일 + 급격한 수직 리드', () 
   expect('가로 진폭 = amp', Math.max(...P.map(p => Math.abs(p.y))), AMP, 0.01, 'px');
 });
 
-scenario('SN-FONT', '서체 — 영문·숫자 HYhwpEQ / 한글 신명 중명조', () => {
+scenario('SN-COIL-K', '고리 개수는 용수철 상수 k 로 정해진다 (k↑ → 고리↓)', () => {
+  const c = makeCtx();
+  const N = (k) => vm.runInContext(`svgCoilCountForK(${k})`, c);
+  const rows = [0.5, 1, 2.5, 5, 10, 20, 40, 100].map(k => `k=${k}:${N(k)}`);
+  note('k → 고리 수', rows.join('  '));
+
+  expect('기준 k=10 에서 7 고리', N(10), 7, 0, '개');
+  // 물리: k = G·d⁴/(8·D³·n) → n ∝ 1/k. 단조감소여야 한다.
+  let mono = 1;
+  const ks = [0.5, 1, 2.5, 5, 10, 20, 40, 100];
+  for (let i = 1; i < ks.length; i++) if (N(ks[i]) > N(ks[i - 1])) mono = 0;
+  expect('k 가 커질수록 고리 수 단조 감소', mono, 1, 0, '');
+  expect('무른 용수철(k=0.5) 이 더 많이 감김', N(0.5) > N(10) ? 1 : 0, 1, 0, '');
+  expect('굳은 용수철(k=100) 이 더 적게 감김', N(100) < N(10) ? 1 : 0, 1, 0, '');
+  expect('하한 4 고리', N(1e6), 4, 0, '개');
+  expect('상한 14 고리', N(1e-6), 14, 0, '개');
+  expect('k 가 0/음수여도 유한', isFinite(N(0)) && isFinite(N(-5)) ? 1 : 0, 1, 0, '');
+
+  // 길이(L/L0)는 더 이상 고리 수에 영향을 주지 않는다
+  const a = loadApp();
+  const r = a.evalIn(`
+    CONFIG.cellSize = 8;
+    const s1 = new Spring(); s1.k = 12; s1.L0 = 4; s1.L = 4;
+    const s2 = new Spring(); s2.k = 12; s2.L0 = 4; s2.L = 8;
+    [svgCoilCountForK(s1.k), svgCoilCountForK(s2.k)];
+  `);
+  expect('길이가 달라도 같은 k 면 같은 고리 수', r[0], r[1], 0, '개');
+});
+
+scenario('SN-FONT', '서체 — 영문·숫자 HyhwpEQ / 한글 맑은 고딕', () => {
   const c = makeCtx();
   const f  = vm.runInContext(`SN.font`, c);
   const fk = vm.runInContext(`SN.fontKo`, c);
   note('라틴 스택', f);
   note('한글 스택', fk);
   expect('라틴 스택 첫 서체 = HyhwpEQ', /^'HyhwpEQ'/.test(f) ? 1 : 0, 1, 0, '');
-  expect('라틴 스택에 한글 명조 폴백', /HYSinMyeongJo-Medium/.test(f) ? 1 : 0, 1, 0, '');
-  expect('한글 스택 첫 서체 = 신명 중명조', /^'HYSinMyeongJo-Medium'/.test(fk) ? 1 : 0, 1, 0, '');
-  expect('두 스택 모두 serif 로 끝남', (/serif$/.test(f) && /serif$/.test(fk)) ? 1 : 0, 1, 0, '');
+  expect('라틴 스택에 맑은 고딕 폴백', /Malgun Gothic/.test(f) ? 1 : 0, 1, 0, '');
+  expect('한글 스택 첫 서체 = 맑은 고딕', /^'Malgun Gothic'/.test(fk) ? 1 : 0, 1, 0, '');
+  expect('두 스택 모두 sans-serif 로 끝남', (/sans-serif$/.test(f) && /sans-serif$/.test(fk)) ? 1 : 0, 1, 0, '');
 
   // 가독성: 라벨 최소 크기가 10px 이상
   const fs = vm.runInContext(`SN_FS`, c);
