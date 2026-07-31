@@ -144,6 +144,8 @@
       overflow: visible;
     }
     .palette-item svg .fill      { fill: #e8e8e8; stroke: currentColor; stroke-width: 1.5; }
+    .palette-item svg .coil      { fill: none; stroke: currentColor; stroke-width: 1.1;
+                                   stroke-linecap: round; stroke-linejoin: round; }
     .palette-item svg .line,
     .palette-item svg .line-only { fill: none;    stroke: currentColor; stroke-width: 1.5;
                                    stroke-linecap: round; stroke-linejoin: round; }
