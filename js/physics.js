@@ -855,10 +855,11 @@
     // FloorSegment 고정 앵커
     const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
     if (seg) {
-      const GS = CONFIG.GRID_SIZE;
-      if (anchor.attachPoint === 'p1') return { x: seg.x1, y: GS - seg.y1 };
-      if (anchor.attachPoint === 'p2') return { x: seg.x2, y: GS - seg.y2 };
-      return { x: seg.x1, y: GS - seg.y1 };
+      // 끝점뿐 아니라 경로 위 0.5칸 앵커('s<d>')도 지원 —
+      // 렌더와 같은 헬퍼를 써서 보이는 지점과 물리 지점이 어긋나지 않게 한다.
+      const GS = CONFIG.GRID_SIZE, cs = CONFIG.cellSize;
+      const w = getFloorSegAttachWorld(seg, anchor.attachPoint);
+      return { x: w.x / cs, y: GS - w.y / cs };
     }
     // Element
     const el = STATE.elements.find(e => e.id === anchor.elementId);

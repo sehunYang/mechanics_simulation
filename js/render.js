@@ -126,17 +126,41 @@
       }
     }
 
-    // ── FloorSegment 끝점 앵커 (다이아몬드, 더 크게) ──
+    // ── FloorSegment 앵커 — 경로를 따라 0.5칸마다 ──
+    //   개수가 많으므로 중간 앵커는 작은 점, 끝점만 다이아몬드 + '고정' 글자.
+    //   화면 밖은 건너뛰고, 너무 촘촘하면(줌 아웃) 중간 앵커는 생략한다.
+    const W = mainCanvas.width, H = mainCanvas.height;
     for (const seg of STATE.floorSegments) {
       const pts = getFloorSegAttachPoints(seg);
+      const stepPx = (CONFIG.FLOOR_ANCHOR_STEP || 0.5) * CONFIG.cellSize * s;
+      const showMid = stepPx >= 7;   // 화면상 간격이 7px 이상일 때만 중간 앵커 표시
+
       for (const pt of pts) {
         const isPending = (
           STATE.pendingRopeAnchor &&
           STATE.pendingRopeAnchor.elementId  === seg.id &&
           STATE.pendingRopeAnchor.attachPoint === pt.id
         );
-        const pr = isPending ? r * 1.4 : r;   // pending 시 더 크게
+        if (!pt.isEnd && !showMid && !isPending) continue;
 
+        const sc = worldToScreen(pt.worldX, pt.worldY);
+        if (sc.x < -20 || sc.y < -20 || sc.x > W + 20 || sc.y > H + 20) continue;
+
+        if (!pt.isEnd && !isPending) {
+          // 중간 앵커: 작은 원점
+          ctx.save();
+          ctx.fillStyle   = 'rgba(37,99,235,0.55)';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth   = 1 / s;
+          ctx.beginPath();
+          ctx.arc(pt.worldX, pt.worldY, 3 / s, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+          continue;
+        }
+
+        const pr = isPending ? r * 1.4 : r;   // pending 시 더 크게
         ctx.save();
         ctx.fillStyle   = isPending ? '#2563eb' : '#94a3b8';
         ctx.strokeStyle = '#ffffff';
@@ -150,12 +174,13 @@
         ctx.fill();
         ctx.stroke();
 
-        // "고정" 레이블
-        ctx.fillStyle    = isPending ? '#1d4ed8' : '#334155';
-        ctx.font         = `${9 / s}px ${SN.fontKo}`;
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText('고정', pt.worldX, pt.worldY - pr - 1 / s);
+        if (pt.isEnd || isPending) {
+          ctx.fillStyle    = isPending ? '#1d4ed8' : '#334155';
+          ctx.font         = `${9 / s}px ${SN.fontKo}`;
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText('고정', pt.worldX, pt.worldY - pr - 1 / s);
+        }
         ctx.restore();
       }
     }
@@ -211,12 +236,14 @@
     _drawRopeWireAnchors(ctx);  // 실 재연결 앵커 포인트
   }
 
-  /** FloorSegment 끝점 고정 핀 렌더 (소형 회색 다이아몬드) */
+  /** FloorSegment 끝점 고정 핀 렌더 (소형 회색 다이아몬드)
+   *  평상시에는 **끝점만** 표시한다 — 0.5칸 앵커까지 항상 그리면
+   *  지면이 점으로 뒤덮인다. 중간 앵커는 ROPE_DRAW 모드에서만 보인다. */
   function _drawFloorPins(ctx) {
     const s = VIEWPORT.scale;
     const r = 3.5 / s;
     for (const seg of STATE.floorSegments) {
-      const pts = getFloorSegAttachPoints(seg);
+      const pts = getFloorSegAttachPoints(seg).filter(p => p.isEnd);
       for (const pt of pts) {
         ctx.save();
         ctx.fillStyle   = 'rgba(0,0,0,0.35)';

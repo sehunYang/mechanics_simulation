@@ -38,7 +38,7 @@ mechanics_simulation/
 ## 물리 검증
 
 ```
-node test/run-all.js            # 158개 항목, 실제 물리 공식과 수치 비교
+node test/run-all.js            # 165개 항목, 실제 물리 공식과 수치 비교
 node test/run-all.js --verbose
 ```
 

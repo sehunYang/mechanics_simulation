@@ -385,7 +385,13 @@
     const el  = STATE.elements.find(e => e.id === anchor.elementId);
     if (el)  return _typeLabel(el.type) + ' (' + anchor.attachPoint + ')';
     const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
-    if (seg) return '바닥면 (' + (anchor.attachPoint === 'p1' ? '끝점1' : '끝점2') + ')';
+    if (seg) {
+      const pt = anchor.attachPoint;
+      if (pt === 'p1') return '바닥면 (끝점1)';
+      if (pt === 'p2') return '바닥면 (끝점2)';
+      const m = /^s(-?\d+(?:\.\d+)?)$/.exec(pt || '');
+      return m ? `바닥면 (${m[1]}칸 지점)` : '바닥면';
+    }
     return '?';
   }
 

@@ -659,6 +659,49 @@
     return { R, theta, h };
   }
 
+  /* ARC 경로를 n개 점으로 샘플링 (월드 픽셀).
+     elements.js 의 _samplePath / _floorSegPath 와 hit-test.js 가 함께 쓴다.
+     로드 순서상 가장 먼저인 여기에 두어 의존을 없앤다. */
+  /** ARC 경로를 n개 점으로 샘플링 */
+  function _arcSamplePoints(seg, ax, ay, bx, by, n) {
+    const dx = bx - ax, dy = by - ay;
+    const d  = Math.hypot(dx, dy);
+    if (d < 1e-6) return [];
+    const { R: R_px, theta, h } = _arcRadiusFromCurvature(seg.curvature, d);
+
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const ux = dx / d, uy = dy / d;
+    const nx = -uy, ny = ux;
+
+    let cX, cY;
+    if (seg.pathType === 'ARC_UP') { cX = mx + nx * h; cY = my + ny * h; }
+    else                           { cX = mx - nx * h; cY = my - ny * h; }
+
+    const sa = Math.atan2(ay - cY, ax - cX);
+
+    // ── 스윕 방향: 호의 볼록한 쪽(apex)으로 직접 판정 ──
+    //   화면 좌표에서 중심은 ARC_UP → mid + n·h 이므로 apex = mid − wantSign·n·(R − h).
+    //   ⚠ 예전에는 끝점 각도차 부호로 정했는데, curvature=1.0(반원)에서는 h≈0이
+    //     배정밀도에서 흡수돼 각도차가 ±π가 되고 방향이 임의로 뒤집혔다.
+    //     그러면 그려진 호와 클릭 판정/마찰 해치가 서로 반대쪽을 가리킨다.
+    //     (physics.js의 _arcPhysPoints와 동일한 규칙 — 세 구현이 같은 곡선을 써야 함)
+    const wantSign = (seg.pathType === 'ARC_UP') ? 1 : -1;
+    const apexX = mx - wantSign * nx * (R_px - h);
+    const apexY = my - wantSign * ny * (R_px - h);
+    let dApex = Math.atan2(apexY - cY, apexX - cX) - sa;
+    while (dApex >  Math.PI) dApex -= 2*Math.PI;
+    while (dApex < -Math.PI) dApex += 2*Math.PI;
+    const sweep = (Math.sign(dApex) || 1) * theta;
+
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const a = sa + sweep * t;
+      pts.push({ x: cX + R_px * Math.cos(a), y: cY + R_px * Math.sin(a) });
+    }
+    return pts;
+  }
+
   class FloorSegment {
     constructor(x1, y1, x2, y2) {
       this.id         = makeId();
@@ -995,21 +1038,105 @@
     ];
   }
 
-  /** FloorSegment 끝점 월드 좌표 반환 */
-  function getFloorSegAttachWorld(seg, pointId) {
+  /* ──────────────────────────────────────────────────────────────
+     FloorSegment 앵커 — 끝점뿐 아니라 경로를 따라 0.5칸마다
+  ────────────────────────────────────────────────────────────── */
+
+  /**
+   * 바닥면 경로를 촘촘한 폴리라인(월드 픽셀)으로 펼치고 누적 길이를 구한다.
+   * 결과는 세그먼트 기하가 바뀔 때까지 캐시 — 실 렌더가 매 프레임 앵커를
+   * 조회하므로(특히 ARC는 96분할) 매번 다시 계산하면 낭비다.
+   */
+  function _floorSegPath(seg) {
     const cs = CONFIG.cellSize;
-    if (pointId === 'p1') return { x: seg.x1 * cs, y: seg.y1 * cs };
-    if (pointId === 'p2') return { x: seg.x2 * cs, y: seg.y2 * cs };
-    return { x: seg.x1 * cs, y: seg.y1 * cs };
+    const key = `${seg.x1},${seg.y1},${seg.x2},${seg.y2},${seg.pathType},${seg.curvature},${cs}`;
+    if (seg._pathCache && seg._pathCache.key === key) return seg._pathCache;
+
+    const ax = seg.x1 * cs, ay = seg.y1 * cs;
+    const bx = seg.x2 * cs, by = seg.y2 * cs;
+    let pts;
+    switch (seg.pathType) {
+      case 'ELBOW_H': pts = [{ x: ax, y: ay }, { x: bx, y: ay }, { x: bx, y: by }]; break;
+      case 'ELBOW_V': pts = [{ x: ax, y: ay }, { x: ax, y: by }, { x: bx, y: by }]; break;
+      case 'ARC_UP':
+      case 'ARC_DOWN': {
+        const a = _arcSamplePoints(seg, ax, ay, bx, by, 96);
+        pts = (a && a.length >= 2) ? a : [{ x: ax, y: ay }, { x: bx, y: by }];
+        break;
+      }
+      default: pts = [{ x: ax, y: ay }, { x: bx, y: by }];
+    }
+
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) {
+      cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    }
+    const cache = { key, pts, cum, totalWorld: cum[cum.length - 1], cs };
+    seg._pathCache = cache;
+    return cache;
   }
 
-  /** FloorSegment의 앵커 포인트 목록 [{id, worldX, worldY}] */
+  /** 바닥면 경로의 총 길이 [격자 칸] */
+  function floorSegPathLength(seg) {
+    const p = _floorSegPath(seg);
+    return p.cs > 0 ? p.totalWorld / p.cs : 0;
+  }
+
+  /** 경로 시작점(p1)에서 호길이 d[격자 칸] 만큼 간 지점의 월드 좌표 */
+  function floorSegPointAtDist(seg, dGrid) {
+    const p = _floorSegPath(seg);
+    if (p.pts.length === 0) return { x: 0, y: 0 };
+    const target = clamp(dGrid * p.cs, 0, p.totalWorld);
+    // 누적 길이에서 구간 찾기
+    let i = 1;
+    while (i < p.cum.length - 1 && p.cum[i] < target) i++;
+    const d0 = p.cum[i - 1], d1 = p.cum[i];
+    const t  = (d1 - d0) > 1e-12 ? (target - d0) / (d1 - d0) : 0;
+    return {
+      x: p.pts[i - 1].x + (p.pts[i].x - p.pts[i - 1].x) * t,
+      y: p.pts[i - 1].y + (p.pts[i].y - p.pts[i - 1].y) * t,
+    };
+  }
+
+  /** 앵커 id ↔ 호길이 변환.  'p1' = 시작, 'p2' = 끝, 's<d>' = d칸 지점 */
+  function floorSegAnchorDist(seg, pointId) {
+    if (pointId === 'p2') return floorSegPathLength(seg);
+    if (pointId === 'p1' || !pointId) return 0;
+    const m = /^s(-?\d+(?:\.\d+)?)$/.exec(pointId);
+    if (m) return clamp(parseFloat(m[1]), 0, floorSegPathLength(seg));
+    return 0;
+  }
+
+  /** FloorSegment 앵커의 월드 좌표 */
+  function getFloorSegAttachWorld(seg, pointId) {
+    return floorSegPointAtDist(seg, floorSegAnchorDist(seg, pointId));
+  }
+
+  /**
+   * FloorSegment의 앵커 포인트 목록 [{id, worldX, worldY, isEnd}]
+   * 끝점만이 아니라 경로를 따라 CONFIG.FLOOR_ANCHOR_STEP(0.5칸)마다 놓는다.
+   * 끝점 id는 'p1'/'p2' 를 유지 — 기존에 저장된 실이 그대로 동작한다.
+   */
   function getFloorSegAttachPoints(seg) {
-    const cs = CONFIG.cellSize;
-    return [
-      { id: 'p1', worldX: seg.x1 * cs, worldY: seg.y1 * cs },
-      { id: 'p2', worldX: seg.x2 * cs, worldY: seg.y2 * cs },
-    ];
+    const step  = CONFIG.FLOOR_ANCHOR_STEP || 0.5;
+    const total = floorSegPathLength(seg);
+    const out = [];
+    if (total < 1e-9) {
+      const w = floorSegPointAtDist(seg, 0);
+      return [{ id: 'p1', worldX: w.x, worldY: w.y, isEnd: true }];
+    }
+    const n = Math.floor((total - 1e-9) / step);
+    for (let i = 0; i <= n; i++) {
+      const d = i * step;
+      const w = floorSegPointAtDist(seg, d);
+      out.push({
+        id: i === 0 ? 'p1' : 's' + (+d.toFixed(3)),
+        worldX: w.x, worldY: w.y, isEnd: i === 0,
+      });
+    }
+    const wEnd = floorSegPointAtDist(seg, total);
+    out.push({ id: 'p2', worldX: wEnd.x, worldY: wEnd.y, isEnd: true });
+    return out;
   }
 
   /**

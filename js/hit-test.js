@@ -68,45 +68,6 @@
     return null;
   }
 
-  /** ARC 경로를 n개 점으로 샘플링 */
-  function _arcSamplePoints(seg, ax, ay, bx, by, n) {
-    const dx = bx - ax, dy = by - ay;
-    const d  = Math.hypot(dx, dy);
-    if (d < 1e-6) return [];
-    const { R: R_px, theta, h } = _arcRadiusFromCurvature(seg.curvature, d);
-
-    const mx = (ax + bx) / 2, my = (ay + by) / 2;
-    const ux = dx / d, uy = dy / d;
-    const nx = -uy, ny = ux;
-
-    let cX, cY;
-    if (seg.pathType === 'ARC_UP') { cX = mx + nx * h; cY = my + ny * h; }
-    else                           { cX = mx - nx * h; cY = my - ny * h; }
-
-    const sa = Math.atan2(ay - cY, ax - cX);
-
-    // ── 스윕 방향: 호의 볼록한 쪽(apex)으로 직접 판정 ──
-    //   화면 좌표에서 중심은 ARC_UP → mid + n·h 이므로 apex = mid − wantSign·n·(R − h).
-    //   ⚠ 예전에는 끝점 각도차 부호로 정했는데, curvature=1.0(반원)에서는 h≈0이
-    //     배정밀도에서 흡수돼 각도차가 ±π가 되고 방향이 임의로 뒤집혔다.
-    //     그러면 그려진 호와 클릭 판정/마찰 해치가 서로 반대쪽을 가리킨다.
-    //     (physics.js의 _arcPhysPoints와 동일한 규칙 — 세 구현이 같은 곡선을 써야 함)
-    const wantSign = (seg.pathType === 'ARC_UP') ? 1 : -1;
-    const apexX = mx - wantSign * nx * (R_px - h);
-    const apexY = my - wantSign * ny * (R_px - h);
-    let dApex = Math.atan2(apexY - cY, apexX - cX) - sa;
-    while (dApex >  Math.PI) dApex -= 2*Math.PI;
-    while (dApex < -Math.PI) dApex += 2*Math.PI;
-    const sweep = (Math.sign(dApex) || 1) * theta;
-
-    const pts = [];
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      const a = sa + sweep * t;
-      pts.push({ x: cX + R_px * Math.cos(a), y: cY + R_px * Math.sin(a) });
-    }
-    return pts;
-  }
 
   /** Rope 선 근접 판정 (threshold: 6/scale px) */
   function hitTestRope(worldX, worldY) {
@@ -161,15 +122,20 @@
     }
     if (pulleyRimMatch) return pulleyRimMatch;
     if (firstMatch) return firstMatch;
-    // FloorSegment 끝점 앵커
+    // FloorSegment 앵커 (경로 0.5칸마다) — 간격이 좁으므로 첫 히트가 아니라
+    // **가장 가까운** 앵커를 고른다. 끝점은 동점일 때 우선.
+    let bestSeg = null, bestDist = Infinity;
     for (const seg of STATE.floorSegments) {
       for (const pt of getFloorSegAttachPoints(seg)) {
-        if (Math.hypot(worldX - pt.worldX, worldY - pt.worldY) < thresh) {
-          return { elementId: seg.id, attachPoint: pt.id };
+        const d = Math.hypot(worldX - pt.worldX, worldY - pt.worldY);
+        if (d >= thresh) continue;
+        if (d < bestDist - 1e-9 || (pt.isEnd && d < bestDist + 1e-9)) {
+          bestDist = Math.min(bestDist, d);
+          bestSeg  = { elementId: seg.id, attachPoint: pt.id };
         }
       }
     }
-    return null;
+    return bestSeg;
   }
 
   /**

@@ -44,17 +44,23 @@
         ctx.stroke();
       }
     }
+    // 바닥면 앵커는 0.5칸마다라 개수가 많다 — 끝점은 크게, 중간은 작게,
+    // 화면상 간격이 좁으면(줌 아웃) 중간은 생략한다.
+    const stepPx = (CONFIG.FLOOR_ANCHOR_STEP || 0.5) * CONFIG.cellSize * s;
+    const showMid = stepPx >= 10;
     for (const seg of STATE.floorSegments) {
       const pts = getFloorSegAttachPoints(seg);
       for (const pt of pts) {
+        if (!pt.isEnd && !showMid) continue;
         const sx = pt.worldX * s + VIEWPORT.offsetX;
         const sy = pt.worldY * s + VIEWPORT.offsetY;
+        if (sx < -20 || sy < -20 || sx > mainCanvas.width + 20 || sy > mainCanvas.height + 20) continue;
         ctx.beginPath();
-        ctx.arc(sx, sy, 7, 0, Math.PI*2);
-        ctx.fillStyle   = 'rgba(34,197,94,0.85)';
+        ctx.arc(sx, sy, pt.isEnd ? 7 : 4, 0, Math.PI*2);
+        ctx.fillStyle   = pt.isEnd ? 'rgba(34,197,94,0.85)' : 'rgba(34,197,94,0.55)';
         ctx.fill();
         ctx.strokeStyle = '#14532d';
-        ctx.lineWidth   = 2;
+        ctx.lineWidth   = pt.isEnd ? 2 : 1.2;
         ctx.stroke();
       }
     }

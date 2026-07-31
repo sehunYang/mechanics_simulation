@@ -222,5 +222,138 @@ scenario('AC6', '고속 수평 발사체 vs 얇은 벽 — 관통 없음', ({ ru
   expect('벽(x=60)을 넘지 않음', s.x + 1, 60, 0.05);
 });
 
+/* ════════════════════════════════════════════════════════════
+   AD. 바닥면 실 앵커 — 끝점뿐 아니라 경로 0.5칸마다
+   ════════════════════════════════════════════════════════════ */
+
+scenario('AD1', '직선 바닥면 — 0.5칸마다 앵커, 끝점 id 는 p1/p2 유지', ({ run }) => {
+  run(`reset(); CONFIG.cellSize = 8; addFloor(20, 30, 32, 30);`);   // 길이 12칸
+  const r = run(`
+    const s = STATE.floorSegments[0];
+    const pts = getFloorSegAttachPoints(s);
+    ({ n: pts.length, first: pts[0].id, last: pts[pts.length-1].id,
+       ids: pts.slice(0, 5).map(p => p.id),
+       total: floorSegPathLength(s),
+       ends: pts.filter(p => p.isEnd).length });`);
+  note('앵커 id (앞 5개)', r.ids.join(', '));
+  expect('총 길이 12칸', r.total, 12, 1e-9, '칸');
+  expect('앵커 개수 = 12/0.5 + 1', r.n, 25, 0, '개');
+  expect('첫 앵커 = p1', r.first === 'p1' ? 1 : 0, 1, 0, '');
+  expect('끝 앵커 = p2', r.last === 'p2' ? 1 : 0, 1, 0, '');
+  expect('끝점 표시 2개', r.ends, 2, 0, '개');
+});
+
+scenario('AD2', '앵커 좌표가 경로 위 정확한 호길이 지점', ({ run }) => {
+  run(`reset(); CONFIG.cellSize = 8; addFloor(20, 30, 32, 30);`);
+  const r = run(`
+    const s = STATE.floorSegments[0];
+    const w = (id) => getFloorSegAttachWorld(s, id);
+    ({ p1: w('p1'), s35: w('s3.5'), s7: w('s7'), p2: w('p2') });`);
+  const cs = 8;
+  expect('p1 = (20,30)칸',   r.p1.x / cs, 20, 1e-9, '칸');
+  expect('s3.5 = (23.5,30)', r.s35.x / cs, 23.5, 1e-9, '칸');
+  expect('s3.5 y 유지',      r.s35.y / cs, 30, 1e-9, '칸');
+  expect('s7 = (27,30)',     r.s7.x / cs, 27, 1e-9, '칸');
+  expect('p2 = (32,30)',     r.p2.x / cs, 32, 1e-9, '칸');
+});
+
+scenario('AD3', '물리 좌표 = 렌더 좌표 (보이는 곳에 실이 붙는다)', ({ run }) => {
+  run(`reset(); CONFIG.cellSize = 8;
+       addFloor(20, 30, 60, 50, {pathType:'ARC_DOWN', curvature:0.6});`);
+  const r = run(`
+    const s = STATE.floorSegments[0];
+    const GS = CONFIG.GRID_SIZE, cs = CONFIG.cellSize;
+    let worst = 0;
+    for (const pt of getFloorSegAttachPoints(s)) {
+      const w = getFloorSegAttachWorld(s, pt.id);
+      const p = getAttachPhysPos({ elementId: s.id, attachPoint: pt.id });
+      worst = Math.max(worst, Math.hypot(p.x - w.x/cs, p.y - (GS - w.y/cs)));
+    }
+    ({ worst, n: getFloorSegAttachPoints(s).length });`);
+  note('앵커 수', r.n);
+  expect('렌더↔물리 좌표 최대 오차', r.worst, 0, 1e-12, '칸');
+});
+
+scenario('AD4', '곡면/꺾인 바닥도 호길이 기준 등간격', ({ run }) => {
+  for (const [label, opt, tol] of [
+    ['ELBOW_H', `{pathType:'ELBOW_H'}`, 1e-9],
+    ['ARC_DOWN', `{pathType:'ARC_DOWN', curvature:0.6}`, 0.02],
+  ]) {
+    run(`reset(); CONFIG.cellSize = 8; addFloor(20, 30, 50, 50, ${opt});`);
+    const r = run(`
+      const s = STATE.floorSegments[0];
+      const cs = CONFIG.cellSize;
+      const pts = getFloorSegAttachPoints(s);
+      let mn = 1e9, mx = -1e9;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const d = Math.hypot(pts[i].worldX - pts[i-1].worldX, pts[i].worldY - pts[i-1].worldY) / cs;
+        mn = Math.min(mn, d); mx = Math.max(mx, d);
+      }
+      ({ mn, mx, n: pts.length });`);
+    note(`${label} 앵커 수 / 간격`, `${r.n} / ${r.mn.toFixed(4)}~${r.mx.toFixed(4)}칸`);
+    // 직선 구간의 이웃 간격은 호길이 0.5칸 (곡면은 현 길이라 아주 살짝 짧다)
+    expect(`${label} 간격 하한 ≈ 0.5칸`, r.mn, 0.5, tol, '칸');
+    expect(`${label} 간격 상한 ≈ 0.5칸`, r.mx, 0.5, tol, '칸');
+  }
+});
+
+scenario('AD5', '중간 앵커에 매단 진자 — 그 지점에 고정되어 흔들린다', ({ run }) => {
+  // 바닥면 grid (40,20)-(60,20) → phys y=80. s3 = grid x 43 → phys (43,80)
+  run(`reset(); CONFIG.cellSize = 8;
+       const seg = addFloor(40, 20, 60, 20);
+       const b = addCircle({ gridX: 42.5, gridY: 29.5, mass: 1 });   // phys (43,70)
+       addRope(seg.id, 's3', b.id, 'center');
+       begin();`);
+  const r = run(`
+    const b = STATE.elements[0];
+    let maxErr = 0, minX = 1e9, maxX = -1e9;
+    for (let i = 0; i < 1200; i++) {
+      simStep(CONFIG.FIXED_DT);
+      maxErr = Math.max(maxErr, Math.abs(Math.hypot(b.physX - 43, b.physY - 80) - 10));
+      minX = Math.min(minX, b.physX); maxX = Math.max(maxX, b.physX);
+    }
+    ({ maxErr, minX, maxX, y: b.physY });`);
+  note('x 진동 범위', `${r.minX.toFixed(3)} ~ ${r.maxX.toFixed(3)}`);
+  expect('실 길이 10칸 유지 (앵커 = 43,80)', r.maxErr, 0, 0.05, '칸');
+  expect('정지 상태 유지 (수직 매달림)', r.maxX - r.minX, 0, 0.05, '칸');
+});
+
+scenario('AD6', '중간 앵커 Atwood — 끝점 앵커와 동일하게 고정점으로 동작', ({ run }) => {
+  run(`reset(); CONFIG.cellSize = 8;
+       const seg = addFloor(40, 16, 60, 16);          // phys y=84
+       const p = addPulley({ gridX: 49, gridY: 20 });  // 중심 phys (50,79)
+       addRope(p.id, 'center', seg.id, 's10');         // 중간 앵커로 고정 → phys (50,84)
+       const A = addCircle({ gridX: 48.5, gridY: 30.5, mass: 3 });
+       const B = addCircle({ gridX: 50.5, gridY: 30.5, mass: 1 });
+       addRope(p.id, 'left',  A.id, 'center');
+       addRope(p.id, 'right', B.id, 'center');
+       begin();`);
+  run(`run(0.5)`);
+  const a0 = run(`snap(STATE.elements[1])`);
+  run(`run(0.5)`);
+  const a1 = run(`snap(STATE.elements[1])`);
+  expect('Atwood 가속도 (m₁−m₂)g/(m₁+m₂)', -(a1.vy - a0.vy) / 0.5, (3 - 1) * G / 4, '5%', 'm/s²');
+  const p = run(`({ x: STATE.elements[0].physX, y: STATE.elements[0].physY })`);
+  expect('도르래가 중간 앵커에 고정 (x)', p.x, 50, 0.05, '칸');
+  expect('도르래가 중간 앵커에 고정 (y)', p.y, 79, 0.05, '칸');
+});
+
+scenario('AD7', '경계 처리 — 범위 밖 id 는 끝으로 클램프, p1/p2 하위호환', ({ run }) => {
+  run(`reset(); CONFIG.cellSize = 8; addFloor(20, 30, 32, 30);`);
+  const r = run(`
+    const s = STATE.floorSegments[0];
+    const cs = CONFIG.cellSize;
+    ({ over:  getFloorSegAttachWorld(s, 's999').x / cs,
+       under: getFloorSegAttachWorld(s, 's-5').x / cs,
+       bad:   getFloorSegAttachWorld(s, 'nonsense').x / cs,
+       p1:    getFloorSegAttachWorld(s, 'p1').x / cs,
+       p2:    getFloorSegAttachWorld(s, 'p2').x / cs });`);
+  expect('범위 초과 → 끝점', r.over, 32, 1e-9, '칸');
+  expect('음수 → 시작점',    r.under, 20, 1e-9, '칸');
+  expect('알 수 없는 id → 시작점', r.bad, 20, 1e-9, '칸');
+  expect('p1 하위호환', r.p1, 20, 1e-9, '칸');
+  expect('p2 하위호환', r.p2, 32, 1e-9, '칸');
+});
+
 report();
 process.exit(0);
