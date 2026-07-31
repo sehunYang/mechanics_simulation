@@ -986,64 +986,78 @@
   /* ──────────────────────────────────────────────────────────────
      앵커 포인트 헬퍼
   ────────────────────────────────────────────────────────────── */
-  function getAttachPointWorld(el, pointId) {
-    const cs = CONFIG.cellSize;
-    const bx = el.gridX * cs, by = el.gridY * cs;
-    const bw = el.gridW * cs, bh = el.gridH * cs;
+
+  /**
+   * 요소에 실제로 적용되는 회전각 [radian] — draw() 와 같은 규칙
+   * (바닥면 스냅 회전이 있으면 그것, 없으면 일반 회전(도 단위)).
+   *
+   * ± π/2 범위로 접어서 돌려준다. 이 앵커들을 갖는 도형(직사각형·도르래)은
+   * 180° 회전 대칭이라 그리기 결과가 같은데, 접지 않으면 오른쪽→왼쪽으로 그린
+   * 바닥면(angle = π)에 스냅된 물체의 top 앵커가 아래로 뒤집혀 버린다.
+   *
+   * 물리에는 회전 상태가 없어(physics.js 는 .rotation 을 쓰지 않는다) 이 값은
+   * 시뮬 중에도 변하지 않는다 → 편집 화면과 물리 앵커가 늘 같은 점을 가리킨다.
+   */
+  function elementRotRad(el) {
+    if (!el) return 0;
+    const raw = (el._snapRotation !== null && el._snapRotation !== undefined)
+      ? el._snapRotation
+      : (el.rotation || 0) * Math.PI / 180;
+    if (!raw) return 0;
+    const P = Math.PI;
+    return raw - P * Math.floor(raw / P + 0.5);   // → [−π/2, π/2)
+  }
+
+  /**
+   * 중심 기준 로컬 오프셋을 회전시킨다.
+   *   yUp = false → 월드/화면 좌표 (y 아래로 증가, draw 의 ctx.rotate 와 동일)
+   *   yUp = true  → 물리 좌표 (y 위로 증가) — 같은 그림이 되려면 부호가 반대다
+   */
+  function rotateOffset(dx, dy, rad, yUp) {
+    if (!rad) return { x: dx, y: dy };
+    const c = Math.cos(rad), s = Math.sin(rad) * (yUp ? -1 : 1);
+    return { x: dx * c - dy * s, y: dx * s + dy * c };
+  }
+
+  /** 앵커의 중심 기준 로컬 오프셋 (회전 전, 월드 y-아래 기준) */
+  function attachLocalOffset(pointId, bw, bh) {
     switch (pointId) {
-      case 'top':    return { x: bx + bw / 2, y: by };
-      case 'bottom': return { x: bx + bw / 2, y: by + bh };
-      case 'left':   return { x: bx,           y: by + bh / 2 };
-      case 'right':  return { x: bx + bw,      y: by + bh / 2 };
-      case 'center': return { x: bx + bw / 2,  y: by + bh / 2 };
-      default:       return { x: bx + bw / 2,  y: by + bh / 2 };
+      case 'top':    return { x: 0,       y: -bh / 2 };
+      case 'bottom': return { x: 0,       y:  bh / 2 };
+      case 'left':   return { x: -bw / 2, y: 0       };
+      case 'right':  return { x:  bw / 2, y: 0       };
+      default:       return { x: 0,       y: 0       };   // center
     }
   }
 
-  function getAttachPoints(el) {
+  function getAttachPointWorld(el, pointId) {
     const cs = CONFIG.cellSize;
-    const bx = el.gridX * cs, by = el.gridY * cs;
     const bw = el.gridW * cs, bh = el.gridH * cs;
-    const cx = bx + bw / 2, cy = by + bh / 2;
-    if (el.type === 'circle') {
-      return [{ id: 'center', worldX: cx, worldY: cy }];
-    }
-    if (el.type === 'extforce') {
-      return [{ id: 'center', worldX: cx, worldY: cy }];
-    }
-    if (el.type === 'pulley') {
-      // center: 도르래를 바닥/천장/물체에 고정하는 앵커
-      // top/bottom/left/right: 실 연결용 앵커 (도르래 가장자리)
-      return [
-        { id: 'center', worldX: cx,      worldY: cy },
-        { id: 'top',    worldX: cx,      worldY: by },
-        { id: 'bottom', worldX: cx,      worldY: by + bh },
-        { id: 'left',   worldX: bx,      worldY: cy },
-        { id: 'right',  worldX: bx + bw, worldY: cy },
-      ];
-    }
-    // Spring: 방향에 따라 양 끝단에만 앵커 (가로=left/right, 세로=top/bottom)
-    if (el.type === 'spring') {
-      if (!el.isVertical) {
-        // 가로 모드: 왼쪽 끝 / 오른쪽 끝
-        return [
-          { id: 'left',  worldX: bx,      worldY: cy },
-          { id: 'right', worldX: bx + bw, worldY: cy },
-        ];
-      } else {
-        // 세로 모드: 위쪽 끝 / 아래쪽 끝
-        return [
-          { id: 'top',    worldX: cx, worldY: by },
-          { id: 'bottom', worldX: cx, worldY: by + bh },
-        ];
-      }
-    }
-    return [
-      { id: 'top',    worldX: cx,      worldY: by },
-      { id: 'bottom', worldX: cx,      worldY: by + bh },
-      { id: 'left',   worldX: bx,      worldY: cy },
-      { id: 'right',  worldX: bx + bw, worldY: cy },
-    ];
+    const cx = el.gridX * cs + bw / 2, cy = el.gridY * cs + bh / 2;
+    const o = attachLocalOffset(pointId, bw, bh);
+    const r = rotateOffset(o.x, o.y, elementRotRad(el), false);
+    return { x: cx + r.x, y: cy + r.y };
+  }
+
+  /** 요소별로 노출되는 앵커 id 목록 */
+  function attachPointIds(el) {
+    // 원·외력: 중심 하나뿐
+    if (el.type === 'circle' || el.type === 'extforce') return ['center'];
+    // 도르래 — center: 바닥/천장/물체에 고정하는 앵커
+    //          top/bottom/left/right: 실 연결용 (도르래 가장자리)
+    if (el.type === 'pulley') return ['center', 'top', 'bottom', 'left', 'right'];
+    // 용수철: 방향에 따라 양 끝단에만 (가로=left/right, 세로=top/bottom)
+    if (el.type === 'spring') return el.isVertical ? ['top', 'bottom'] : ['left', 'right'];
+    return ['top', 'bottom', 'left', 'right'];
+  }
+
+  /** 좌표는 반드시 getAttachPointWorld 를 거친다 — 실이 걸리는 점과
+   *  화면에 찍히는 점이 어긋나지 않게 계산 경로를 하나로 유지한다. */
+  function getAttachPoints(el) {
+    return attachPointIds(el).map(id => {
+      const w = getAttachPointWorld(el, id);
+      return { id, worldX: w.x, worldY: w.y };
+    });
   }
 
   /* ──────────────────────────────────────────────────────────────

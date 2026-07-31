@@ -915,14 +915,14 @@
   /** 요소의 특정 앵커 포인트 물리 좌표 */
   function _getElPhysAnchor(el, pt) {
     if (el.type === 'rect') {
-      // physX/Y = 좌하단 기준
-      switch (pt) {
-        case 'top':    return { x: el.physX + el.gridW/2, y: el.physY + el.gridH };
-        case 'bottom': return { x: el.physX + el.gridW/2, y: el.physY };
-        case 'left':   return { x: el.physX,              y: el.physY + el.gridH/2 };
-        case 'right':  return { x: el.physX + el.gridW,   y: el.physY + el.gridH/2 };
-        default:       return { x: el.physX + el.gridW/2, y: el.physY + el.gridH/2 };
-      }
+      // physX/Y = 좌하단 기준. 중심에서 회전시킨 오프셋을 더한다 —
+      // 회전 규칙(elementRotRad)과 오프셋 정의를 렌더와 공유하므로
+      // 빗면에 스냅된 물체도 편집 화면의 앵커와 같은 점을 가리킨다.
+      const cx = el.physX + el.gridW / 2, cy = el.physY + el.gridH / 2;
+      const o = attachLocalOffset(pt, el.gridW, el.gridH);
+      // attachLocalOffset 은 y-아래 기준이라 물리(y-위)로 부호를 뒤집어 넘긴다
+      const r = rotateOffset(o.x, -o.y, elementRotRad(el), true);
+      return { x: cx + r.x, y: cy + r.y };
     }
     if (el.type === 'circle') {
       // physX/Y = 중심 기준
@@ -934,14 +934,12 @@
       return { x: el.gridX + el.gridW / 2, y: GS - el.gridY - el.gridH / 2 };
     }
     if (el.type === 'pulley') {
-      const r = Math.min(el.gridW, el.gridH) / 2;
-      switch (pt) {
-        case 'top':    return { x: el.physX,     y: el.physY + r };
-        case 'bottom': return { x: el.physX,     y: el.physY - r };
-        case 'left':   return { x: el.physX - r, y: el.physY };
-        case 'right':  return { x: el.physX + r, y: el.physY };
-        default:       return { x: el.physX,     y: el.physY };
-      }
+      // physX/Y = 중심 기준. 도르래는 정사각형(gridW === gridH)이라
+      // 지름을 한 변으로 넘기면 rim 오프셋이 반지름과 같아진다.
+      const d = Math.min(el.gridW, el.gridH);
+      const o = attachLocalOffset(pt, d, d);
+      const r = rotateOffset(o.x, -o.y, elementRotRad(el), true);
+      return { x: el.physX + r.x, y: el.physY + r.y };
     }
     if (el.type === 'spring') {
       // Spring은 물리 적분 없음 → gridX/Y 기반으로 끝점 좌표 반환

@@ -351,14 +351,14 @@
     const cs  = CONFIG.cellSize;
     const tol = RIM_ALIGN_CELLS;
 
-    // rim 앵커의 격자 좌표 = 도르래 좌상단 + 로컬 오프셋. 도르래를 Δ 만큼
-    // 옮기면 rim 도 그대로 Δ 만큼 움직이므로 오프셋 자체는 알 필요가 없다.
-    const off = {
-      left:   { x: 0,                y: pulley.gridH / 2 },
-      right:  { x: pulley.gridW,     y: pulley.gridH / 2 },
-      top:    { x: pulley.gridW / 2, y: 0 },
-      bottom: { x: pulley.gridW / 2, y: pulley.gridH },
-    };
+    // rim 앵커의 격자 좌표 = 도르래 좌상단 + 오프셋. 도르래를 Δ 만큼 옮기면
+    // rim 도 그대로 Δ 만큼 움직이므로 오프셋은 현재 위치에서 한 번만 재면 된다.
+    // 앵커 헬퍼를 그대로 써서 회전이 걸린 도르래에서도 어긋나지 않게 한다.
+    const off = {};
+    for (const pt of ['left', 'right', 'top', 'bottom']) {
+      const w = getAttachPointWorld(pulley, pt);
+      off[pt] = { x: w.x / cs - pulley.gridX, y: w.y / cs - pulley.gridY };
+    }
 
     // 각 제약을 직선 방정식 P·n = c 로 모은다 (P = 도르래 좌상단 격자좌표)
     const cons = [];
