@@ -35,8 +35,9 @@
       tc.beginPath();
       seg._tracePath(tc, ax, ay, bx, by);
       tc.stroke();
-      // 실체면 빗금 — 교과서 도해처럼 어느 쪽이 막히는 면인지 표시
-      seg._drawSolidSideHatch(tc, ax, ay, bx, by, s, '#000000');
+      // 실체면 빗금 — 교과서 도해처럼 어느 쪽이 막히는 면인지 표시.
+      // 마찰면만 빨강으로 남긴다 (전부 검정이면 마찰 여부가 사라지므로).
+      seg._drawSolidSideHatch(tc, ax, ay, bx, by, s, seg.isFriction ? '#ef4444' : '#000000');
       tc.restore();
     }
 

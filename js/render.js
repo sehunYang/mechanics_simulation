@@ -30,12 +30,34 @@
       _dtAccumulator += cappedRealDt * STATE.speedMultiplier;
       while (_dtAccumulator >= CONFIG.FIXED_DT) {
         simStep(CONFIG.FIXED_DT);
+        STATE.simTime += CONFIG.FIXED_DT;
         _dtAccumulator -= CONFIG.FIXED_DT;
       }
     } else {
       _dtAccumulator = 0;   // EDIT/PAUSED 중엔 누산 부채가 쌓이지 않도록 리셋
     }
+
+    _updateRunIndicator();
     drawScene();
+  }
+
+  /** 실행 상태 배지 갱신 — 실행 중임을 한눈에 알 수 있게 */
+  function _updateRunIndicator() {
+    const running = STATE.simMode === 'RUNNING';
+    const paused  = STATE.simMode === 'PAUSED';
+    if (!running && !paused) {
+      if (runIndicator.style.display !== 'none') runIndicator.style.display = 'none';
+      return;
+    }
+    runIndicator.style.display = 'flex';
+    runIndicator.classList.toggle('is-running', running);
+    runIndicator.classList.toggle('is-paused',  paused);
+
+    const label = running
+      ? (STATE.speedMultiplier > 1 ? `실행 중 ${STATE.speedMultiplier}x` : '실행 중')
+      : '일시정지';
+    if (riLabel.textContent !== label) riLabel.textContent = label;
+    riTime.textContent = STATE.simTime.toFixed(2) + 's';
   }
 
   /** mainCanvas에 모든 요소 렌더 */
@@ -59,10 +81,16 @@
     // 줌 인디케이터 갱신
     zoomIndicator.textContent = Math.round(VIEWPORT.scale * 100) + '%';
 
-    // RUNNING 모드 표시
+    // RUNNING/PAUSED 표시 — 캔버스 가장자리 전체를 테두리로 감싸 상태를 알림
+    // (예전엔 왼쪽 4px 띠만 그려서 눈에 잘 띄지 않았다)
     if (STATE.simMode === 'RUNNING' || STATE.simMode === 'PAUSED') {
-      ctx.fillStyle = STATE.simMode === 'RUNNING' ? 'rgba(16,185,129,0.18)' : 'rgba(251,191,36,0.12)';
-      ctx.fillRect(0, 0, 4, H);
+      ctx.save();
+      ctx.strokeStyle = STATE.simMode === 'RUNNING'
+        ? 'rgba(16,185,129,0.55)'
+        : 'rgba(251,191,36,0.5)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
+      ctx.restore();
     }
   }
 

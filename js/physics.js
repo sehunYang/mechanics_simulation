@@ -10,6 +10,7 @@
   function startSimulation() {
     saveSnapshot();
     initPhysics();
+    STATE.simTime = 0;
     STATE.simMode = 'RUNNING';
     btnRun.textContent = '⏸ 일시정지';
     document.getElementById('sidebar-left').style.pointerEvents = 'none';

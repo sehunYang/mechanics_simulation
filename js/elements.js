@@ -738,12 +738,8 @@
       ctx.stroke();
 
       // ── 실체면 빗금 (바닥이면 아래, 천장이면 위) ──
+      //    마찰면이면 빗금 자체가 빨강 → 별도 오버레이 없이 한눈에 구분된다
       this._drawSolidSideHatch(ctx, ax, ay, bx, by, s);
-
-      // ── 마찰 해치 오버레이 ──
-      if (this.isFriction) {
-        this._drawFrictionHatch(ctx, ax, ay, bx, by, s);
-      }
 
       ctx.restore();
     }
@@ -764,6 +760,11 @@
      *   (물리 좌표의 법선 (−dy_p, dx_p)/L 을 y 반전해 화면 좌표로 옮긴 것.
      *    _samplePath 의 접선 진행 방향이 getPhysicsSegments 의 세그먼트 방향과
      *    같은 순서라 그대로 대응된다 — test/spec7.js 가 이 대응을 검증한다.)
+     *
+     * 색: 마찰면이면 빨강, 아니면 회색. 예전에는 회색 45° 빗금 위에 빨간 수직
+     * 해치를 따로 겹쳐 그렸는데, 두 벌이 뒤엉켜 오히려 읽기 어려웠다.
+     * 빗금 자체를 마찰 색으로 칠하면 "실체면 + 거친 면"을 한 번에 전달한다.
+     * (선택 여부는 본선 색으로 이미 드러나므로, 빗금은 표면 성질만 나타낸다)
      */
     _drawSolidSideHatch(ctx, ax, ay, bx, by, s, color) {
       const len = 5 / s;   // 빗금 길이 (화면 px 고정)
@@ -776,10 +777,10 @@
       if (pts.length === 0) return;
 
       ctx.save();
-      ctx.strokeStyle = color || ((STATE.selected === this)
-        ? 'rgba(59,130,246,0.6)'      // 선택 시 본선과 같은 파랑 계열
-        : 'rgba(130,130,130,0.5)');
-      ctx.lineWidth = 1 / s;
+      ctx.strokeStyle = color || (this.isFriction
+        ? 'rgba(239,68,68,0.8)'       // 마찰면: 빨강
+        : 'rgba(130,130,130,0.5)');   // 매끄러운 면: 회색
+      ctx.lineWidth = (this.isFriction ? 1.2 : 1) / s;
       ctx.beginPath();
       for (const p of pts) {
         const sx = -p.ty, sy = p.tx;                       // 실체면 단위벡터
@@ -815,35 +816,6 @@
           this._drawArc(ctx, ax, ay, bx, by);
           break;
       }
-    }
-
-    /**
-     * 마찰 해치: 경로를 따라 5/scale px 간격의 수직 단선 (길이 3.5/scale px).
-     *
-     * 실체면 쪽으로만 뻗는다 — 예전에는 선을 가로질러 양쪽으로 그려서
-     * 자유면(물체가 놓이는 쪽)까지 침범했고, 실체면 빗금과 방향이 어긋나
-     * "어느 쪽이 막히는 면인지"를 오히려 흐렸다. 이제 45° 실체면 빗금과
-     * 같은 쪽에 모여, 빨강 수직선 = 거친 표면 / 회색 45° = 지반 으로 읽힌다.
-     * 방향 규약은 _drawSolidSideHatch 와 동일: 실체면 = (−ty, tx).
-     */
-    _drawFrictionHatch(ctx, ax, ay, bx, by, s) {
-      const spacing = 5 / s;
-      const len     = 3.5 / s;
-
-      const pts = this._samplePath(ax, ay, bx, by, spacing);
-      if (pts.length === 0) return;
-
-      ctx.save();
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth   = 1 / s;
-      ctx.beginPath();
-      for (const p of pts) {
-        const sx = -p.ty, sy = p.tx;   // 실체면 단위벡터 (경로에 수직)
-        ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x + sx * len, p.y + sy * len);
-      }
-      ctx.stroke();
-      ctx.restore();
     }
 
     /**

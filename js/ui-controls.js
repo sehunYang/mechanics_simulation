@@ -97,6 +97,7 @@
     stopSimulation();
     restoreSnapshot();          // t=0 상태 완전 복원
     STATE.simMode = 'EDIT';
+    STATE.simTime = 0;
     STATE.interactionMode = 'IDLE';
     STATE.pendingGridPoint = null;
     STATE.pendingRopeAnchor = null;

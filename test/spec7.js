@@ -143,31 +143,60 @@ scenario('HATCH-ARC-TILT', '기울어진 곡면 + 역방향으로 그린 곡면'
   checkSide('ARC_DOWN 역방향',   captureHatch(c, { x1: 70, y1: 35, x2: 30, y2: 70, o: { pathType: 'ARC_DOWN', curvature: 0.6 } }), 0.12);
 });
 
-/* ── 6. 마찰 해치도 실체면 쪽으로만 (자유면 침범 없음) ── */
-scenario('HATCH-FRICTION', '마찰 해치 — 실체면 쪽 수직선, 자유면 침범 없음', () => {
+/* ── 6. 마찰면: 빗금이 빨강으로 바뀌되 기하는 동일 ── */
+scenario('HATCH-FRICTION', '마찰면 — 빗금 색만 빨강, 위치·방향은 매끄러운 면과 동일', () => {
   const c = makeCtx();
   const F = { isFriction: true, muS: 0.4, muK: 0.3 };
-  const CASES = [
-    ['바닥',   { x1: 20, y1: 60, x2: 80, y2: 60, o: F }],
-    ['천장',   { x1: 80, y1: 30, x2: 20, y2: 30, o: F }],
-    ['벽',     { x1: 60, y1: 70, x2: 60, y2: 30, o: F }],
-    ['경사',   { x1: 20, y1: 60, x2: 70, y2: 35, o: F }],
-    ['ELBOW_H',{ x1: 20, y1: 60, x2: 60, y2: 40, o: { ...F, pathType: 'ELBOW_H' } }],
-  ];
-  // 수직(perpendicular) 이므로 법선 성분 = −1
-  for (const [label, o] of CASES) checkSide(label, captureHatch(c, o, '_drawFrictionHatch'), 0.02, -1);
-  for (const [label, o] of [['ARC_UP', { x1: 20, y1: 60, x2: 80, y2: 60, o: { ...F, pathType: 'ARC_UP', curvature: 0.6 } }],
-                            ['ARC_DOWN', { x1: 20, y1: 40, x2: 80, y2: 40, o: { ...F, pathType: 'ARC_DOWN', curvature: 0.6 } }]]) {
-    checkSide(label, captureHatch(c, o, '_drawFrictionHatch'), 0.12, -1);
-  }
 
-  // 마찰 해치와 실체면 빗금이 같은 쪽인지 (부호 일치) 직접 대조
-  const seg = { x1: 20, y1: 60, x2: 80, y2: 60, o: F };
-  const fr = captureHatch(c, seg, '_drawFrictionHatch').ticks[0];
-  const so = captureHatch(c, seg, '_drawSolidSideHatch').ticks[0];
-  note('마찰 / 실체면 빗금 dy', `${(fr.q.y - fr.p.y).toFixed(2)} / ${(so.q.y - so.p.y).toFixed(2)}`);
-  expect('두 표시가 같은 쪽', Math.sign(fr.q.y - fr.p.y), Math.sign(so.q.y - so.p.y), 0, '');
-  expect('마찰 해치가 선 위(자유면)로 넘어가지 않음', Math.min(fr.p.y, fr.q.y) >= 60 - 1e-9 ? 1 : 0, 1, 0, '');
+  // 기하는 마찰 여부와 무관해야 한다 (실체면 쪽 45°)
+  const CASES = [
+    ['마찰 바닥',   { x1: 20, y1: 60, x2: 80, y2: 60, o: F }],
+    ['마찰 천장',   { x1: 80, y1: 30, x2: 20, y2: 30, o: F }],
+    ['마찰 벽',     { x1: 60, y1: 70, x2: 60, y2: 30, o: F }],
+    ['마찰 경사',   { x1: 20, y1: 60, x2: 70, y2: 35, o: F }],
+    ['마찰 ELBOW_H',{ x1: 20, y1: 60, x2: 60, y2: 40, o: { ...F, pathType: 'ELBOW_H' } }],
+  ];
+  for (const [label, o] of CASES) checkSide(label, captureHatch(c, o));
+  checkSide('마찰 ARC_DOWN',
+    captureHatch(c, { x1: 20, y1: 40, x2: 80, y2: 40, o: { ...F, pathType: 'ARC_DOWN', curvature: 0.6 } }), 0.12);
+
+  // 마찰/비마찰 빗금의 좌표가 완전히 동일한지 (색만 달라야 함)
+  const base = { x1: 20, y1: 60, x2: 80, y2: 60 };
+  const plain = captureHatch(c, base).ticks;
+  const fric  = captureHatch(c, { ...base, o: F }).ticks;
+  expect('빗금 개수 동일', fric.length, plain.length, 0, '개');
+  let maxD = 0;
+  for (let i = 0; i < plain.length; i++) {
+    maxD = Math.max(maxD,
+      Math.hypot(fric[i].p.x - plain[i].p.x, fric[i].p.y - plain[i].p.y),
+      Math.hypot(fric[i].q.x - plain[i].q.x, fric[i].q.y - plain[i].q.y));
+  }
+  expect('빗금 좌표 완전 동일', maxD, 0, 1e-12, 'px');
+
+  // 색 검증: 마찰이면 빨강 계열, 아니면 회색 계열. 별도 수직 해치는 없어야 한다.
+  const styleOf = (o) => vm.runInContext(`{
+    reset();
+    const s = addFloor(20,60,80,60, ${JSON.stringify(o)});
+    const seen = [];
+    const rec = {
+      save(){}, restore(){}, beginPath(){}, stroke(){}, fill(){}, closePath(){}, setLineDash(){},
+      moveTo(){}, lineTo(){}, arc(){},
+      set strokeStyle(v){ seen.push(v); }, get strokeStyle(){ return ''; },
+      set lineWidth(v){}, get lineWidth(){ return 1; },
+      set fillStyle(v){}, get fillStyle(){ return ''; },
+      set font(v){}, set textAlign(v){}, set textBaseline(v){}, fillText(){},
+    };
+    s.draw(rec);
+    seen;
+  }`, c);
+  const plainStyles = styleOf({});
+  const fricStyles  = styleOf(F);
+  note('비마찰 strokeStyle', JSON.stringify(plainStyles));
+  note('마찰   strokeStyle', JSON.stringify(fricStyles));
+  expect('마찰면 빗금은 빨강',   fricStyles.some(s => /239,68,68/.test(s))   ? 1 : 0, 1, 0, '');
+  expect('비마찰 빗금은 회색',   plainStyles.some(s => /130,130,130/.test(s)) ? 1 : 0, 1, 0, '');
+  expect('마찰면에 회색 빗금 없음', fricStyles.some(s => /130,130,130/.test(s)) ? 1 : 0, 0, 0, '');
+  expect('별도 수직 해치(#ef4444) 없음', fricStyles.includes('#ef4444') ? 1 : 0, 0, 0, '');
 });
 
 /* ── 7. 물리 거동과의 대조: 빗금이 가리키는 쪽에서 물체가 막히는가 ── */

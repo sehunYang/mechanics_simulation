@@ -404,7 +404,19 @@
       return;
     }
 
-    if (STATE.simMode !== 'EDIT') return;
+    // 실행/일시정지 중: 편집(선택·드래그·리사이즈·실 그리기)은 막되
+    // 카메라 조작은 허용한다. 휠 줌과 2포인터 핀치 줌은 위/아래에서 이미
+    // simMode 와 무관하게 동작하므로, 여기서는 1포인터 팬만 열어 주면 된다.
+    if (STATE.simMode !== 'EDIT') {
+      if (STATE.activePointers.size === 1) {
+        STATE.interactionMode = 'PANNING';
+        _panStart = {
+          screenX: e.clientX, screenY: e.clientY,
+          offsetX: VIEWPORT.offsetX, offsetY: VIEWPORT.offsetY,
+        };
+      }
+      return;
+    }
 
     // 1포인터 처리
     if (STATE.activePointers.size === 1 && STATE.interactionMode === 'IDLE') {

@@ -49,6 +49,7 @@
     prevPinchDist:     null,
     _ropePreviewWorld: null,   // ROPE_DRAW 커서 위치 (월드 픽셀)
     speedMultiplier:   1,      // 배속 (1/2/5/10/100), RUNNING 중에만 의미 있음
+    simTime:           0,      // 누적 시뮬레이션 시간 [s] (배속 반영, 실행 표시용)
   };
 
   /* ================================================================
@@ -69,6 +70,16 @@
 
   /* 배속 버튼: HTML에 없으므로 동적 생성, canvas-wrapper 우측 하단에 배치
      (controls-bottom 중앙 pill과는 별개 — RUNNING 중에만 render.js가 표시) */
+  /* 실행 상태 표시 배지: canvas-wrapper 상단 중앙.
+     render.js가 매 프레임 표시/문구를 갱신 (EDIT에서는 숨김) */
+  const runIndicator = document.createElement('div');
+  runIndicator.id = 'run-indicator';
+  runIndicator.innerHTML = '<span class="ri-dot"></span><span class="ri-label"></span><span class="ri-time"></span>';
+  canvasWrapper.appendChild(runIndicator);
+  const riDot   = runIndicator.querySelector('.ri-dot');
+  const riLabel = runIndicator.querySelector('.ri-label');
+  const riTime  = runIndicator.querySelector('.ri-time');
+
   const btnSpeed = document.createElement('button');
   btnSpeed.id = 'btn-speed';
   btnSpeed.className = 'ctrl-btn';

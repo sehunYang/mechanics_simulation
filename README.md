@@ -36,14 +36,17 @@ mechanics_simulation/
 ## 물리 검증
 
 ```
-node test/run-all.js            # 140개 항목, 실제 물리 공식과 수치 비교
+node test/run-all.js            # 155개 항목, 실제 물리 공식과 수치 비교
 node test/run-all.js --verbose
 ```
 
-`test/harness.js`는 `js/config.js` · `coords.js` · `elements.js` · `physics.js` ·
-`hit-test.js`를 **수정 없이** Node `vm` 컨텍스트에 올리고 DOM만 스텁으로 대체한다.
-즉 브라우저에서 도는 것과 동일한 코드를 검증한다. 물리 코드를 손볼 때는 이 스위트를
-먼저 돌려 회귀를 확인하세요. 자세한 내용과 알려진 한계는
+- `test/harness.js` — `js/config.js` · `coords.js` · `elements.js` · `physics.js` ·
+  `hit-test.js`를 **수정 없이** Node `vm` 컨텍스트에 올리고 DOM만 스텁으로 대체.
+- `test/dom-harness.js` — `index.html` 순서대로 14개 js 전체를 올리고, 등록된
+  **실제 이벤트 핸들러**에 합성 포인터/휠 입력을 흘려보내 UI 동작까지 검증.
+
+즉 브라우저에서 도는 것과 동일한 코드를 검증한다. 물리나 입력 처리를 손볼 때는 이
+스위트를 먼저 돌려 회귀를 확인하세요. 자세한 내용과 알려진 한계는
 `Physics_Verification_Report.md` 참고.
 
 ## 아키텍처 노트 (⚠️ 유지보수 시 필독)
