@@ -1,5 +1,7 @@
 # 고전역학 시뮬레이터
 
+**▶ 데모: [shy.ai.kr/mechanics_simulation](https://shy.ai.kr/mechanics_simulation/)**
+
 캔버스 기반 2D 고전역학 시뮬레이터 (중력·충돌·마찰·실/도르래·용수철). 빌드 도구·의존성 없음 — `index.html`을 브라우저로 열면 바로 실행됩니다.
 
 ## 디렉토리 구조

@@ -11,3 +11,7 @@ Thumbs.db
 # 로그·임시
 *.log
 node_modules/
+
+# 로고 원본 (2380px, ~900KB) — 아이콘은 assets/logo.png(512px) 에서
+# 재생성 가능하므로 저장소·배포에는 넣지 않는다.
+양세훈 로고.png
