@@ -621,11 +621,13 @@
 
       // k 레이블 — 축 중앙에서 수직으로 살짝 띄움 (이탤릭 세리프)
       const mid = { x: ax + ux * len / 2, y: ay + uy * len / 2 };
+      // 라벨은 코일 반대쪽(−수직)에 둔다 — 가로 용수철이면 위쪽.
+      // 바닥에 놓인 용수철은 아래가 지면이라, 아래에 쓰면 바닥선과 겹친다.
       snLabel(ctx, `k = ${this.k}`,
-              mid.x + px * (amp + 11 / VIEWPORT.scale),
-              mid.y + py * (amp + 11 / VIEWPORT.scale),
+              mid.x - px * (amp + 12 / VIEWPORT.scale),
+              mid.y - py * (amp + 12 / VIEWPORT.scale),
               Math.max(SN_FS.springMin, Math.min(SN_FS.springMax, thick * 0.32 * VIEWPORT.scale)),
-              { italic: true, halo: 3 });
+              { italic: true, halo: 3.5 });
 
       if (STATE.selected === this) {
         drawSelectionBox(ctx, b.x, b.y, b.w, b.h);
