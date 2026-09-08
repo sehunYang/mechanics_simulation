@@ -21,7 +21,7 @@ python -m http.server 8123      # → http://localhost:8123
 ## 검증
 
 ```bash
-node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (14 스위트, 219 항목)
+node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (15 스위트, 236 항목)
 node test/run-all.js --verbose
 
 npm i --no-save puppeteer-core  # 1회

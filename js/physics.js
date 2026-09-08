@@ -279,7 +279,7 @@
       if (el.type === 'rect' || el.type === 'circle') {
         el._vxPre = el.vx; el._vyPre = el.vy;
         // 자유물체도용 누적기 — 힘으로 적분되는 "알려진 힘" (중력·힘구간·외력·용수철) 과 접촉 정보
-        el._fk = { g: [0, 0], z: [0, 0], e: [0, 0], s: [0, 0] };
+        el._fk = { g: [0, 0], z: [0, 0], e: [0, 0], s: [0, 0], c: [0, 0] };
         el._contact = null;
         el._hitBody = false;
       }
@@ -291,7 +291,7 @@
       integrate(subDt);
       updateExtForceAnchors();   // 외력 앵커가 물체를 따라 이동 (실 방향 유지)
       resolveFloorCollisions(subDt);
-      resolveBodyCollisions();
+      resolveBodyCollisions(subDt);
       resolveRopeConstraints(subDt);
       _projectStepEnergy(_e0);
     }
@@ -345,43 +345,139 @@
     return out;
   }
 
+  /**
+   * 잔차 R 을 기저 벡터(실 방향·접촉 법선·정지 마찰 접선)로 나눈다 — 최소자승.
+   *   2D 에서 미지수가 2개 이하일 때만 유일하게 정해진다. 미끄러지는 중이면 마찰은
+   *   μk N (방향 = 접선 속도 반대) 으로 법선에 접어 미지수를 줄인다.
+   *   음수가 나온 실(밀 수 없다)·법선(당길 수 없다)은 제거하고 다시 푼다.
+   *   basis: [{ vec:[x,y], kind:'T'|'N'|'f', ref }] → 계수 배열 | null(결정 불가)
+   */
+  function _lsqDecompose(R, basis) {
+    let act = basis.slice();
+    for (let iter = 0; iter < 4; iter++) {
+      const m = act.length;
+      if (m === 0) return [];
+      if (m > 2) return null;
+      let x;
+      if (m === 1) {
+        const b = act[0].vec, bb = b[0] * b[0] + b[1] * b[1];
+        if (bb < 1e-12) return null;
+        x = [(R[0] * b[0] + R[1] * b[1]) / bb];
+      } else {
+        const b1 = act[0].vec, b2 = act[1].vec;
+        const det = b1[0] * b2[1] - b1[1] * b2[0];
+        const n1 = Math.hypot(b1[0], b1[1]), n2 = Math.hypot(b2[0], b2[1]);
+        if (n1 < 1e-9 || n2 < 1e-9 || Math.abs(det) < 0.05 * n1 * n2) return null;   // 나란한 기저 → 결정 불가
+        x = [(R[0] * b2[1] - R[1] * b2[0]) / det, (b1[0] * R[1] - b1[1] * R[0]) / det];
+      }
+      // 부호 제약: 실·법선은 0 이상
+      const bad = act.findIndex((b, i) => (b.kind === 'T' || b.kind === 'N') && x[i] < -1e-6);
+      if (bad < 0) return act.map((b, i) => ({ b, x: x[i] }));
+      act = act.filter((_, i) => i !== bad);
+    }
+    return null;
+  }
+
+  /** 물체 하나의 분해 시도. knownT: Map(rope.id → 장력) — 상대 물체에서 확정된 값 */
+  function _decomposeBody(el, R, knownT) {
+    const basis = [];
+    let rx = R[0], ry = R[1];
+    const ropes = _bodyRopeDirs(el);
+    const fixedT = [];
+    for (const r of ropes) {
+      const t = knownT && knownT.get(r.rope.id);
+      if (t != null) { rx -= t * r.ux; ry -= t * r.uy; fixedT.push({ rope: r.rope, mag: t, ux: r.ux, uy: r.uy }); }
+      else basis.push({ vec: [r.ux, r.uy], kind: 'T', ref: r });
+    }
+    let contactBasis = null, slipping = false, muK = 0, tx = 0, ty = 0, sgn = 0;
+    if (el._contact) {
+      const { nx, ny } = el._contact;
+      tx = -ny; ty = nx;
+      // 미끄러짐 판정은 접촉점의 상대 속도로: 원판은 구르면 중심은 움직여도 접촉점은 정지(정지 마찰)
+      const vt = el.vx * tx + el.vy * ty;
+      const vslip = el.type === 'circle' ? vt - (el.gridW / 2) * (el.omega || 0) : vt;
+      slipping = Math.abs(vslip) > 0.02;
+      sgn = vslip > 0 ? 1 : -1;
+      muK = el._contact.friction ? (el._contact.muK || 0) : 0;
+      if (el._contact.friction && slipping) contactBasis = { vec: [nx - muK * sgn * tx, ny - muK * sgn * ty], kind: 'N' };   // 마찰을 법선에 접음
+      else contactBasis = { vec: [nx, ny], kind: 'N' };
+      basis.push(contactBasis);
+      if (el._contact.friction && !slipping) basis.push({ vec: [tx, ty], kind: 'f' });
+    }
+    const sol = _lsqDecompose([rx, ry], basis);
+    if (!sol) return null;
+    const out = { T: fixedT.slice(), N: [0, 0], f: [0, 0], slipping };
+    for (const { b, x } of sol) {
+      if (b.kind === 'T') { out.T.push({ rope: b.ref.rope, mag: x, ux: b.ref.ux, uy: b.ref.uy }); rx -= x * b.ref.ux; ry -= x * b.ref.uy; }
+      else if (b.kind === 'N') {
+        const { nx, ny } = el._contact;
+        out.N = [x * nx, x * ny];
+        if (muK && slipping) out.f = [-x * muK * sgn * tx, -x * muK * sgn * ty];
+        rx -= x * b.vec[0]; ry -= x * b.vec[1];
+      } else if (b.kind === 'f') { out.f = [x * tx, x * ty]; rx -= x * tx; ry -= x * ty; }
+    }
+    out.other = Math.hypot(rx, ry) > 1e-6 ? [rx, ry] : [0, 0];
+    return out;
+  }
+
+  /** 결정 불가일 때의 예비 분해 (예전 탐욕 방식): 실 → 접촉 → 기타 */
+  function _greedyDecompose(el, R, knownT) {
+    let rx = R[0], ry = R[1];
+    const out = { T: [], N: [0, 0], f: [0, 0], other: [0, 0], slipping: false };
+    for (const r of _bodyRopeDirs(el)) {
+      const known = knownT && knownT.get(r.rope.id);
+      const t = known != null ? known : rx * r.ux + ry * r.uy;
+      if (t > 1e-6) { out.T.push({ rope: r.rope, mag: t, ux: r.ux, uy: r.uy }); rx -= t * r.ux; ry -= t * r.uy; }
+    }
+    if (el._contact) {
+      const { nx, ny, friction } = el._contact;
+      const n = rx * nx + ry * ny;
+      if (n > 1e-6) { out.N = [n * nx, n * ny]; rx -= n * nx; ry -= n * ny; }
+      const tx = -ny, ty = nx, ft = rx * tx + ry * ty;
+      if (friction) { out.f = [ft * tx, ft * ty]; rx -= ft * tx; ry -= ft * ty; }
+      const vt0 = el.vx * tx + el.vy * ty;
+      out.slipping = Math.abs(el.type === 'circle' ? vt0 - (el.gridW / 2) * (el.omega || 0) : vt0) > 0.02;
+    }
+    if (Math.hypot(rx, ry) > 1e-6) out.other = [rx, ry];
+    return out;
+  }
+
   function computeFreeBodyDiagrams(sub) {
     for (const rope of STATE.ropes) rope._tension = null;
-    for (const el of STATE.elements) {
-      if (el.type !== 'rect' && el.type !== 'circle' || !el._fk) continue;
-      const m = el.mass || 1;
-      const k = el._fk;
-      const avg = (v) => [v[0] / sub, v[1] / sub];
-      const g = avg(k.g), z = avg(k.z), e = avg(k.e), s = avg(k.s);
-      let rx = m * (el._axMeas || 0) - (g[0] + z[0] + e[0] + s[0]);
-      let ry = m * (el._ayMeas || 0) - (g[1] + z[1] + e[1] + s[1]);
-
-      const fbd = { g, applied: [z[0] + e[0], z[1] + e[1]], spring: s, T: [], N: [0, 0], f: [0, 0], other: [0, 0],
-                    net: [m * (el._axMeas || 0), m * (el._ayMeas || 0)], contact: el._contact };
-      // 1) 장력
-      for (const r of _bodyRopeDirs(el)) {
-        const t = rx * r.ux + ry * r.uy;
-        if (t > 1e-6) {
-          fbd.T.push({ rope: r.rope, mag: t, ux: r.ux, uy: r.uy });
-          rx -= t * r.ux; ry -= t * r.uy;
-          r.rope._tension = (r.rope._tension == null) ? t : (r.rope._tension + t) / 2;
-        }
-      }
-      // 2) 접촉 (수직항력·마찰)
-      if (el._contact) {
-        const { nx, ny, friction } = el._contact;
-        const n = rx * nx + ry * ny;
-        if (n > 1e-6) { fbd.N = [n * nx, n * ny]; rx -= n * nx; ry -= n * ny; }
-        const tx = -ny, ty = nx;
-        const ft = rx * tx + ry * ty;
-        if (friction) { fbd.f = [ft * tx, ft * ty]; rx -= ft * tx; ry -= ft * ty; }
-        // 미끄러지는지: 접선 속도 크기로 판정 (정지 마찰 vs 운동 마찰 배지)
-        fbd.slipping = Math.abs(el.vx * tx + el.vy * ty) > 0.02;
-      }
-      // 3) 나머지
-      if (Math.hypot(rx, ry) > 1e-6) fbd.other = [rx, ry];
-      el._fbd = fbd;
+    const bodies = STATE.elements.filter(e => (e.type === 'rect' || e.type === 'circle') && e._fk);
+    const avg = (v) => [v[0] / sub, v[1] / sub];
+    const prep = new Map();
+    for (const el of bodies) {
+      const m = el.mass || 1, k = el._fk;
+      const g = avg(k.g), z = avg(k.z), e = avg(k.e), s = avg(k.s), c = avg(k.c);
+      const R = [m * (el._axMeas || 0) - (g[0] + z[0] + e[0] + s[0] + c[0]),
+                 m * (el._ayMeas || 0) - (g[1] + z[1] + e[1] + s[1] + c[1])];
+      prep.set(el.id, { g, applied: [z[0] + e[0], z[1] + e[1]], spring: s, bodyContact: c, R, net: [m * (el._axMeas || 0), m * (el._ayMeas || 0)] });
     }
+    // 1차: 스스로 결정되는 물체 → 실 장력 확정
+    const knownT = new Map(), pending = [];
+    const decomp = new Map();
+    for (const el of bodies) {
+      const d = _decomposeBody(el, prep.get(el.id).R, null);
+      if (d) { decomp.set(el.id, d); for (const t of d.T) _mergeTension(knownT, t.rope.id, t.mag); }
+      else pending.push(el);
+    }
+    // 2차: 상대 물체에서 확정된 장력을 알려진 힘으로 빼고 다시 시도, 그래도 안 되면 탐욕
+    for (const el of pending) {
+      const d = _decomposeBody(el, prep.get(el.id).R, knownT) || _greedyDecompose(el, prep.get(el.id).R, knownT);
+      decomp.set(el.id, d);
+      for (const t of d.T) _mergeTension(knownT, t.rope.id, t.mag);
+    }
+    for (const el of bodies) {
+      const p = prep.get(el.id), d = decomp.get(el.id);
+      el._fbd = { g: p.g, applied: p.applied, spring: p.spring, bodyContact: p.bodyContact, T: d.T, N: d.N, f: d.f, other: d.other,
+                  net: p.net, contact: el._contact, slipping: d.slipping };
+    }
+    for (const rope of STATE.ropes) { const t = knownT.get(rope.id); if (t != null) rope._tension = t; }
+  }
+  function _mergeTension(map, id, t) {
+    if (!(t > 1e-6)) return;
+    map.set(id, map.has(id) ? (map.get(id) + t) / 2 : t);
   }
 
   /* ================================================================
@@ -813,7 +909,8 @@
 
     if (!bestSeg || maxPen <= 0) return;
     el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
-    el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction };   // 자유물체도용
+    el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction,
+                    muK: bestSeg.isFriction ? (bestSeg.muK ?? (bestSeg.muS ?? bestSeg.mu ?? 0) * 0.8) : 0 };   // 자유물체도용
 
     // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
     const nx = bestNx, ny = bestNy;
@@ -947,7 +1044,8 @@
 
     if (maxPen < 1e-9 || !bestSeg) return;
     el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
-    el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction };   // 자유물체도용
+    el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction,
+                    muK: bestSeg.isFriction ? (bestSeg.muK ?? (bestSeg.muS ?? bestSeg.mu ?? 0) * 0.8) : 0 };   // 자유물체도용
 
     // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
     el.physX += bestNx * maxPen;
@@ -1933,7 +2031,8 @@
   }
 
   /* ── 7-1. 물체 간 충돌 resolveBodyCollisions() ── */
-  function resolveBodyCollisions() {
+  function resolveBodyCollisions(dt) {
+    _bodyDt = dt || 0;
     const bodies = STATE.elements.filter(e => e.type === 'rect' || e.type === 'circle');
     for (let i = 0; i < bodies.length; i++) {
       for (let j = i + 1; j < bodies.length; j++) {
@@ -1944,6 +2043,14 @@
         if (a.type === 'circle' && b.type === 'rect')   _resolveRectCircle(b, a);
       }
     }
+  }
+  let _bodyDt = 0;
+  /** 물체 간 충돌 임펄스 J(a→b 법선 방향)를 두 물체의 접촉력 누적기에 더한다 (자유물체도의 "알려진 힘") */
+  function _accBodyContact(a, b, J, nx, ny) {
+    if (!(_bodyDt > 0)) return;
+    const F = J / _bodyDt;
+    if (a._fk) { a._fk.c[0] -= F * nx; a._fk.c[1] -= F * ny; }
+    if (b._fk) { b._fk.c[0] += F * nx; b._fk.c[1] += F * ny; }
   }
 
   const GS_PHYS = () => CONFIG.GRID_SIZE;
@@ -1987,6 +2094,7 @@
     const J = -(1 + e_c) * vRel / invM;
     a.vx -= J/m1 * nx;  a.vy -= J/m1 * ny;
     b.vx += J/m2 * nx;  b.vy += J/m2 * ny;
+    _accBodyContact(a, b, J, nx, ny);
   }
 
   /** CircleBody ↔ CircleBody */
@@ -2014,6 +2122,7 @@
     const J = -(1 + e_c) * vRel / invM;
     a.vx -= J/m1 * nx;  a.vy -= J/m1 * ny;
     b.vx += J/m2 * nx;  b.vy += J/m2 * ny;
+    _accBodyContact(a, b, J, nx, ny);
   }
 
   /** RectBody ↔ CircleBody (원-AABB) */
@@ -2045,6 +2154,7 @@
     const J = -(1 + e_c) * vRel / invM;
     rect.vx -= J/m1 * nx;  rect.vy -= J/m1 * ny;
     circ.vx += J/m2 * nx;  circ.vy += J/m2 * ny;
+    _accBodyContact(rect, circ, J, nx, ny);
   }
 
   /** physX/Y → gridX/Y 역산 헬퍼 */

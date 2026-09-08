@@ -57,7 +57,7 @@
         const fr = Math.hypot(f.f[0], f.f[1]);
         if (f.contact) {
           rows.push({ k: '수직항력 N', v: _u(N, 'N', 2) });
-          if (f.contact.friction) rows.push({ k: '마찰력 f', v: _u(fr, 'N', 2), badge: f.slipping ? '운동 마찰' : '정지 마찰', cls: f.slipping ? 'warn' : 'ok' });
+          if (f.contact.friction) rows.push({ k: '마찰력 f', v: _u(fr, 'N', 2), badge: f.slipping ? '운동 마찰' : (sel.type === 'circle' && Math.hypot(sel.vx, sel.vy) > 0.02 ? '정지 마찰 (구름)' : '정지 마찰'), cls: f.slipping ? 'warn' : 'ok' });
         } else {
           rows.push({ k: '수직항력 N', v: '0 N', cls: 'dim', badge: '접촉 없음' });
         }
@@ -66,8 +66,10 @@
         if (sp > 1e-6) rows.push({ k: '탄성력', v: _u(sp, 'N', 2) });
         const ap = Math.hypot(f.applied[0], f.applied[1]);
         if (ap > 1e-6) rows.push({ k: sel.drag > 0 ? '외력·힘구간·공기저항' : '외력·힘구간', v: _u(ap, 'N', 2) });
+        const bc = f.bodyContact ? Math.hypot(f.bodyContact[0], f.bodyContact[1]) : 0;
+        if (bc > 0.05) rows.push({ k: '물체 접촉력', v: _u(bc, 'N', 2) });
         const ot = Math.hypot(f.other[0], f.other[1]);
-        if (ot > 1e-6) rows.push({ k: '기타 접촉력', v: _u(ot, 'N', 2), cls: 'dim' });
+        if (ot > 0.05) rows.push({ k: '기타 접촉력', v: _u(ot, 'N', 2), cls: 'dim' });
         const net = Math.hypot(f.net[0], f.net[1]);
         rows.push({ k: '알짜힘 ΣF = ma', v: _u(net, 'N', 2), badge: net < 0.05 ? '평형' : null, cls: net < 0.05 ? 'ok' : null });
       } else {

@@ -2,7 +2,7 @@
 
 [![바로 실행](https://img.shields.io/badge/%EB%B0%94%EB%A1%9C%20%EC%8B%A4%ED%96%89-shy.ai.kr%2Fmechanics__simulation-2563eb?style=for-the-badge&logo=googlechrome&logoColor=white)](https://shy.ai.kr/mechanics_simulation/)
 ![Vanilla JS](https://img.shields.io/badge/Vanilla%20JS-%EB%B9%8C%EB%93%9C%20%EC%97%86%EC%9D%8C-f7df1e?style=flat-square&logo=javascript&logoColor=000)
-![Tests](https://img.shields.io/badge/%EB%AC%BC%EB%A6%AC%20%EA%B2%80%EC%A6%9D-219%20%2B%2041-16a34a?style=flat-square)
+![Tests](https://img.shields.io/badge/%EB%AC%BC%EB%A6%AC%20%EA%B2%80%EC%A6%9D-236%20%2B%2041-16a34a?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 고등학교 물리 수업용 **웹 고전역학 시뮬레이터**입니다. 물체·바닥면·빗면을 놓고 실·도르래·용수철·외력으로
@@ -270,7 +270,7 @@ python -m http.server 8123     # → http://localhost:8123
 검증:
 
 ```bash
-node test/run-all.js          # 물리·모듈 수치 검증 — 14 스위트 219 항목 (Node, 의존성 없음)
+node test/run-all.js          # 물리·모듈 수치 검증 — 15 스위트 236 항목 (Node, 의존성 없음)
 node test/browser/run.js      # 화면에 보이는 값 41 항목 — 헤드리스 Chrome (puppeteer-core)
 ```
 

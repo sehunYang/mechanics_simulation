@@ -53,7 +53,7 @@
       vMax = Math.max(vMax, Math.hypot(el.vx || 0, el.vy || 0));
       const f = el._fbd;
       if (f) {
-        for (const v of [f.g, f.N, f.f, f.applied, f.spring, f.other, f.net]) fMax = Math.max(fMax, Math.hypot(v[0], v[1]));
+        for (const v of [f.g, f.N, f.f, f.applied, f.spring, f.other, f.net, f.bodyContact || [0, 0]]) fMax = Math.max(fMax, Math.hypot(v[0], v[1]));
         for (const t of f.T) fMax = Math.max(fMax, t.mag);
       } else {
         fMax = Math.max(fMax, (el.mass || 1) * CONFIG.G);
@@ -77,7 +77,7 @@
       if (STATE.showForces && fMax > 1e-9) {
         const k = OV.fMaxCells * cs / fMax;
         const f = live && el._fbd ? el._fbd
-          : { g: [0, STATE.gravityOn ? -(el.mass || 1) * CONFIG.G : 0], N: [0, 0], f: [0, 0], T: [], applied: [0, 0], spring: [0, 0], other: [0, 0], net: null };
+          : { g: [0, STATE.gravityOn ? -(el.mass || 1) * CONFIG.G : 0], N: [0, 0], f: [0, 0], T: [], applied: [0, 0], spring: [0, 0], other: [0, 0], bodyContact: [0, 0], net: null };
         const draw = (v, label, side) => {
           const m = Math.hypot(v[0], v[1]);
           if (m * k < OV.minCells * cs) return;
@@ -89,7 +89,8 @@
         draw(f.applied, 'F', -1);
         draw(f.spring, 'F탄', 1);
         for (const t of f.T) draw([t.mag * t.ux, t.mag * t.uy], 'T', -1);
-        if (Math.hypot(...f.other) * k >= OV.minCells * cs) draw(f.other, 'F접촉', 1);
+        if (f.bodyContact && Math.hypot(...f.bodyContact) * k >= OV.minCells * cs) draw(f.bodyContact, 'F접촉', 1);
+        if (Math.hypot(...f.other) * k >= OV.minCells * cs) draw(f.other, 'F기타', 1);
         if (f.net) {
           const m = Math.hypot(f.net[0], f.net[1]);
           if (m * k >= OV.minCells * cs) _arrow(ctx, c.x, c.y, f.net[0], f.net[1], m * k, OV.netColor, `ΣF ${_fmt(m, 1)} N`, { dash: [5 / VIEWPORT.scale, 4 / VIEWPORT.scale], side: -1, lw: 1.4 });
