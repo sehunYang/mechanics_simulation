@@ -43,15 +43,15 @@
        스타일시트 (css/) — 링크 순서 = 캐스케이드 순서, responsive 는 마지막.
          ?v= 는 캐시 버스터 — 배포 때 날짜를 올리면 GitHub Pages 캐시가 갱신된다.
        ════════════════════════════════════════════════════════════════ -->
-  <link rel="stylesheet" href="css/tokens.css?v=20260909a">        <!-- 디자인 토큰 -->
-  <link rel="stylesheet" href="css/base.css?v=20260909a">          <!-- 리셋 · 레이아웃 -->
-  <link rel="stylesheet" href="css/sidebar.css?v=20260909a">       <!-- 팔레트 -->
-  <link rel="stylesheet" href="css/canvas.css?v=20260909a">        <!-- 캔버스 · 줌 · 실행 배지 · 배속 -->
-  <link rel="stylesheet" href="css/controls.css?v=20260909a">      <!-- 하단 pill · 툴바 -->
-  <link rel="stylesheet" href="css/panel.css?v=20260909a">         <!-- 속성 패널 -->
-  <link rel="stylesheet" href="css/modal.css?v=20260909a">         <!-- 키패드 · 확인 대화상자 -->
-  <link rel="stylesheet" href="css/overlays.css?v=20260909a">      <!-- 토스트 · 시작 카드 · 갤러리 · 상태 알림 · 도움말 -->
-  <link rel="stylesheet" href="css/responsive.css?v=20260909a">    <!-- 모바일 (≤480px) -->
+  <link rel="stylesheet" href="css/tokens.css?v=20260909b">        <!-- 디자인 토큰 -->
+  <link rel="stylesheet" href="css/base.css?v=20260909b">          <!-- 리셋 · 레이아웃 -->
+  <link rel="stylesheet" href="css/sidebar.css?v=20260909b">       <!-- 팔레트 -->
+  <link rel="stylesheet" href="css/canvas.css?v=20260909b">        <!-- 캔버스 · 줌 · 실행 배지 · 배속 -->
+  <link rel="stylesheet" href="css/controls.css?v=20260909b">      <!-- 하단 pill · 툴바 -->
+  <link rel="stylesheet" href="css/panel.css?v=20260909b">         <!-- 속성 패널 -->
+  <link rel="stylesheet" href="css/modal.css?v=20260909b">         <!-- 키패드 · 확인 대화상자 -->
+  <link rel="stylesheet" href="css/overlays.css?v=20260909b">      <!-- 토스트 · 시작 카드 · 갤러리 · 상태 알림 · 도움말 -->
+  <link rel="stylesheet" href="css/responsive.css?v=20260909b">    <!-- 모바일 (≤480px) -->
 </head>
 <body>
 
@@ -223,7 +223,7 @@
       <div class="hp-h">3. 툴바 (왼쪽 아래)</div>
       <table class="hp-t">
         <tr><td>📚 예제</td><td>대표 상황 12개 — 빗면·아트우드·움직도르래·용수철·진자·충돌·힘구간·포물선·원운동·회전 낙하·둥근 언덕.</td></tr>
-        <tr><td>→ 속도 · ⇉ 힘</td><td>속도 벡터 · 자유물체도(중력·수직항력·마찰력·장력·알짜힘).</td></tr>
+        <tr><td>→ 속도 · ⇉ 힘</td><td>속도 벡터 · 자유물체도(중력·수직항력·마찰력·장력·알짜힘). <b>화살표 길이 = 크기</b> — 힘은 가장 무거운 물체의 mg 가 3칸인 눈금(실행 중 고정), 속도는 1칸 = 2.5 m/s. 눈금은 화면 왼쪽 위에 적힙니다. 너무 긴 화살표는 8칸에서 잘라 // 표시.</td></tr>
         <tr><td>kg</td><td>값 라벨 켬/끔 — 끄고 촬영하면 값이 빠진 빈 문항 그림.</td></tr>
         <tr><td>📈 그래프</td><td>y·x·v·a·E – t 시간 그래프. 초기화 뒤 다시 실행하면 이전 실행이 점선으로 겹친다.</td></tr>
         <tr><td>POE</td><td>예측 → 관찰 → 설명. 오개념 진단 34문항 + 장면 해설 12개. 결과 CSV.</td></tr>
@@ -295,35 +295,35 @@
   <!-- ════════════════════════════════════════════════════════════════
        스크립트 (js/) — 클래식 스크립트, 선언 순서 = 의존 순서. 순서 변경 금지.
        ════════════════════════════════════════════════════════════════ -->
-  <script src="js/config.js?v=20260909a"></script>        <!-- CONFIG · VIEWPORT · STATE · DOM 참조 -->
-  <script src="js/events.js?v=20260909a"></script>        <!-- 이벤트 버스 -->
-  <script src="js/coords.js?v=20260909a"></script>        <!-- 좌표 변환 -->
-  <script src="js/svg-shapes.js?v=20260909a"></script>    <!-- 수능 작도 규격 도형 -->
-  <script src="js/canvas.js?v=20260909a"></script>        <!-- 캔버스 초기화 · 격자 -->
-  <script src="js/render.js?v=20260909a"></script>        <!-- 렌더 루프 -->
-  <script src="js/elements.js?v=20260909a"></script>      <!-- 요소 클래스 -->
-  <script src="js/joints.js?v=20260909a"></script>        <!-- 바닥면 이음 클로소이드 다듬기 -->
-  <script src="js/hit-test.js?v=20260909a"></script>      <!-- 히트 테스트 -->
-  <script src="js/interaction.js?v=20260909a"></script>   <!-- 포인터 · 키보드 -->
-  <script src="js/ui-controls.js?v=20260909a"></script>   <!-- 팔레트 · 하단 버튼 · 배속 -->
-  <script src="js/physics.js?v=20260909a"></script>       <!-- 물리 · 검증 -->
-  <script src="js/series.js?v=20260909a"></script>        <!-- 시계열 기록 · CSV -->
-  <script src="js/overlay.js?v=20260909a"></script>       <!-- 속도·힘 벡터 · 잔상 궤적 오버레이 -->
-  <script src="js/capture.js?v=20260909a"></script>       <!-- SVG 촬영 -->
-  <script src="js/modal.js?v=20260909a"></script>         <!-- 키패드 · 확인 대화상자 -->
-  <script src="js/measure.js?v=20260909a"></script>       <!-- 측정값 (패널 하단, 실행 중 갱신) -->
-  <script src="js/panel.js?v=20260909a"></script>         <!-- 속성 패널 -->
-  <script src="js/history.js?v=20260909a"></script>       <!-- 실행취소 -->
-  <script src="js/scene.js?v=20260909a"></script>         <!-- 장면 직렬화 · DSL · 뷰 맞춤 -->
-  <script src="js/scenes.js?v=20260909a"></script>        <!-- 장면 갤러리 -->
-  <script src="js/share.js?v=20260909a"></script>         <!-- 공유 링크 -->
-  <script src="js/headless.js?v=20260909a"></script>      <!-- 화면 없이 장면 돌려 측정 -->
-  <script src="js/poe-data.js?v=20260909a"></script>      <!-- POE 활동 데이터 -->
-  <script src="js/poe.js?v=20260909a"></script>           <!-- POE 엔진 -->
-  <script src="js/sweep.js?v=20260909a"></script>         <!-- 파라미터 스윕 -->
-  <script src="js/graph.js?v=20260909a"></script>         <!-- 시간 그래프 패널 -->
-  <script src="js/toolbar.js?v=20260909a"></script>       <!-- 표시 토글 -->
-  <script src="js/guide.js?v=20260909a"></script>         <!-- 시작 카드 · 갤러리 · 상태 알림 · 도움말 · 토스트 -->
-  <script src="js/boot.js?v=20260909a"></script>          <!-- 부트스트랩 -->
+  <script src="js/config.js?v=20260909b"></script>        <!-- CONFIG · VIEWPORT · STATE · DOM 참조 -->
+  <script src="js/events.js?v=20260909b"></script>        <!-- 이벤트 버스 -->
+  <script src="js/coords.js?v=20260909b"></script>        <!-- 좌표 변환 -->
+  <script src="js/svg-shapes.js?v=20260909b"></script>    <!-- 수능 작도 규격 도형 -->
+  <script src="js/canvas.js?v=20260909b"></script>        <!-- 캔버스 초기화 · 격자 -->
+  <script src="js/render.js?v=20260909b"></script>        <!-- 렌더 루프 -->
+  <script src="js/elements.js?v=20260909b"></script>      <!-- 요소 클래스 -->
+  <script src="js/joints.js?v=20260909b"></script>        <!-- 바닥면 이음 클로소이드 다듬기 -->
+  <script src="js/hit-test.js?v=20260909b"></script>      <!-- 히트 테스트 -->
+  <script src="js/interaction.js?v=20260909b"></script>   <!-- 포인터 · 키보드 -->
+  <script src="js/ui-controls.js?v=20260909b"></script>   <!-- 팔레트 · 하단 버튼 · 배속 -->
+  <script src="js/physics.js?v=20260909b"></script>       <!-- 물리 · 검증 -->
+  <script src="js/series.js?v=20260909b"></script>        <!-- 시계열 기록 · CSV -->
+  <script src="js/overlay.js?v=20260909b"></script>       <!-- 속도·힘 벡터 · 잔상 궤적 오버레이 -->
+  <script src="js/capture.js?v=20260909b"></script>       <!-- SVG 촬영 -->
+  <script src="js/modal.js?v=20260909b"></script>         <!-- 키패드 · 확인 대화상자 -->
+  <script src="js/measure.js?v=20260909b"></script>       <!-- 측정값 (패널 하단, 실행 중 갱신) -->
+  <script src="js/panel.js?v=20260909b"></script>         <!-- 속성 패널 -->
+  <script src="js/history.js?v=20260909b"></script>       <!-- 실행취소 -->
+  <script src="js/scene.js?v=20260909b"></script>         <!-- 장면 직렬화 · DSL · 뷰 맞춤 -->
+  <script src="js/scenes.js?v=20260909b"></script>        <!-- 장면 갤러리 -->
+  <script src="js/share.js?v=20260909b"></script>         <!-- 공유 링크 -->
+  <script src="js/headless.js?v=20260909b"></script>      <!-- 화면 없이 장면 돌려 측정 -->
+  <script src="js/poe-data.js?v=20260909b"></script>      <!-- POE 활동 데이터 -->
+  <script src="js/poe.js?v=20260909b"></script>           <!-- POE 엔진 -->
+  <script src="js/sweep.js?v=20260909b"></script>         <!-- 파라미터 스윕 -->
+  <script src="js/graph.js?v=20260909b"></script>         <!-- 시간 그래프 패널 -->
+  <script src="js/toolbar.js?v=20260909b"></script>       <!-- 표시 토글 -->
+  <script src="js/guide.js?v=20260909b"></script>         <!-- 시작 카드 · 갤러리 · 상태 알림 · 도움말 · 토스트 -->
+  <script src="js/boot.js?v=20260909b"></script>          <!-- 부트스트랩 -->
 </body>
 </html>
