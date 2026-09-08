@@ -1,7 +1,7 @@
 # 아키텍처 (Architecture)
 
 > 이 문서는 **코드를 고치려는 사람**을 위한 것입니다.
-> 수업에서 쓰는 방법은 [README.md](README.md) 를 보세요.
+> 수업에서 쓰는 방법은 [README.md](../README.md) 를, 문서 전체 목록은 [docs/README.md](README.md) 를 보세요.
 
 빌드 도구·패키지 매니저·트랜스파일러가 없는 **순수 정적 웹앱**입니다.
 `index.html` 이 CSS·JS 를 순서대로 불러오고, 모든 JS 는 **클래식 스크립트 하나의
@@ -78,13 +78,22 @@ mechanics_simulation/
 │   ├── toolbar.js             표시 토글 (속도·힘·라벨·그래프)
 │   ├── guide.js               시작 카드 · 갤러리 · 상태 알림 · 도움말 · 토스트
 │   └── boot.js                부트스트랩 (init 순서 · 공유 링크 복원)
-├── test/                      위 "검증" 참고
-├── docs/images/               README 스크린샷 (browser/run.js --shots 가 생성)
-├── Circuit_Port_Analysis.md   형제 앱(circuit_simulation)에서 이식한 항목 분석
-├── Persona_Rubric_Evaluation.md  네 페르소나 루브릭 평가 · 로드맵 보정
-├── Design_Suneung_Comparison.md  수능 작도 규격 대조
-└── Physics_Verification_Report.md · QC_Report_v1/v2.md   물리 검증·품질 기록
+├── assets/                    파비콘 · 홈 화면 아이콘 · OG 이미지 · 로고(512px)
+├── test/                      위 "검증" 참고 — run-all.js · spec*.js · browser/
+├── docs/
+│   ├── README.md              문서 목록과 요약
+│   ├── ARCHITECTURE.md        이 문서
+│   ├── images/                README 스크린샷 (browser/run.js --shots 가 생성)
+│   ├── design/                설계 근거 (수능 작도 관례 · circuit_simulation 이식 분석 · 페르소나 루브릭)
+│   ├── reports/               검증·품질 기록 (날짜 접두어: YYYY-MM-DD-주제.md)
+│   └── archive/               모듈 분리 전 단일 파일 버전
+├── README.md                  교사·학생용 안내
+├── LICENSE                    MIT
+└── .nojekyll                  GitHub Pages 를 정적 파일 그대로 서빙
 ```
+
+문서를 새로 쓸 때: 설계 결정과 근거는 `docs/design/`, 한 시점의 점검·검증 결과는 `docs/reports/`
+(파일명 앞에 날짜), 코드 구조가 바뀌면 이 문서를 고친다. 저장소 루트에는 README·LICENSE 외의 문서를 두지 않는다.
 
 ---
 

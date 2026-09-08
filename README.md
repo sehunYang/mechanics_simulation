@@ -187,7 +187,7 @@ POE **충돌·운동량** 네 문항을 순서대로. 같은 질량(속도 교�
 ### 활동 7. 시험지 그림 만들기 `수업 준비`
 
 장면을 만든 뒤 툴바의 **kg** 를 꺼 값 라벨을 없애고 **📷 촬영**. 흰 바탕·검정 선 SVG 가 저장됩니다
-(수능 물리 문항 작도 규격 — 근거는 [`Design_Suneung_Comparison.md`](Design_Suneung_Comparison.md)).
+(수능 물리 문항 작도 규격 — 근거는 [수능 작도 관례 대조](docs/design/suneung-drawing-convention.md)).
 **🔗 공유**로 같은 장면 링크를 학생에게 주면 각자 기기에서 그대로 열어 실험할 수 있습니다.
 
 ---
@@ -276,9 +276,16 @@ node test/run-all.js          # 물리·모듈 수치 검증 — 17 스위트 24
 node test/browser/run.js      # 화면에 보이는 값 41 항목 — 헤드리스 Chrome (puppeteer-core)
 ```
 
-구조와 설계 의도는 **[ARCHITECTURE.md](ARCHITECTURE.md)** 에, 형제 프로젝트
-[circuit_simulation](https://github.com/sehunYang/circuit_simulation) 에서 무엇을 어떻게 옮겼는지는
-[`Circuit_Port_Analysis.md`](Circuit_Port_Analysis.md) 와 [`Persona_Rubric_Evaluation.md`](Persona_Rubric_Evaluation.md) 에 있습니다.
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 코드 구조·상태와 이벤트·물리 엔진 설계 의도 (고쳐 쓰려는 사람용) |
+| [docs/design/](docs/design/) | 설계 근거 — 수능 작도 관례 대조, 형제 프로젝트 [circuit_simulation](https://github.com/sehunYang/circuit_simulation) 이식 분석, 네 페르소나 루브릭 평가 |
+| [docs/reports/](docs/reports/) | 검증·품질 기록 — 물리 정합성 검증 보고서, QC 리포트 |
+| [docs/archive/](docs/archive/) | 모듈로 나누기 전 단일 파일 버전 (2026-07-05) |
+
+전체 목록과 각 문서의 요약은 [docs/README.md](docs/README.md) 에 있습니다.
 
 ---
 
