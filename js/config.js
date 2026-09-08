@@ -64,8 +64,14 @@
     activePointers:    new Map(),
     prevPinchDist:     null,
     _ropePreviewWorld: null,   // ROPE_DRAW 커서 위치 (월드 픽셀)
-    speedMultiplier:   1,      // 배속 (1/2/5/10/100), RUNNING 중에만 의미 있음
+    speedMultiplier:   1,      // 배속 (0.25 … 100), RUNNING 중에만 의미 있음
     simTime:           0,      // 누적 시뮬레이션 시간 [s] (배속 반영, 실행 표시용)
+    warnings:          [],     // validateAll 이 채우는 편집 상태 경고 (guide.js 가 표시)
+    currentSceneId:    null,   // 갤러리에서 불러온 장면 id (직접 편집하면 null)
+    // 표시 토글 (2단계 — render.js 오버레이가 읽는다)
+    showVectors:       false,  // 속도·힘 벡터
+    showLabels:        true,   // 질량·k 등 값 라벨
+    showForces:        false,  // 자유물체도 (힘 성분 분해)
   };
 
   /* ================================================================
@@ -81,7 +87,6 @@
   const btnReset     = document.getElementById('btn-reset');
   const btnCapture   = document.getElementById('btn-capture');
   const btnGravity   = document.getElementById('btn-gravity');
-  const warningBar   = document.getElementById('warning-bar');
   const panelRight   = document.getElementById('panel-right');
 
   /* 배속 버튼: HTML에 없으므로 동적 생성, canvas-wrapper 우측 하단에 배치
@@ -96,9 +101,20 @@
   const riLabel = runIndicator.querySelector('.ri-label');
   const riTime  = runIndicator.querySelector('.ri-time');
 
+  /* 배속·한 스텝 버튼: 실행/일시정지 중에만 보인다 (render.js 가 토글).
+     배속은 느린 쪽(0.25x·0.5x)도 있어 충돌·실이 팽팽해지는 순간을 볼 수 있다. */
   const btnSpeed = document.createElement('button');
   btnSpeed.id = 'btn-speed';
-  btnSpeed.className = 'ctrl-btn';
+  btnSpeed.className = 'ctrl-btn float-btn';
   btnSpeed.textContent = '1x';
-  btnSpeed.style.cssText = 'position:absolute;bottom:40px;right:8px;z-index:20;display:none;';
+  btnSpeed.title = '배속 — 눌러서 0.25x → 0.5x → 1x → 2x → 5x → 10x → 100x 순환';
+  btnSpeed.style.display = 'none';
   canvasWrapper.appendChild(btnSpeed);
+
+  const btnStep = document.createElement('button');
+  btnStep.id = 'btn-step';
+  btnStep.className = 'ctrl-btn float-btn';
+  btnStep.textContent = '⏭ 1/60 s';
+  btnStep.title = '한 스텝(1/60 s)만 진행 — 일시정지 중에만';
+  btnStep.style.display = 'none';
+  canvasWrapper.appendChild(btnStep);

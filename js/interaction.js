@@ -512,6 +512,12 @@
     // simMode 와 무관하게 동작하므로, 여기서는 1포인터 팬만 열어 주면 된다.
     if (STATE.simMode !== 'EDIT') {
       if (STATE.activePointers.size === 1) {
+        // 실행 중에도 **선택**은 된다 — 속성 패널의 측정값(속도·힘·에너지)을 보기 위해.
+        // 편집(드래그·핸들)은 여전히 막히고, 빈 곳이면 팬.
+        const world = screenToWorld(e.offsetX, e.offsetY);
+        const hit = hitTestElement(world.x, world.y) || hitTestRope(world.x, world.y) || hitTestFloorSegment(world.x, world.y);
+        if (hit) { _selectObject(hit); return; }
+        _selectObject(null);
         STATE.interactionMode = 'PANNING';
         _panStart = {
           screenX: e.clientX, screenY: e.clientY,

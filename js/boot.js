@@ -29,6 +29,17 @@
     requestAnimationFrame(fitCanvas);
     validateAll();
     initHistory();   // 최초 씬 상태를 실행취소 베이스로 기록
+    if (typeof initGuide === 'function') initGuide();
+    if (typeof initToolbar === 'function') initToolbar();
+    if (typeof initGraph === 'function') initGraph();
+    if (typeof initPOE === 'function') initPOE();
+    if (typeof initSweep === 'function') initSweep();
+    // 공유 링크(#s=…)로 열렸으면 그 장면을 복원 — 캔버스 크기가 잡힌 뒤 뷰를 맞춘다
+    if (typeof applySceneFromHash === 'function') {
+      requestAnimationFrame(() => {
+        if (applySceneFromHash()) showToast('공유된 장면을 불러왔습니다', 'ok', 2200);
+      });
+    }
   });
 
   

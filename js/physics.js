@@ -17,22 +17,27 @@
     document.getElementById('sidebar-left').style.pointerEvents = 'none';
     document.getElementById('sidebar-left').style.opacity = '0.4';
     _selectObject(null);
+    if (typeof clearSeries === 'function') clearSeries();   // 시계열은 실행마다 새로
+    if (typeof EVENTS !== 'undefined') EVENTS.emit('sim:start');
   }
 
   function pauseSimulation() {
     STATE.simMode = 'PAUSED';
     btnRun.textContent = '▶ 재개';
+    if (typeof EVENTS !== 'undefined') EVENTS.emit('sim:pause');
   }
 
   function resumeSimulation() {
     STATE.simMode = 'RUNNING';
     btnRun.textContent = '⏸ 일시정지';
+    if (typeof EVENTS !== 'undefined') EVENTS.emit('sim:resume');
   }
 
   function stopSimulation() {
     // rAF는 renderLoop에서 계속 돌아야 하므로 취소하지 않음
     document.getElementById('sidebar-left').style.pointerEvents = '';
     document.getElementById('sidebar-left').style.opacity = '';
+    if (typeof EVENTS !== 'undefined') EVENTS.emit('sim:stop');
   }
 
   /* ── 스냅샷 ── */
@@ -267,6 +272,18 @@
   function simStep(dt) {
     const sub = CONFIG.SUBSTEPS;
     const subDt = dt / sub;
+    // 스텝 시작 속도 — 스텝 끝에 Δv/dt 로 "실제 가속도"를 잰다.
+    //   힘 합산값(ax/ay)은 integrate 에서 0 으로 지워지고, 실·충돌·마찰의
+    //   임펄스는 힘으로 적분되지 않으므로 속도 차이로 재는 것이 정확하다.
+    for (const el of STATE.elements) {
+      if (el.type === 'rect' || el.type === 'circle') {
+        el._vxPre = el.vx; el._vyPre = el.vy;
+        // 자유물체도용 누적기 — 힘으로 적분되는 "알려진 힘" (중력·힘구간·외력·용수철) 과 접촉 정보
+        el._fk = { g: [0, 0], z: [0, 0], e: [0, 0], s: [0, 0] };
+        el._contact = null;
+        el._hitBody = false;
+      }
+    }
     for (let i = 0; i < sub; i++) {
       _clearStepFlags();
       const _e0 = _stepEnergyBefore();
@@ -278,7 +295,93 @@
       resolveRopeConstraints(subDt);
       _projectStepEnergy(_e0);
     }
+    if (dt > 0) {
+      for (const el of STATE.elements) {
+        if (el.type === 'rect' || el.type === 'circle') {
+          el._axMeas = (el.vx - el._vxPre) / dt;
+          el._ayMeas = (el.vy - el._vyPre) / dt;
+        }
+      }
+      computeFreeBodyDiagrams(sub);
+    }
+    if (typeof HEADLESS !== 'undefined' && HEADLESS.active) return;   // 헤드리스: 궤적·시계열·이벤트 생략
     recordTrails();
+    if (typeof recordSeries === 'function') recordSeries(dt);
+    if (typeof EVENTS !== 'undefined') EVENTS.emit('sim:step', dt);
+  }
+
+  /* ================================================================
+     [FREE-BODY DIAGRAM] — 물체에 작용하는 힘의 분해 (자유물체도)
+
+     한 스텝의 실제 가속도 a = Δv/dt 에서 알려진 힘(중력·힘구간·외력·용수철)을
+     빼면 남는 것이 제약력(수직항력·마찰력·장력·충돌)이다:
+         R = m·a − (F_g + F_zone + F_ext + F_spring)
+     제약은 임펄스·위치 투영으로 풀리기 때문에 힘을 직접 더해 얻을 수 없고,
+     이렇게 잔차로 재는 것이 유일하게 일관된 방법이다 (실 길이 보존 투영,
+     에너지 보정까지 모두 포함된 "실제로 받은 힘").
+
+     잔차를 나누는 규칙 (탐욕적):
+       1) 실이 붙어 있으면 실 방향 u_i 로 투영한 양(≥0)을 장력 T_i 로 떼어낸다.
+       2) 이번 스텝에 바닥과 닿았으면 남은 잔차를 접촉 법선 n 으로 투영 → 수직항력 N,
+          접선 성분 → 마찰력 f (마찰면이 아니면 '기타 접촉력').
+       3) 그 밖의 잔차 → 기타 (물체 간 충돌 등).
+     결과는 el._fbd 에 담기고 렌더(벡터)·속성 패널·POE 가 읽는다.
+  ================================================================ */
+
+  /** 물체에 붙은 실과 그 방향(물체 → 상대 앵커, 물리 단위벡터) */
+  function _bodyRopeDirs(el) {
+    const out = [];
+    for (const rope of STATE.ropes) {
+      let mine = null, other = null;
+      if (rope.anchorA.elementId === el.id) { mine = rope.anchorA; other = rope.anchorB; }
+      else if (rope.anchorB.elementId === el.id) { mine = rope.anchorB; other = rope.anchorA; }
+      if (!mine) continue;
+      const A = getAttachPhysPos(mine), B = getAttachPhysPos(other);
+      if (!A || !B) continue;
+      const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
+      if (d < 1e-9) continue;
+      out.push({ rope, ux: dx / d, uy: dy / d, ax: A.x, ay: A.y });
+    }
+    return out;
+  }
+
+  function computeFreeBodyDiagrams(sub) {
+    for (const rope of STATE.ropes) rope._tension = null;
+    for (const el of STATE.elements) {
+      if (el.type !== 'rect' && el.type !== 'circle' || !el._fk) continue;
+      const m = el.mass || 1;
+      const k = el._fk;
+      const avg = (v) => [v[0] / sub, v[1] / sub];
+      const g = avg(k.g), z = avg(k.z), e = avg(k.e), s = avg(k.s);
+      let rx = m * (el._axMeas || 0) - (g[0] + z[0] + e[0] + s[0]);
+      let ry = m * (el._ayMeas || 0) - (g[1] + z[1] + e[1] + s[1]);
+
+      const fbd = { g, applied: [z[0] + e[0], z[1] + e[1]], spring: s, T: [], N: [0, 0], f: [0, 0], other: [0, 0],
+                    net: [m * (el._axMeas || 0), m * (el._ayMeas || 0)], contact: el._contact };
+      // 1) 장력
+      for (const r of _bodyRopeDirs(el)) {
+        const t = rx * r.ux + ry * r.uy;
+        if (t > 1e-6) {
+          fbd.T.push({ rope: r.rope, mag: t, ux: r.ux, uy: r.uy });
+          rx -= t * r.ux; ry -= t * r.uy;
+          r.rope._tension = (r.rope._tension == null) ? t : (r.rope._tension + t) / 2;
+        }
+      }
+      // 2) 접촉 (수직항력·마찰)
+      if (el._contact) {
+        const { nx, ny, friction } = el._contact;
+        const n = rx * nx + ry * ny;
+        if (n > 1e-6) { fbd.N = [n * nx, n * ny]; rx -= n * nx; ry -= n * ny; }
+        const tx = -ny, ty = nx;
+        const ft = rx * tx + ry * ty;
+        if (friction) { fbd.f = [ft * tx, ft * ty]; rx -= ft * tx; ry -= ft * ty; }
+        // 미끄러지는지: 접선 속도 크기로 판정 (정지 마찰 vs 운동 마찰 배지)
+        fbd.slipping = Math.abs(el.vx * tx + el.vy * ty) > 0.02;
+      }
+      // 3) 나머지
+      if (Math.hypot(rx, ry) > 1e-6) fbd.other = [rx, ry];
+      el._fbd = fbd;
+    }
   }
 
   /* ================================================================
@@ -324,6 +427,15 @@
       // 중력 — 도르래는 무질량 중계점(자체 관성/무게 없음)이므로 제외
       if (STATE.gravityOn && el.type !== 'pulley') {
         el.ay -= CONFIG.G;
+        if (el._fk) el._fk.g[1] -= el.mass * CONFIG.G;
+      }
+
+      // 공기저항 (선형): F = −b·v — 종단속도 v_t = mg/b 탐구용. 보존력이 아니다.
+      if (el.type !== 'pulley' && el.drag > 0) {
+        const bx = -el.drag * el.vx, by = -el.drag * el.vy;
+        el.ax += bx / el.mass; el.ay += by / el.mass;
+        el._nonConservative = true;
+        if (el._fk) { el._fk.z[0] += bx; el._fk.z[1] += by; }
       }
 
       // ForceZone
@@ -334,6 +446,7 @@
             el.ax += zone.fx / el.mass;
             el.ay += zone.fy / el.mass;
             el._nonConservative = true;   // 보존력 아님 → 에너지 보정 대상 제외
+            if (el._fk) { el._fk.z[0] += zone.fx; el._fk.z[1] += zone.fy; }
           }
         }
       }
@@ -367,6 +480,7 @@
         body.ax += (ef.forceN * t.fdx) / body.mass;
         body.ay += (ef.forceN * t.fdy) / body.mass;
         body._nonConservative = true;
+        if (body._fk) { body._fk.e[0] += ef.forceN * t.fdx; body._fk.e[1] += ef.forceN * t.fdy; }
       }
     }
   }
@@ -699,6 +813,7 @@
 
     if (!bestSeg || maxPen <= 0) return;
     el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
+    el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction };   // 자유물체도용
 
     // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
     const nx = bestNx, ny = bestNy;
@@ -832,6 +947,7 @@
 
     if (maxPen < 1e-9 || !bestSeg) return;
     el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
+    el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction };   // 자유물체도용
 
     // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
     el.physX += bestNx * maxPen;
@@ -1803,11 +1919,13 @@
         leftEl.ax  += sForce * ux / leftEl.mass;
         leftEl.ay  += sForce * uy / leftEl.mass;
         leftEl._nonConservative = true;   // 용수철 퍼텐셜은 E 계산에 없음 → 제외
+        if (leftEl._fk) { leftEl._fk.s[0] += sForce * ux; leftEl._fk.s[1] += sForce * uy; }
       }
       if (rightTransmit && rightEl && (rightEl.type === 'rect' || rightEl.type === 'circle')) {
         rightEl.ax -= sForce * ux / rightEl.mass;
         rightEl.ay -= sForce * uy / rightEl.mass;
         rightEl._nonConservative = true;
+        if (rightEl._fk) { rightEl._fk.s[0] -= sForce * ux; rightEl._fk.s[1] -= sForce * uy; }
       }
 
       spring.L = Math.max(0.01, dist);
@@ -1861,6 +1979,7 @@
     b.physY += ny * pen * (1/m2)/invM;
     _syncGrid(a); _syncGrid(b);
     a._nonConservative = b._nonConservative = true;
+    a._hitBody = b._hitBody = true;
 
     // 충격량: vRel < 0 이면 서로 접근 중
     const vRel = (b.vx-a.vx)*nx + (b.vy-a.vy)*ny;
@@ -1960,8 +2079,12 @@
     // 바닥면 스냅으로 물체가 비정수 좌표에 놓일 수 있으므로 근접 허용(#6)
     const SNAP_TOL = 0.4;   // 격자 단위 근접 허용치
 
+    // 바닥면은 두 번 훑는다: ① 용수철 축에 수직인 면(벽·바닥)을 먼저, ② 나머지는 끝점만.
+    //   벽 밑에서 시작하는 바닥면처럼 "끝점이 용수철 끝에 닿는 평행한 선분" 이
+    //   먼저 잡히면 용수철이 벽이 아니라 바닥에 붙는다 (예제 '용수철 진동' 에서 발견).
+    //   벽이 없을 때는 예전처럼 어떤 끝점에도 붙을 수 있게 ②를 남긴다.
     if (!spring.isVertical) {
-      // ── 가로 모드: 왼쪽/오른쪽 이웃 ──
+      // ── 가로 모드: 왼콽/오른쪽 이웃 ──
       for (const el of STATE.elements) {
         if (el === spring) continue;
         if (!['rect', 'circle'].includes(el.type)) continue;
@@ -1970,22 +2093,24 @@
         if (Math.abs(el.gridX - rightX) <= SNAP_TOL && el.gridY < botY && el.gridY + el.gridH > topY)
           rightId = el.id;
       }
-      for (const seg of STATE.floorSegments) {
-        // 끝점 기준
-        if (!leftId  && ((seg.x1 === leftX  && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === leftX  && seg.y2 >= topY && seg.y2 <= botY))) leftId  = seg.id;
-        if (!rightId && ((seg.x1 === rightX && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === rightX && seg.y2 >= topY && seg.y2 <= botY))) rightId = seg.id;
-        // 선분이 용수철 좌/우 면을 가로지르는 경우 — 단, 용수철 축(가로)에
-        // 수직인 면(세로 벽)일 때만 체결. 평행한 바닥(가로 선분)은 오판정 제외(#7).
-        const segVertical = Math.abs(seg.y2 - seg.y1) >= Math.abs(seg.x2 - seg.x1);
-        if (!leftId && seg.pathType === 'LINE' && segVertical) {
-          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
-          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
-          if (maxX >= leftX && minX <= leftX && minY <= botY && maxY >= topY) leftId = seg.id;
-        }
-        if (!rightId && seg.pathType === 'LINE' && segVertical) {
-          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
-          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
-          if (maxX >= rightX && minX <= rightX && minY <= botY && maxY >= topY) rightId = seg.id;
+      const endL = seg => (seg.x1 === leftX  && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === leftX  && seg.y2 >= topY && seg.y2 <= botY);
+      const endR = seg => (seg.x1 === rightX && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === rightX && seg.y2 >= topY && seg.y2 <= botY);
+      for (const pass of [0, 1]) {
+        for (const seg of STATE.floorSegments) {
+          const segVertical = Math.abs(seg.y2 - seg.y1) >= Math.abs(seg.x2 - seg.x1);
+          if (pass === 0 && !segVertical) continue;   // ① 수직인 면(벽)만
+          if (pass === 1 &&  segVertical) continue;   // ② 나머지 — 끝점만
+          // 끝점 기준
+          if (!leftId  && endL(seg)) leftId  = seg.id;
+          if (!rightId && endR(seg)) rightId = seg.id;
+          // 선분이 용수철 좌/우 면을 가로지르는 경우 — 용수철 축(가로)에
+          // 수직인 면(세로 벽)일 때만 체결. 평행한 바닥(가로 선분)은 오판정 제외(#7).
+          if (pass === 0 && seg.pathType === 'LINE') {
+            const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
+            const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
+            if (!leftId  && maxX >= leftX  && minX <= leftX  && minY <= botY && maxY >= topY) leftId  = seg.id;
+            if (!rightId && maxX >= rightX && minX <= rightX && minY <= botY && maxY >= topY) rightId = seg.id;
+          }
         }
       }
     } else {
@@ -1998,22 +2123,21 @@
         if (Math.abs(el.gridY - botY) <= SNAP_TOL && el.gridX < rightX && el.gridX + el.gridW > leftX)
           rightId = el.id;
       }
-      for (const seg of STATE.floorSegments) {
-        // 끝점 기준
-        if (!leftId  && ((seg.y1 === topY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === topY && seg.x2 >= leftX && seg.x2 <= rightX))) leftId  = seg.id;
-        if (!rightId && ((seg.y1 === botY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === botY && seg.x2 >= leftX && seg.x2 <= rightX))) rightId = seg.id;
-        // 선분이 용수철 상/하 면을 가로지르는 경우 — 단, 용수철 축(세로)에
-        // 수직인 면(가로 바닥)일 때만 체결. 평행한 세로 벽은 오판정 제외(#7).
-        const segHorizontal = Math.abs(seg.x2 - seg.x1) >= Math.abs(seg.y2 - seg.y1);
-        if (!leftId && seg.pathType === 'LINE' && segHorizontal) {
-          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
-          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
-          if (maxY >= topY && minY <= topY && minX <= rightX && maxX >= leftX) leftId = seg.id;
-        }
-        if (!rightId && seg.pathType === 'LINE' && segHorizontal) {
-          const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
-          const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
-          if (maxY >= botY && minY <= botY && minX <= rightX && maxX >= leftX) rightId = seg.id;
+      const endT = seg => (seg.y1 === topY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === topY && seg.x2 >= leftX && seg.x2 <= rightX);
+      const endB = seg => (seg.y1 === botY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === botY && seg.x2 >= leftX && seg.x2 <= rightX);
+      for (const pass of [0, 1]) {
+        for (const seg of STATE.floorSegments) {
+          const segHorizontal = Math.abs(seg.x2 - seg.x1) >= Math.abs(seg.y2 - seg.y1);
+          if (pass === 0 && !segHorizontal) continue;
+          if (pass === 1 &&  segHorizontal) continue;
+          if (!leftId  && endT(seg)) leftId  = seg.id;
+          if (!rightId && endB(seg)) rightId = seg.id;
+          if (pass === 0 && seg.pathType === 'LINE') {
+            const minX = Math.min(seg.x1, seg.x2), maxX = Math.max(seg.x1, seg.x2);
+            const minY = Math.min(seg.y1, seg.y2), maxY = Math.max(seg.y1, seg.y2);
+            if (!leftId  && maxY >= topY && minY <= topY && minX <= rightX && maxX >= leftX) leftId  = seg.id;
+            if (!rightId && maxY >= botY && minY <= botY && minX <= rightX && maxX >= leftX) rightId = seg.id;
+          }
         }
       }
     }
@@ -2047,13 +2171,46 @@
 
     // 2. 도르래 한쪽만 연결 = 도르래를 고정점으로 하는 단순 실 (경고 없이 허용, QC #12)
 
-    const unique = [...new Set(warnings)];
-    if (unique.length > 0) {
-      warningBar.textContent = unique.join('  |  ');
-      warningBar.style.display = 'block';
-    } else {
-      warningBar.style.display = 'none';
+    // 3. 편집 상태 점검 — "실행했는데 아무 일도 없다" 를 없애기 위한 안내용 경고.
+    //    문구는 guide.js 의 GUIDE_FIX 키와 같아야 한다 (고치는 법이 붙는다).
+    const bodies = STATE.elements.filter(e => e.type === 'rect' || e.type === 'circle');
+    const hasAny = STATE.elements.length || STATE.floorSegments.length || STATE.ropes.length;
+    if (hasAny && bodies.length === 0) warnings.push('움직일 물체가 없습니다');
+
+    for (const s of STATE.elements) {
+      if (s.type === 'spring' && !s.leftElementId && !s.rightElementId)
+        warnings.push('용수철이 아무것에도 붙어 있지 않습니다');
     }
+    for (const p of STATE.elements) {
+      if (p.type !== 'pulley') continue;
+      const mine = STATE.ropes.filter(r => r.anchorA.elementId === p.id || r.anchorB.elementId === p.id);
+      if (mine.length === 0) { warnings.push('실이 걸리지 않은 도르래가 있습니다'); continue; }
+      const rim = mine.filter(r => (r.anchorA.elementId === p.id ? r.anchorA : r.anchorB).attachPoint !== 'center');
+      const center = mine.filter(r => (r.anchorA.elementId === p.id ? r.anchorA : r.anchorB).attachPoint === 'center');
+      // 림에 실이 걸렸는데 고정도 하중도 없으면 어디에도 매이지 않은 도르래 — 실행하면 그냥 떨어진다
+      if (rim.length && center.length === 0) warnings.push('도르래가 어디에도 고정되지 않았습니다');
+    }
+    for (const f of STATE.elements) {
+      if (f.type !== 'extforce') continue;
+      if (!STATE.ropes.some(r => r.anchorA.elementId === f.id || r.anchorB.elementId === f.id))
+        warnings.push('실이 연결되지 않은 외력이 있습니다');
+    }
+    for (const r of STATE.ropes) {
+      const ok = (a) => STATE.elements.some(e => e.id === a.elementId) || STATE.floorSegments.some(s => s.id === a.elementId);
+      if (!ok(r.anchorA) || !ok(r.anchorB)) warnings.push('연결 대상이 없는 실이 있습니다');
+    }
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const a = bodies[i], b = bodies[j], eps = 0.05;
+        const ox = Math.min(a.gridX + a.gridW, b.gridX + b.gridW) - Math.max(a.gridX, b.gridX);
+        const oy = Math.min(a.gridY + a.gridH, b.gridY + b.gridH) - Math.max(a.gridY, b.gridY);
+        if (ox > eps && oy > eps) { warnings.push('물체가 서로 겹쳐 있습니다'); i = bodies.length; break; }
+      }
+    }
+
+    const unique = [...new Set(warnings)];
+    STATE.warnings = unique;
+    if (typeof EVENTS !== 'undefined') EVENTS.emit('validated', unique);
     btnRun.disabled = false;
     btnRun.style.opacity = '1';
 

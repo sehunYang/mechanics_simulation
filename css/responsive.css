@@ -1,0 +1,50 @@
+/* ════════════════════════════════════════════════════════════════
+ * 9. 반응형 — 모바일 전용 요소 (기본 숨김) + ≤480px 레이아웃
+ *    항상 마지막에 링크한다 (@media 오버라이드).
+ * ════════════════════════════════════════════════════════════════ */
+#hamburger-btn, #sidebar-overlay { display: none; }
+
+@media (max-width: 480px) {
+  /* 사이드바: 슬라이드 오버레이 */
+  #sidebar-left {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 84px; z-index: 200;
+    transform: translateX(-100%); transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.18); padding: 56px 0 12px 0;
+  }
+  #sidebar-left.mobile-open { transform: translateX(0); }
+  #sidebar-overlay { display: none; position: fixed; inset: 0; z-index: 199; background: rgba(0,0,0,0.32); }
+  #sidebar-overlay.visible { display: block; }
+  #hamburger-btn {
+    display: flex; position: fixed; top: 10px; left: 10px; z-index: 201;
+    width: 40px; height: 40px; border-radius: var(--radius-lg);
+    background: var(--bg-glass); border: 1px solid var(--border-base);
+    flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+    cursor: pointer; backdrop-filter: blur(8px); box-shadow: var(--shadow-panel);
+  }
+  #hamburger-btn span { display: block; width: 20px; height: 2px; background: var(--text-accent); border-radius: 1px; }
+
+  /* 하단 pill: 축소 / 툴바는 pill 위 한 줄 */
+  .ctrl-btn { font-size: 11px; padding: 6px 10px; }
+  #controls-bottom { bottom: 10px; padding: 4px 6px; gap: 2px; max-width: calc(100% - 16px); }
+  #tool-bar { bottom: 58px; left: 6px; right: 6px; max-width: none; }
+  #btn-speed { bottom: 100px; }
+  #btn-step  { bottom: 134px; }
+
+  /* 상단 배지·알림은 햄버거를 피해 오른쪽으로 */
+  #run-indicator, #status-chip { left: auto; right: 10px; transform: none; max-width: calc(100% - 64px); }
+
+  /* 속성 패널: 바텀시트 */
+  #panel-right {
+    position: fixed; bottom: 0; right: 0; left: 0; width: 100% !important; max-height: 60vh;
+    overflow-y: auto; z-index: 180; border-top: 1px solid var(--border-base); border-left: none;
+    border-radius: 18px 18px 0 0; padding: 16px 18px 24px;
+  }
+
+  /* 떠 있는 패널: 화면 폭에 맞춤 */
+  .fl-panel, #gallery-panel { left: 8px; right: 8px; width: auto; top: 58px; max-height: calc(100dvh - 130px); }
+  #graph-panel { top: auto; bottom: 100px; max-height: 44vh; }
+  #graph-canvas { height: 130px; }
+  #poe-panel, #sweep-panel { left: 8px; }
+  #start-guide { top: 44%; }
+  .gal-grid, #gallery-panel .gal-grid { grid-template-columns: repeat(2, 1fr); }
+}

@@ -94,6 +94,7 @@
   });
 
   btnReset.addEventListener('click', () => {
+    if (typeof keepSeriesAsGhost === 'function') keepSeriesAsGhost();   // 직전 실행을 잔상으로
     stopSimulation();
     restoreSnapshot();          // t=0 상태 완전 복원
     STATE.simMode = 'EDIT';
@@ -127,10 +128,22 @@
     }
   });
 
-  /* 배속 버튼: RUNNING 중에만 표시(render.js에서 토글), 1→2→5→10→100→1 순환 */
-  const SPEED_LEVELS = [1, 2, 5, 10, 100];
+  /* 배속 버튼: 실행·일시정지 중 표시(render.js에서 토글), 느린 쪽부터 순환 */
+  const SPEED_LEVELS = [0.25, 0.5, 1, 2, 5, 10, 100];
   btnSpeed.addEventListener('click', () => {
     const idx = SPEED_LEVELS.indexOf(STATE.speedMultiplier);
     STATE.speedMultiplier = SPEED_LEVELS[(idx + 1) % SPEED_LEVELS.length];
     btnSpeed.textContent = STATE.speedMultiplier + 'x';
+  });
+
+  /* 한 스텝 버튼: 일시정지 중 FIXED_DT 만큼만 진행 (충돌·실이 팽팽해지는 순간 관찰) */
+  btnStep.addEventListener('click', () => {
+    if (STATE.simMode !== 'PAUSED') return;
+    simStep(CONFIG.FIXED_DT);
+    STATE.simTime += CONFIG.FIXED_DT;
+  });
+
+  /* 팔레트·툴바에서 시작한 포인터가 캔버스로 새지 않게 */
+  document.querySelectorAll('#controls-bottom, #tool-bar').forEach(el => {
+    el.addEventListener('pointerdown', (e) => e.stopPropagation());
   });

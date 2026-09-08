@@ -14,7 +14,8 @@ function scriptList() {
   return fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
     .split('\n')
     .map(l => (l.match(/<script src="([^"]+)"><\/script>/) || [])[1])
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(s => s.split('?')[0]);   // 캐시 버스터(?v=…) 제거
 }
 
 function loadApp() {
@@ -84,6 +85,10 @@ function loadApp() {
     navigator: { userAgent: 'node', maxTouchPoints: 0 },
     location: { href: 'http://localhost/' },
     URL: { createObjectURL: () => 'blob:stub', revokeObjectURL() {} },
+    history: { replaceState() {} },
+    btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+    atob: (s) => Buffer.from(s, 'base64').toString('binary'),
+    escape, unescape, encodeURIComponent, decodeURIComponent,
     Blob: class Blob {
       constructor(parts, opts) { this.parts = parts || []; this.type = (opts && opts.type) || ''; }
       get size() { return this.parts.join('').length; }

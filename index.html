@@ -9,7 +9,7 @@
        문서 정보 (검색 결과 · 링크 미리보기 · 브라우저 탭)
          canonical/og:url 은 절대 URL 이어야 미리보기가 동작한다.
        ════════════════════════════════════════════════════════════════ -->
-  <meta name="description" content="캔버스에 물체·바닥면·빗면을 놓고 실·도르래·용수철·외력으로 이으면 중력·마찰·충돌·장력을 실시간으로 계산하는 2D 고전역학 시뮬레이터. 수능 물리 문항 작도 규격으로 그리며, 빌드 도구나 설치 없이 브라우저에서 바로 실행됩니다.">
+  <meta name="description" content="캔버스에 물체·바닥면·빗면을 놓고 실·도르래·용수철·외력으로 이으면 중력·마찰·충돌·장력을 실시간으로 계산하는 2D 고전역학 시뮬레이터. 속도·힘 벡터와 시간 그래프, 예측·관찰·설명(POE) 활동, 수능 물리 문항 작도 규격 내보내기. 빌드 도구나 설치 없이 브라우저에서 바로 실행됩니다.">
   <meta name="keywords" content="고전역학 시뮬레이터,물리 시뮬레이션,뉴턴 역학,중력,마찰력,충돌,장력,도르래,용수철,훅의 법칙,빗면,운동량,역학적 에너지,수능 물리,물리 교육">
   <meta name="author" content="양세훈">
   <meta name="theme-color" content="#1d4ed8">
@@ -26,7 +26,7 @@
   <meta property="og:type"        content="website">
   <meta property="og:site_name"   content="고전역학 시뮬레이터">
   <meta property="og:title"       content="고전역학 시뮬레이터">
-  <meta property="og:description" content="물체를 놓고 실·도르래·용수철로 이으면 중력·마찰·충돌·장력을 실시간 계산합니다. 빗면·외력·힘구간 지원. 수능 물리 문항 작도 규격.">
+  <meta property="og:description" content="물체를 놓고 실·도르래·용수철로 이으면 중력·마찰·충돌·장력을 실시간 계산합니다. 벡터·그래프·POE 활동. 수능 물리 문항 작도 규격.">
   <meta property="og:url"         content="https://shy.ai.kr/mechanics_simulation/">
   <meta property="og:image"       content="https://shy.ai.kr/mechanics_simulation/assets/og-image.png">
   <meta property="og:image:width"  content="1200">
@@ -36,15 +36,24 @@
   <!-- Twitter/X 카드 -->
   <meta name="twitter:card"        content="summary_large_image">
   <meta name="twitter:title"       content="고전역학 시뮬레이터">
-  <meta name="twitter:description" content="중력·마찰·충돌·장력 실시간 계산. 빗면·실/도르래·용수철·외력. 수능 물리 문항 작도 규격.">
+  <meta name="twitter:description" content="중력·마찰·충돌·장력 실시간 계산. 빗면·실/도르래·용수철·외력. 벡터·그래프·POE. 수능 물리 문항 작도 규격.">
   <meta name="twitter:image"       content="https://shy.ai.kr/mechanics_simulation/assets/og-image.png">
 
-  <link rel="stylesheet" href="css/main.css">
+  <!-- ════════════════════════════════════════════════════════════════
+       스타일시트 (css/) — 링크 순서 = 캐스케이드 순서, responsive 는 마지막.
+         ?v= 는 캐시 버스터 — 배포 때 날짜를 올리면 GitHub Pages 캐시가 갱신된다.
+       ════════════════════════════════════════════════════════════════ -->
+  <link rel="stylesheet" href="css/tokens.css?v=20260908c">        <!-- 디자인 토큰 -->
+  <link rel="stylesheet" href="css/base.css?v=20260908c">          <!-- 리셋 · 레이아웃 -->
+  <link rel="stylesheet" href="css/sidebar.css?v=20260908c">       <!-- 팔레트 -->
+  <link rel="stylesheet" href="css/canvas.css?v=20260908c">        <!-- 캔버스 · 줌 · 실행 배지 · 배속 -->
+  <link rel="stylesheet" href="css/controls.css?v=20260908c">      <!-- 하단 pill · 툴바 -->
+  <link rel="stylesheet" href="css/panel.css?v=20260908c">         <!-- 속성 패널 -->
+  <link rel="stylesheet" href="css/modal.css?v=20260908c">         <!-- 키패드 · 확인 대화상자 -->
+  <link rel="stylesheet" href="css/overlays.css?v=20260908c">      <!-- 토스트 · 시작 카드 · 갤러리 · 상태 알림 · 도움말 -->
+  <link rel="stylesheet" href="css/responsive.css?v=20260908c">    <!-- 모바일 (≤480px) -->
 </head>
 <body>
-
-  <!-- 경고 바 -->
-  <div id="warning-bar"></div>
 
   <!-- 모바일 전용: 햄버거 버튼 + 사이드바 배경 딤 (데스크톱에서는 CSS로 숨김) -->
   <button id="hamburger-btn" aria-label="메뉴 열기"><span></span><span></span><span></span></button>
@@ -134,10 +143,41 @@
       <canvas id="mainCanvas"></canvas>
       <div id="zoom-indicator">100%</div>
 
-      <!-- 실행취소 / 다시실행 (기호 전용 소형 버튼, EDIT 모드에서만 표시) -->
-      <div id="undo-redo">
-        <button id="btn-undo" class="ur-btn" title="실행 취소 (Ctrl+Z)" disabled>↶</button>
-        <button id="btn-redo" class="ur-btn" title="다시 실행 (Ctrl+Y)" disabled>↷</button>
+      <!-- 상태 알림 (편집 상태 경고 + 고치는 법) — guide.js 가 채움 -->
+      <div id="status-chip"></div>
+
+      <!-- 시작 카드 (장면이 비었을 때만) — 갤러리는 guide.js 가 채움 -->
+      <div id="start-guide">
+        <span class="sg-x" id="sg-close" title="닫기">✕</span>
+        <div class="sg-title">고전역학 시뮬레이터</div>
+        <div class="sg-lead">왼쪽 팔레트에서 물체를 놓고, <b>바닥면</b>은 격자점 두 곳을 클릭해 그립니다. <b>▶ 실행</b>으로 움직여 보세요. 아래 예제를 누르면 바로 만들어집니다.</div>
+        <div class="sg-sub">예제 장면 — 한 번 클릭으로 시작</div>
+        <div class="gal-grid" id="sg-gallery"></div>
+        <div class="sg-btns">
+          <button class="sg-btn primary" id="sg-poe">POE 활동 열기</button>
+          <button class="sg-btn" id="sg-help">도움말 보기</button>
+        </div>
+        <div class="sg-foot">물체를 클릭하면 오른쪽에 질량·속도 등을 바꾸는 패널이 열립니다. 막히면 화면 위 <b>알림</b>이 고치는 법을 알려 줍니다.</div>
+      </div>
+
+      <!-- 툴바 (왼쪽 아래): 실행취소 묶음(EDIT 만) · 표시 토글 · 공유 · 예제 · CSV · 도움말 -->
+      <div id="tool-bar">
+        <div id="undo-redo">
+          <button id="btn-undo" class="ur-btn" title="실행 취소 (Ctrl+Z)" disabled>↶</button>
+          <button id="btn-redo" class="ur-btn" title="다시 실행 (Ctrl+Y)" disabled>↷</button>
+        </div>
+        <div class="tb-sep"></div>
+        <button class="tb-btn" id="tb-vectors" title="속도 벡터 표시/숨김 (v)"><span class="tb-ico">→</span>속도</button>
+        <button class="tb-btn" id="tb-forces"  title="자유물체도 — 중력·수직항력·마찰력·장력·알짜힘 화살표"><span class="tb-ico">⇉</span>힘</button>
+        <button class="tb-btn active" id="tb-labels" title="값 라벨(질량·k·힘) 표시/숨김 — 끄면 빈 문항 그림이 됩니다">kg</button>
+        <button class="tb-btn" id="tb-graph"   title="시간 그래프 패널 (y·x·v·a·E – t) 열기/닫기"><span class="tb-ico">📈</span>그래프</button>
+        <div class="tb-sep"></div>
+        <button class="tb-btn" id="tb-gallery" title="예제 장면 갤러리 — 대표 상황 8개를 한 번에 불러옵니다"><span class="tb-ico">📚</span>예제</button>
+        <button class="tb-btn" id="tb-poe"     title="예측·관찰·설명 (POE) — 오개념 진단 활동 24개 + 해설 8개">POE</button>
+        <button class="tb-btn" id="tb-sweep"   title="파라미터 스윕 — 변수 하나를 여러 값으로 자동 반복해 표·그래프로"><span class="tb-ico">🔁</span>스윕</button>
+        <button class="tb-btn" id="tb-share"   title="공유 링크 복사 — 이 장면이 URL 에 담깁니다"><span class="tb-ico">🔗</span>공유</button>
+        <button class="tb-btn" id="tb-csv"     title="실행 중 기록된 시계열(위치·속도·가속도·에너지)을 CSV 로 저장"><span class="tb-ico">⬇</span>CSV</button>
+        <button class="tb-btn" id="tb-help"    title="도움말 — 조작법·모드·단축키 (?)">?</button>
       </div>
 
       <!-- 하단 컨트롤 → 떠있는 mode-bar pill (canvas-wrapper 기준 absolute) -->
@@ -152,25 +192,136 @@
     <!-- 속성 패널 (기본 hidden) -->
     <div id="panel-right">
       <div class="panel-label">속성</div>
-      <!-- Sprint 3에서 채워짐 -->
     </div>
 
   </div>
 
-  <script src="js/config.js"></script>
-  <script src="js/coords.js"></script>
-  <script src="js/svg-shapes.js"></script>
-  <script src="js/canvas.js"></script>
-  <script src="js/render.js"></script>
-  <script src="js/elements.js"></script>
-  <script src="js/hit-test.js"></script>
-  <script src="js/interaction.js"></script>
-  <script src="js/ui-controls.js"></script>
-  <script src="js/physics.js"></script>
-  <script src="js/capture.js"></script>
-  <script src="js/modal.js"></script>
-  <script src="js/panel.js"></script>
-  <script src="js/history.js"></script>
-  <script src="js/boot.js"></script>
+  <!-- ════════════════════════════════════════════════════════════════
+       떠 있는 패널 — 도움말 · 장면 갤러리 (오른쪽 위, position:fixed)
+       ════════════════════════════════════════════════════════════════ -->
+  <div id="help-panel" class="fl-panel">
+    <div class="tp-title"><span>도움말</span><span class="tp-close" id="help-close-btn">✕</span></div>
+    <div class="hp-body">
+      <div class="hp-h">1. 장면 만들기</div>
+      <ul>
+        <li>팔레트의 <b>네모 · 원</b>을 누르면 화면 가운데에 물체가 생깁니다. 끌어서 옮기고, 오른쪽 아래 점을 끌어 크기를 바꿉니다.</li>
+        <li><b>바닥면</b>을 고른 뒤 격자점 두 곳을 클릭하면 선이 생깁니다. 왼쪽→오른쪽으로 그리면 윗면이 실체면입니다. 속성에서 곡선·마찰로 바꿀 수 있습니다.</li>
+        <li><b>실</b>을 고른 뒤 앵커(●) 두 곳을 차례로 클릭합니다. 도르래 가장자리에 걸면 도르래를 지나는 실이 됩니다.</li>
+        <li>물체를 클릭하면 오른쪽 패널에 질량·초기 속도·반발계수가 나옵니다. 값을 누르면 키패드가 열립니다.</li>
+        <li>물체를 <b>바닥면 근처로 끌면</b> 그 면에 자석처럼 얹히고 빗면이면 기울어집니다.</li>
+      </ul>
+      <div class="hp-h">2. 실행</div>
+      <table class="hp-t">
+        <tr><td>▶ 실행</td><td>t = 0 부터 움직입니다. 다시 누르면 일시정지, 또 누르면 재개.</td></tr>
+        <tr><td>↺ 초기화</td><td>실행 전 상태로 되돌립니다. 직전 실행의 궤적·그래프는 잔상으로 남습니다.</td></tr>
+        <tr><td>배속</td><td>오른쪽 아래 버튼. 0.25x·0.5x 로 느리게, 100x 로 빠르게.</td></tr>
+        <tr><td>⏭ 한 스텝</td><td>일시정지 중 1/60 초만 진행 — 충돌 순간을 한 컷씩.</td></tr>
+        <tr><td>⊙ 무중력</td><td>중력을 끄고 켭니다.</td></tr>
+        <tr><td>📷 촬영</td><td>흰 바탕·검정 선 SVG 로 저장 — 시험지에 그대로 붙일 수 있습니다.</td></tr>
+      </table>
+      <div class="hp-h">3. 툴바 (왼쪽 아래)</div>
+      <table class="hp-t">
+        <tr><td>📚 예제</td><td>대표 상황 8개 — 빗면·아트우드·움직도르래·용수철·진자·충돌·힘구간.</td></tr>
+        <tr><td>→ 속도 · ⇉ 힘</td><td>속도 벡터 · 자유물체도(중력·수직항력·마찰력·장력·알짜힘).</td></tr>
+        <tr><td>kg</td><td>값 라벨 켬/끔 — 끄고 촬영하면 값이 빠진 빈 문항 그림.</td></tr>
+        <tr><td>📈 그래프</td><td>y·x·v·a·E – t 시간 그래프. 초기화 뒤 다시 실행하면 이전 실행이 점선으로 겹친다.</td></tr>
+        <tr><td>POE</td><td>예측 → 관찰 → 설명. 오개념 진단 24문항 + 장면 해설 8개. 결과 CSV.</td></tr>
+        <tr><td>🔁 스윕</td><td>변수 하나를 여러 값으로 자동 반복 → 표·그래프 (심화 탐구).</td></tr>
+        <tr><td>🔗 공유</td><td>지금 장면을 링크로 복사. 붙여넣으면 그대로 열립니다.</td></tr>
+        <tr><td>⬇ CSV</td><td>실행 중 기록된 시각·위치·속도·가속도·에너지를 표로 저장.</td></tr>
+      </table>
+      <div class="hp-h">4. 단축키와 조작</div>
+      <table class="hp-t">
+        <tr><td>더블클릭</td><td>네모·용수철·힘구간의 방향 전환</td></tr>
+        <tr><td>길게 누르기</td><td>삭제 존이 나타납니다 — 거기로 끌어다 놓으면 삭제</td></tr>
+        <tr><td>오른쪽 클릭</td><td>복제 · 방향 전환 · 삭제 메뉴</td></tr>
+        <tr><td>Ctrl + Z / Y</td><td>실행 취소 / 다시 실행</td></tr>
+        <tr><td>Esc</td><td>그리기 모드·패널 닫기</td></tr>
+        <tr><td>휠 / 두 손가락</td><td>확대·축소</td></tr>
+        <tr><td>빈 곳 드래그</td><td>화면 이동 (실행 중에도)</td></tr>
+        <tr><td>?</td><td>이 도움말</td></tr>
+      </table>
+      <div class="hp-h">5. 막혔을 때</div>
+      <ul>
+        <li>실행했는데 아무 일도 없다면 화면 위쪽 <b>알림</b>을 보세요 — 무엇이 잘못됐는지와 고치는 법이 나옵니다.</li>
+        <li>물체가 바닥을 뚫고 떨어지면 바닥면을 <b>반대 방향</b>으로 그렸을 가능성이 큽니다. 바닥면은 한쪽 면만 막습니다.</li>
+        <li>무엇을 해 볼지 모르겠다면 <b>📚 예제</b>에서 하나를 골라 값을 바꿔 보세요.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- POE 패널 (poe.js) — 왼쪽 위, 팔레트 옆 -->
+  <div id="poe-panel" class="fl-panel">
+    <div class="tp-title"><span>예측 · 관찰 · 설명</span><span class="tp-close" id="poe-close-btn">✕</span></div>
+    <div id="poe-body"></div>
+  </div>
+
+  <!-- 파라미터 스윕 패널 (sweep.js) -->
+  <div id="sweep-panel" class="fl-panel">
+    <div class="tp-title"><span>파라미터 스윕</span><span class="tp-close" id="sweep-close-btn">✕</span></div>
+    <div class="sw-form">
+      <label>바꿀 대상 <select id="sweep-target"></select></label>
+      <label>속성 <select id="sweep-prop"></select> <span id="sweep-cur" class="pp-note"></span></label>
+      <div class="sw-row"><label>시작 <input type="number" id="sweep-from" step="any" value="1"></label><label>끝 <input type="number" id="sweep-to" step="any" value="5"></label><label>단계 <input type="number" id="sweep-steps" min="2" max="24" value="5"></label></div>
+      <label>측정 물체 <select id="sweep-body"></select></label>
+      <label>물리량 <select id="sweep-q"></select></label>
+      <div class="sw-row"><label>언제 <select id="sweep-when"></select></label><label id="sweep-at-wrap">t = <input type="number" id="sweep-at" step="0.1" min="0.1" value="2"> s</label></div>
+      <div class="sw-row"><button class="poe-btn poe-primary" id="sweep-run" type="button">스윕 실행</button><button class="poe-btn poe-small" id="sweep-csv" type="button">CSV</button></div>
+    </div>
+    <canvas id="sweep-canvas" width="340" height="150"></canvas>
+    <div id="sweep-table"></div>
+    <div class="pp-note">값마다 장면을 화면 없이 돌려 측정합니다. 표의 줄을 누르면 그 조건이 장면에 적용됩니다.</div>
+  </div>
+
+  <!-- 시간 그래프 패널 (graph.js) -->
+  <div id="graph-panel" class="fl-panel">
+    <div class="tp-title"><span>시간 그래프</span><span class="tp-close" id="graph-close-btn">✕</span></div>
+    <div id="graph-tabs" class="g-tabs"></div>
+    <canvas id="graph-canvas" width="340" height="190"></canvas>
+    <div id="graph-legend" class="g-legend"></div>
+    <div class="pp-note">y·x 는 물체 중심의 물리 좌표(격자 맨 아래 = 0), PE 기준은 가장 낮은 바닥면, a 는 한 스텝의 Δv/dt. 초기화하면 이 실행이 점선 잔상으로 남아 다음 실행과 비교됩니다.</div>
+  </div>
+
+  <div id="gallery-panel" class="fl-panel">
+    <div class="tp-title"><span>예제 장면</span><span class="tp-close" id="gallery-close-btn">✕</span></div>
+    <div class="gal-intro">누르면 지금 장면을 대신해 불러옵니다 (Ctrl+Z 로 되돌릴 수 있습니다).</div>
+    <div class="gal-grid"></div>
+  </div>
+
+  <!-- 전역 토스트 -->
+  <div id="toast"></div>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       스크립트 (js/) — 클래식 스크립트, 선언 순서 = 의존 순서. 순서 변경 금지.
+       ════════════════════════════════════════════════════════════════ -->
+  <script src="js/config.js?v=20260908c"></script>        <!-- CONFIG · VIEWPORT · STATE · DOM 참조 -->
+  <script src="js/events.js?v=20260908c"></script>        <!-- 이벤트 버스 -->
+  <script src="js/coords.js?v=20260908c"></script>        <!-- 좌표 변환 -->
+  <script src="js/svg-shapes.js?v=20260908c"></script>    <!-- 수능 작도 규격 도형 -->
+  <script src="js/canvas.js?v=20260908c"></script>        <!-- 캔버스 초기화 · 격자 -->
+  <script src="js/render.js?v=20260908c"></script>        <!-- 렌더 루프 -->
+  <script src="js/elements.js?v=20260908c"></script>      <!-- 요소 클래스 -->
+  <script src="js/hit-test.js?v=20260908c"></script>      <!-- 히트 테스트 -->
+  <script src="js/interaction.js?v=20260908c"></script>   <!-- 포인터 · 키보드 -->
+  <script src="js/ui-controls.js?v=20260908c"></script>   <!-- 팔레트 · 하단 버튼 · 배속 -->
+  <script src="js/physics.js?v=20260908c"></script>       <!-- 물리 · 검증 -->
+  <script src="js/series.js?v=20260908c"></script>        <!-- 시계열 기록 · CSV -->
+  <script src="js/overlay.js?v=20260908c"></script>       <!-- 속도·힘 벡터 · 잔상 궤적 오버레이 -->
+  <script src="js/capture.js?v=20260908c"></script>       <!-- SVG 촬영 -->
+  <script src="js/modal.js?v=20260908c"></script>         <!-- 키패드 · 확인 대화상자 -->
+  <script src="js/measure.js?v=20260908c"></script>       <!-- 측정값 (패널 하단, 실행 중 갱신) -->
+  <script src="js/panel.js?v=20260908c"></script>         <!-- 속성 패널 -->
+  <script src="js/history.js?v=20260908c"></script>       <!-- 실행취소 -->
+  <script src="js/scene.js?v=20260908c"></script>         <!-- 장면 직렬화 · DSL · 뷰 맞춤 -->
+  <script src="js/scenes.js?v=20260908c"></script>        <!-- 장면 갤러리 -->
+  <script src="js/share.js?v=20260908c"></script>         <!-- 공유 링크 -->
+  <script src="js/headless.js?v=20260908c"></script>      <!-- 화면 없이 장면 돌려 측정 -->
+  <script src="js/poe-data.js?v=20260908c"></script>      <!-- POE 활동 데이터 -->
+  <script src="js/poe.js?v=20260908c"></script>           <!-- POE 엔진 -->
+  <script src="js/sweep.js?v=20260908c"></script>         <!-- 파라미터 스윕 -->
+  <script src="js/graph.js?v=20260908c"></script>         <!-- 시간 그래프 패널 -->
+  <script src="js/toolbar.js?v=20260908c"></script>       <!-- 표시 토글 -->
+  <script src="js/guide.js?v=20260908c"></script>         <!-- 시작 카드 · 갤러리 · 상태 알림 · 도움말 · 토스트 -->
+  <script src="js/boot.js?v=20260908c"></script>          <!-- 부트스트랩 -->
 </body>
 </html>

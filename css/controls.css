@@ -1,0 +1,41 @@
+/* ════════════════════════════════════════════════════════════════
+ * 4. 하단 컨트롤 pill + 왼쪽 아래 툴바
+ * ════════════════════════════════════════════════════════════════ */
+#controls-bottom {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--bg-glass); border: 1px solid var(--border-base); border-radius: var(--radius-pill);
+  padding: 5px 8px; backdrop-filter: var(--blur); box-shadow: 0 2px 12px rgba(0,0,0,0.14);
+}
+.ctrl-btn {
+  padding: 7px 16px; height: auto; min-height: 0;
+  background: transparent; border: 1px solid transparent; color: var(--text-dim);
+  border-radius: 28px; cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+  transition: all 0.18s; white-space: nowrap; touch-action: manipulation;
+}
+.ctrl-btn:hover:not(.active) { color: var(--text-accent2); background: var(--btn-h); }
+.ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.ctrl-btn.active { background: var(--sel-bg); border-color: var(--border-active); color: var(--text-accent); }
+
+/* 툴바 — 왼쪽 아래. 실행취소 묶음(EDIT 만) + 표시 토글 + 공유·예제·CSV·도움말 */
+#tool-bar {
+  position: absolute; bottom: 8px; left: 8px; z-index: 20;
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  /* 가운데 pill(약 360px)과 겹치지 않게 왼쪽 절반 안에서 줄바꿈 */
+  max-width: calc(50% - 190px); min-width: 230px;
+}
+#undo-redo { display: flex; gap: 4px; }
+.tb-sep { width: 1px; height: 22px; background: var(--border-dim); margin: 0 3px; }
+.ur-btn, .tb-btn {
+  height: 30px; min-width: 30px; padding: 0 6px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  background: var(--bg-glass); border: 1px solid var(--border-base); border-radius: var(--radius-sm);
+  color: var(--text-dim); font-size: 12px; line-height: 1; cursor: pointer;
+  backdrop-filter: blur(8px); transition: all 0.18s; touch-action: manipulation; white-space: nowrap;
+}
+.ur-btn { font-size: 17px; }
+.ur-btn:hover:not(:disabled), .tb-btn:hover:not(:disabled) { color: var(--text-accent2); border-color: var(--border-active); background: #fff; }
+.ur-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.ur-btn:active:not(:disabled), .tb-btn:active { transform: scale(0.92); }
+.tb-btn.active { background: var(--sel-bg); border-color: var(--border-active); color: var(--text-accent); font-weight: 700; }
+.tb-btn .tb-ico { font-size: 13px; }

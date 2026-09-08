@@ -1,0 +1,68 @@
+/* ════════════════════════════════════════════════════════════════
+ * 2. 사이드바 (팔레트)
+ * ════════════════════════════════════════════════════════════════ */
+#sidebar-left {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-dim);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 10px 0; gap: 6px;
+  overflow-y: auto; overflow-x: hidden;
+  z-index: 10;
+  scrollbar-width: none;
+}
+#sidebar-left::-webkit-scrollbar { display: none; }
+
+.palette-item {
+  width: 62px; min-height: 52px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; padding: 4px 2px 3px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid var(--border-item);
+  background: var(--bg-item);
+  color: var(--text-base);
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+  user-select: none; touch-action: manipulation; position: relative;
+}
+/* 도구 아이콘 — 캔버스와 같은 작도 규격으로 그린다 */
+.palette-item svg { width: 32px; height: 26px; display: block; flex: none; overflow: visible; }
+.palette-item svg .fill      { fill: var(--ink-fill); stroke: currentColor; stroke-width: 1.5; }
+.palette-item svg .coil      { fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
+.palette-item svg .line,
+.palette-item svg .line-only { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.palette-item svg .solid     { fill: currentColor; stroke: none; }
+.palette-item svg .band      { fill: none; stroke: currentColor; stroke-width: 7; stroke-linecap: butt; stroke-linejoin: round; opacity: 0.16; transform: translateY(3.5px); }
+.palette-item svg .zone      { fill: currentColor; fill-opacity: 0.08; stroke: currentColor; stroke-width: 1.2; stroke-dasharray: 3 2.5; }
+.palette-item svg .dot       { fill: #ffffff; stroke: currentColor; stroke-width: 1.3; }
+.palette-item svg .anchor    { fill: #ffffff; stroke: currentColor; stroke-width: 1.6; }
+.palette-item > span { font-size: 9.5px; line-height: 1.1; letter-spacing: -0.02em; color: var(--text-dim); white-space: nowrap; pointer-events: none; }
+.palette-item.active-mode > span { color: inherit; }
+.palette-item:hover { background: var(--btn-h); border-color: var(--border-active); }
+.palette-item.active-mode { background: var(--sel-bg); border: 1px solid var(--border-active); color: var(--text-accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.18); }
+.palette-item:active { transform: scale(0.88); }
+
+.sidebar-danger-btn {
+  width: 48px; height: 48px; flex-shrink: 0; margin-top: auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-md); cursor: pointer;
+  border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger-text);
+  font-size: 9.5px; line-height: 1.15;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+  user-select: none; touch-action: manipulation; position: relative;
+}
+.sidebar-danger-btn:hover { background: #fbdada; border-color: #e09a9a; }
+.sidebar-danger-btn:active { transform: scale(0.88); }
+
+.palette-item[title]:hover::after,
+.sidebar-danger-btn[title]:hover::after {
+  content: attr(title);
+  position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%);
+  background: var(--bg-ctx); color: var(--text-accent2);
+  padding: 4px 8px; border-radius: var(--radius-sm); white-space: nowrap; font-size: 11px;
+  pointer-events: none; z-index: 100; border: 1px solid var(--border-base);
+  backdrop-filter: blur(8px); box-shadow: var(--shadow-panel);
+}
+
+.palette-separator { width: 52px; height: 1px; background: var(--border-dim); margin: 2px 0; }

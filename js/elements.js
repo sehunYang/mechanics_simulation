@@ -122,6 +122,7 @@
       this.vx0   = 0;
       this.vy0   = 0;
       this.e     = CONFIG.DEFAULT_E;
+      this.drag  = 0;          // 공기저항 계수 b [N·s/m] — F = −b·v (0 이면 없음)
       this.showTrail = true;   // 궤적 표시 (물체별 토글)
       this._trail = [];        // 궤적 좌표 [격자 칸] — 휘발성, serialize 제외
       // 런타임 (시뮬레이션)
@@ -156,7 +157,9 @@
       // 라벨: 안에 들어가면 안쪽, 아니면 물체 위 (수능도 좁으면 밖에 쓴다)
       const _t = this.mass + ' kg';
       const _fs = Math.max(SN_FS.bodyMin, Math.min(SN_FS.bodyMax, bh * 0.34 * s));
-      if (snLabelFits(_t, _fs, bw * s)) {
+      if (STATE.showLabels === false) {
+        /* 값 라벨 끔 (빈 문항 그림용) */
+      } else if (snLabelFits(_t, _fs, bw * s)) {
         snLabel(ctx, _t, cx, cy, _fs, { italic: true });
       } else {
         snLabel(ctx, _t, cx, by - 4 / s, _fs, { italic: true, baseline: 'bottom', halo: 3 });
@@ -181,6 +184,7 @@
       this.vx0   = 0;
       this.vy0   = 0;
       this.e     = CONFIG.DEFAULT_E;
+      this.drag  = 0;          // 공기저항 계수 b [N·s/m] — F = −b·v
       this.showTrail = true;   // 궤적 표시 (물체별 토글)
       this._trail = [];        // 궤적 좌표 [격자 칸] — 휘발성, serialize 제외
       this.vx = 0; this.vy = 0;
@@ -222,7 +226,9 @@
       }
       const _t = this.mass + ' kg';
       const _fs = Math.max(SN_FS.bodyMin, Math.min(SN_FS.bodyMax, r * 0.66 * s));
-      if (snLabelFits(_t, _fs, 2 * r * s * 0.85)) {
+      if (STATE.showLabels === false) {
+        /* 값 라벨 끔 */
+      } else if (snLabelFits(_t, _fs, 2 * r * s * 0.85)) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(-thetaRender);   // 화면 y반전 보정: 물리 반시계 = 화면 시계
@@ -281,7 +287,7 @@
       }
 
       // 크기 라벨 — 이탤릭 세리프 (F = …N)
-      snLabel(ctx, `F = ${(+mag.toFixed(3))} N`, cx, by + 10 / s, SN_FS.force,
+      if (STATE.showLabels !== false) snLabel(ctx, `F = ${(+mag.toFixed(3))} N`, cx, by + 10 / s, SN_FS.force,
               { italic: true, halo: 3.5 });
 
       if (STATE.selected === this) this.drawSelection(ctx);
@@ -343,7 +349,7 @@
 
       // 크기 라벨 — 화살표 옆(수직으로 비켜) 이탤릭 세리프
       const px = -uy, py = ux;
-      snLabel(ctx, `${this.forceN} N`,
+      if (STATE.showLabels !== false) snLabel(ctx, `${this.forceN} N`,
               cx + ux * arrowLen * 0.55 + px * (12 / s),
               cy + uy * arrowLen * 0.55 + py * (12 / s),
               SN_FS.force, { italic: true, halo: 3.5 });
@@ -629,7 +635,7 @@
       const mid = { x: ax + ux * len / 2, y: ay + uy * len / 2 };
       // 라벨은 코일 반대쪽(−수직)에 둔다 — 가로 용수철이면 위쪽.
       // 바닥에 놓인 용수철은 아래가 지면이라, 아래에 쓰면 바닥선과 겹친다.
-      snLabel(ctx, `k = ${this.k}`,
+      if (STATE.showLabels !== false) snLabel(ctx, `k = ${this.k}`,
               mid.x - px * (amp + 12 / VIEWPORT.scale),
               mid.y - py * (amp + 12 / VIEWPORT.scale),
               Math.max(SN_FS.springMin, Math.min(SN_FS.springMax, thick * 0.32 * VIEWPORT.scale)),

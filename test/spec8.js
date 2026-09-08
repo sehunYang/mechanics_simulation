@@ -108,7 +108,7 @@ scenario('RUN-PAN-PAUSED', '일시정지 중에도 카메라 조작 가능', () 
    실행 중 편집은 여전히 차단
    ════════════════════════════════════════════════════════════ */
 
-scenario('RUN-NOEDIT', '실행 중 편집 차단 — 선택·이동·리사이즈 불가', () => {
+scenario('RUN-NOEDIT', '실행 중 편집 차단 — 선택은 되지만(측정값 보기) 이동·리사이즈 불가', () => {
   const a = app();
   // 편집 모드에서는 물체를 집어 드래그할 수 있어야 한다 (대조군)
   const pos = a.evalIn(`
@@ -122,13 +122,20 @@ scenario('RUN-NOEDIT', '실행 중 편집 차단 — 선택·이동·리사이�
   note('EDIT 모드에서 클릭 결과', `interactionMode=${editMode}, selected=${editSel}`);
   expect('대조군: EDIT 에서는 선택됨', editSel ? 1 : 0, 1, 0, '');
 
-  // 실행 중에는 같은 클릭이 선택/드래그가 아니라 팬이어야 한다
+  // 실행 중에는 같은 클릭이 **선택**만 하고(속성 패널 측정값용) 드래그로 이어지지 않아야 한다.
+  //   빈 곳 클릭은 팬. (2단계: 실행 중 측정값 보기 — 예전에는 선택도 막았다)
   a.evalIn(`_selectObject(null); STATE.interactionMode = 'IDLE'; STATE.activePointers.clear();`);
   a.evalIn(START);
   const gridBefore = a.evalIn(`({ x: STATE.elements[0].gridX, y: STATE.elements[0].gridY })`);
   a.fire('mainCanvas', 'pointerdown', { pointerId: 1, clientX: pos.sx, clientY: pos.sy });
-  expect('선택되지 않음', a.evalIn(`STATE.selected === null`) ? 1 : 0, 1, 0, '');
-  expect('DRAGGING 아님 (PANNING)', a.evalIn(`STATE.interactionMode`) === 'PANNING' ? 1 : 0, 1, 0, '');
+  expect('물체가 선택됨 (측정값 패널)', a.evalIn(`STATE.selected === STATE.elements[0]`) ? 1 : 0, 1, 0, '');
+  expect('DRAGGING 아님 (IDLE)', a.evalIn(`STATE.interactionMode`) === 'IDLE' ? 1 : 0, 1, 0, '');
+  a.fire('mainCanvas', 'pointerup', { pointerId: 1, clientX: pos.sx, clientY: pos.sy });
+  a.fire('mainCanvas', 'pointerdown', { pointerId: 1, clientX: 20, clientY: 20 });
+  expect('빈 곳 클릭은 팬', a.evalIn(`STATE.interactionMode`) === 'PANNING' ? 1 : 0, 1, 0, '');
+  a.fire('mainCanvas', 'pointerup', { pointerId: 1, clientX: 20, clientY: 20 });
+  a.evalIn(`STATE.activePointers.clear();`);
+  a.fire('mainCanvas', 'pointerdown', { pointerId: 1, clientX: pos.sx, clientY: pos.sy });
   a.fire('mainCanvas', 'pointermove', { pointerId: 1, clientX: pos.sx + 80, clientY: pos.sy + 80 });
   a.fire('mainCanvas', 'pointerup',   { pointerId: 1, clientX: pos.sx + 80, clientY: pos.sy + 80 });
   const gridAfter = a.evalIn(`({ x: STATE.elements[0].gridX, y: STATE.elements[0].gridY })`);

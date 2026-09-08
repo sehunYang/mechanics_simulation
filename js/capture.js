@@ -121,14 +121,16 @@
       if (el.type === 'rect') {
         doc.path(svgRect(bx, by, bw, bh), geomAttr);
         const fs = Math.max(bh * 0.20, Math.min(18, bh * 0.34));
-        if (snLabelFits(el.mass + ' kg', fs, bw)) doc.text(el.mass + ' kg', cx, cy, _n2(fs), { italic: true });
+        if (STATE.showLabels === false) { /* 빈 문항 그림 */ }
+        else if (snLabelFits(el.mass + ' kg', fs, bw)) doc.text(el.mass + ' kg', cx, cy, _n2(fs), { italic: true });
         else doc.text(el.mass + ' kg', cx, _n2(by - fs * 0.5), _n2(fs), { italic: true, baseline: 'auto' });
 
       } else if (el.type === 'circle') {
         const cr = bw / 2;
         doc.path(svgCircle(cx, cy, cr), geomAttr);
         const fsc = Math.max(cr * 0.36, Math.min(18, cr * 0.66));
-        if (snLabelFits(el.mass + ' kg', fsc, 2 * cr * 0.85)) doc.text(el.mass + ' kg', cx, cy, _n2(fsc), { italic: true });
+        if (STATE.showLabels === false) { /* 빈 문항 그림 */ }
+        else if (snLabelFits(el.mass + ' kg', fsc, 2 * cr * 0.85)) doc.text(el.mass + ' kg', cx, cy, _n2(fsc), { italic: true });
         else doc.text(el.mass + ' kg', cx, _n2(cy - cr - fsc * 0.5), _n2(fsc), { italic: true, baseline: 'auto' });
 
       } else if (el.type === 'pulley') {
@@ -163,7 +165,7 @@
           doc.path(a.shaft, `fill="none" stroke="${INK}" stroke-width="${_lw(SN.lwGeom)}"`);
           doc.path(a.head,  `fill="${INK}" stroke="none"`);
         }
-        doc.text(`F = ${+mag.toFixed(3)} N`, cx, by + _n2(10 / VIEWPORT.scale), _n2(SN_FS.force / VIEWPORT.scale), { italic: true });
+        if (STATE.showLabels !== false) doc.text(`F = ${+mag.toFixed(3)} N`, cx, by + _n2(10 / VIEWPORT.scale), _n2(SN_FS.force / VIEWPORT.scale), { italic: true });
 
       } else if (el.type === 'extforce') {
         let ux = 0, uy = -1;
@@ -180,7 +182,7 @@
         doc.path(a.head,  `fill="${INK}" stroke="none"`);
         doc.path(svgCircle(cx, cy, 2.2 / VIEWPORT.scale), `fill="${INK}" stroke="none"`);
         const px = -uy, py = ux;
-        doc.text(`${el.forceN} N`,
+        if (STATE.showLabels !== false) doc.text(`${el.forceN} N`,
           cx + ux * aLen * 0.55 + px * (10 / VIEWPORT.scale),
           cy + uy * aLen * 0.55 + py * (10 / VIEWPORT.scale),
           _n2(SN_FS.force / VIEWPORT.scale), { italic: true });

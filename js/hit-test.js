@@ -150,11 +150,7 @@
     return null;
   }
 
-  /** 토스트 메시지 (2초 표시 후 validateAll로 복구) */
-  let _toastTimer = null;
+  /** 토스트 메시지 — guide.js 의 showToast 로 위임 (없으면 무시) */
   function _showToast(msg) {
-    warningBar.textContent   = msg;
-    warningBar.style.display = 'block';
-    clearTimeout(_toastTimer);
-    _toastTimer = setTimeout(() => { validateAll(); }, 2000);
+    if (typeof showToast === 'function') showToast(msg, 'warn', 2000);
   }

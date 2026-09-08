@@ -1,0 +1,89 @@
+/* ════════════════════════════════════════════════════════════════
+ * 디자인 토큰 (CSS Custom Properties)
+ * ──────────────────────────────────────────────────────────────
+ * 수능 지면(paper) 테마 — 2022~2026 수능 물리학 문항 그림은
+ * 흰 바탕에 검정 선 + 회색 채움뿐이다. 캔버스를 그 지면과 똑같이
+ * 맞추고, UI 크롬만 밝은 회색 계열로 둔다.
+ * 토큰 이름은 형제 프로젝트 circuit_simulation 과 같다 — 두 앱이
+ * 컴포넌트 CSS 를 그대로 나눠 쓸 수 있게. 예전 이름은 아래에서 별칭으로 유지.
+ * ════════════════════════════════════════════════════════════════ */
+:root {
+  /* ── 배경 계열 ── */
+  --bg-app:        #eceef1;   /* 앱 전체 배경 (지면 바깥) */
+  --bg-stage:      #ffffff;   /* 캔버스 무대 = 흰 지면 */
+  --bg-sidebar:    #f7f8fa;   /* 사이드바 */
+  --bg-item:       #ffffff;   /* 사이드바 아이템 */
+  --bg-panel:      rgba(255,255,255,0.98);   /* 속성 패널 */
+  --bg-panel-deep: rgba(255,255,255,0.99);   /* 그래프·도움말 패널 */
+  --bg-glass:      rgba(255,255,255,0.92);   /* 반투명 버튼 */
+  --bg-popup:      rgba(255,255,255,0.99);   /* 값 입력 팝업 */
+  --bg-ctx:        rgba(255,255,255,0.99);   /* 컨텍스트 메뉴 */
+
+  /* ── 테두리 계열 ── */
+  --border-dim:    #dde1e7;
+  --border-base:   #c9ced6;
+  --border-item:   #c9ced6;
+  --border-active: #2563eb;
+  --border-focus:  #3b82f6;
+
+  /* ── 텍스트 계열 ── */
+  --text-base:     #111318;   /* 본문 = 지면 잉크 */
+  --text-dim:      #5a6270;
+  --text-label:    #6b7482;
+  --text-accent:   #1d4ed8;
+  --text-accent2:  #2563eb;
+  --text-title:    #1d4ed8;
+
+  /* ── 상호작용 ── */
+  --btn-h:         #e8ebf0;
+  --sel-bg:        #e3edfd;
+
+  /* ── 위험(삭제) 계열 ── */
+  --danger-bg:     #fdeaea;
+  --danger-border: #f0c0c0;
+  --danger-text:   #b42318;
+
+  /* ── 경고·성공 ── */
+  --warn-bg:       #fff7e6;
+  --warn-border:   #f0d9a8;
+  --warn-text:     #8a5a00;
+  --ok-bg:         #e6f4ec;
+  --ok-border:     #b9e0cb;
+  --ok-text:       #128a53;
+
+  /* ── 지면 잉크 (캔버스 작도용 — JS 는 SN 토큰을 쓴다) ── */
+  --ink:           #000000;
+  --ink-fill:      #e8e8e8;
+
+  /* ── 형태 ── */
+  --radius-sm:  4px;
+  --radius-md:  8px;
+  --radius-lg:  10px;
+  --radius-xl:  14px;
+  --radius-pill: 36px;
+
+  /* ── 효과 ── */
+  --blur:        blur(12px);
+  --shadow-panel: 0 2px 10px rgba(0,0,0,0.12);
+  --shadow-float: 0 4px 18px rgba(0,0,0,0.18);
+
+  /* ── 서체 — 수능 문항지 조판과 같은 계열 (HyhwpEQ 는 HWP 설치 기기에만) ── */
+  --font:      'HyhwpEQ', 'HYhwpEQ', 'Malgun Gothic', '맑은 고딕', sans-serif;
+  --font-mono: 'HyhwpEQ', 'HYhwpEQ', 'Malgun Gothic', '맑은 고딕', sans-serif;
+
+  /* ── 레이아웃 치수 ── */
+  --sidebar-w:   76px;
+  --panel-w:     236px;
+  --bottom-h:    56px;
+  --btn-size:    36px;
+
+  /* ── 예전 이름 (별칭) — 인라인 스타일·구 컴포넌트 호환 ── */
+  --bg:       var(--bg-app);
+  --surface:  var(--bg-sidebar);
+  --surface2: var(--bg-item);
+  --border:   var(--border-base);
+  --text:     var(--text-base);
+  --accent:   var(--text-accent2);
+  --accent2:  var(--border-focus);
+  --warn-fg:  var(--warn-text);
+}

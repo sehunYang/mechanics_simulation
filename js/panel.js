@@ -98,6 +98,16 @@
     header.style.cssText = 'font-size:11px;color:var(--text);text-transform:none;margin-bottom:2px;border-bottom:1px solid var(--border);padding-bottom:4px;';
     panelRight.appendChild(header);
 
+    /* ── 실행·일시정지 중: 값 편집은 막고 측정값만 보여 준다 ── */
+    if (STATE.simMode !== 'EDIT') {
+      if (typeof buildMeasureSection === 'function') panelRight.appendChild(buildMeasureSection(sel));
+      const tip = document.createElement('div');
+      tip.className = 'pp-note';
+      tip.textContent = '값을 바꾸려면 ↺ 초기화 뒤 편집하세요. 일시정지 중에는 ⏭ 한 스텝으로 순간을 볼 수 있습니다.';
+      panelRight.appendChild(tip);
+      return;
+    }
+
     /* ─────────────────────────
        FloorSegment 전용 패널
     ───────────────────────── */
@@ -154,6 +164,7 @@
         panelRight.appendChild(muHint);
       }
 
+      if (typeof buildMeasureSection === 'function') panelRight.appendChild(buildMeasureSection(sel));
       panelRight.appendChild(_btn('🗑 삭제', 'danger', () => deleteSelected()));
       return;
     }
@@ -186,6 +197,7 @@
       infoL.textContent   = `길이: ${len} m`;
       panelRight.appendChild(infoL);
 
+      if (typeof buildMeasureSection === 'function') panelRight.appendChild(buildMeasureSection(sel));
       panelRight.appendChild(_btn('🗑 삭제', 'danger', () => deleteSelected()));
       return;
     }
@@ -255,6 +267,14 @@
     }
 
     if (sel.type === 'rect' || sel.type === 'circle') {
+      // 이름 — 그래프·CSV 범례와 POE 문항에서 이 물체를 가리키는 데 쓴다
+      const nameInp = document.createElement('input');
+      nameInp.type = 'text'; nameInp.className = 'panel-input'; nameInp.maxLength = 12;
+      nameInp.placeholder = (typeof bodyLabel === 'function') ? bodyLabel(sel) : '이름';
+      nameInp.value = sel.label || '';
+      nameInp.addEventListener('pointerdown', e => e.stopPropagation());
+      nameInp.addEventListener('change', () => { sel.label = nameInp.value.trim(); if (typeof recordHistory === 'function') recordHistory(); });
+      panelRight.appendChild(_row('이름', nameInp));
       panelRight.appendChild(_row('질량 (kg)',
         _numInput(sel.mass, 0.1, undefined, 0.1, v => { sel.mass = v; })));
       panelRight.appendChild(_row('초기 vx (m/s)',
@@ -263,6 +283,15 @@
         _numInput(sel.vy0, undefined, undefined, 0.1, v => { sel.vy0 = v; })));
       panelRight.appendChild(_row('반발계수 e',
         _slider(sel.e, 0.0, 1.0, 0.01, v => { sel.e = v; })));
+      // 공기저항 (선형 F = −bv). 0 이면 없음 — 종단속도 탐구용
+      panelRight.appendChild(_row('공기저항 b (N·s/m)',
+        _numInput(sel.drag || 0, 0, 50, 0.1, v => { sel.drag = Math.max(0, v); })));
+      if (sel.drag > 0) {
+        const dInfo = document.createElement('div');
+        dInfo.className = 'pp-note';
+        dInfo.textContent = `F = −b·v. 종단속도 mg/b ≈ ${(sel.mass * CONFIG.G / sel.drag).toFixed(2)} m/s`;
+        panelRight.appendChild(dInfo);
+      }
 
       // ── 궤적 표시 (물체별 토글) ──
       //   끄면 기록도 하지 않는다. 실행 중에는 물체를 선택할 수 없어
@@ -385,6 +414,10 @@
       info.textContent   = '실을 연결하면 실 방향으로 힘이 작용합니다 (실이 팽팽할 때만).';
       panelRight.appendChild(info);
     }
+
+    /* ── 측정값 (물체·용수철·도르래) ── */
+    if (typeof buildMeasureSection === 'function' && ['rect', 'circle', 'spring', 'pulley'].includes(sel.type))
+      panelRight.appendChild(buildMeasureSection(sel));
 
     /* ── 공통: 삭제 버튼 ── */
     panelRight.appendChild(_btn('🗑 삭제', 'danger', () => deleteSelected()));

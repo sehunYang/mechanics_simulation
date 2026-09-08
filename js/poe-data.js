@@ -1,0 +1,542 @@
+/* ============================================================
+   poe-data.js — 예측·관찰·설명(POE) 활동 데이터
+   ─ 클래식 스크립트: 전역 스코프 공유, index.html 순서대로 로드 ─
+
+   오개념은 보여 주는 것만으로 풀리지 않는다. 학생이 먼저 예측하고 틀리는
+   경험이 있어야 한다. 예제마다:
+     scene     : 갤러리 id 또는 DSL spec.  set 은 불러온 뒤 덧씌울 값 { 키: {속성} }
+     question  : 예측 질문
+     options   : 선택지 [{label, correct, tag}]  — tag 는 오답에 담긴 오개념
+     answer    : 수치 예측 { measure | value, tol('8%' 또는 절대값), unit, prompt }
+     observe   : 관찰 단계 안내 (무엇을 볼지)
+     vis       : 관찰 때 켤 표시 ['forces','vectors','graph:v','labels-off']
+     select    : 관찰 때 선택할 요소 키 (속성 패널 측정값)
+     variants  : 비교표 [{label, set}] — 값을 바꾼 장면을 헤드리스로 돌려 measure 를 채운다
+     measure   : { body, q, at|when, stat, label, unit }  (headless.measureScene 규격)
+     explain   : 설명
+     misconception : 다루는 오개념 (한 줄)
+   ============================================================ */
+
+  const POE_CATS = [
+    { id: 'motion',   label: '힘과 운동' },
+    { id: 'friction', label: '마찰·빗면' },
+    { id: 'rope',     label: '실·도르래' },
+    { id: 'spring',   label: '용수철' },
+    { id: 'momentum', label: '충돌·운동량' },
+    { id: 'energy',   label: '에너지' },
+    { id: 'guide',    label: '해설' },
+    { id: 'idea',     label: '탐구' },
+  ];
+
+  /* 공용 바닥 */
+  const _FLAT   = { key: 'F', x1: 34, y1: 60, x2: 72, y2: 60 };
+  const _FLATMU = { key: 'F', x1: 30, y1: 60, x2: 80, y2: 60, isFriction: true, muS: 0.3, muK: 0.25 };
+
+  const POE_EXAMPLES = [
+    /* ───────────── 힘과 운동 ───────────── */
+    {
+      id: 'ff-mass', cat: 'motion', title: '무거운 것이 먼저 떨어질까', level: '기초',
+      misconception: '무거운 물체가 더 빨리 떨어진다 (아리스토텔레스 모형)',
+      scene: { floors: [_FLAT], elements: [
+        { key: 'A', type: 'circle', gridX: 44, gridY: 44, mass: 1, e: 0.2, label: '1 kg' },
+        { key: 'B', type: 'circle', gridX: 52, gridY: 44, mass: 5, e: 0.2, label: '5 kg' } ], view: 'fit' },
+      question: '같은 높이에서 1 kg 공과 5 kg 공을 동시에 놓습니다. 어느 쪽이 먼저 바닥에 닿을까요?',
+      options: [
+        { label: '동시에 닿는다', correct: true },
+        { label: '5 kg 공이 먼저 닿는다', tag: '무게가 곧 낙하 속도라는 생각 — 질량이 크면 중력도 크지만 관성도 그만큼 크다' },
+        { label: '1 kg 공이 먼저 닿는다', tag: '가벼우면 움직이기 쉽다는 생각을 낙하에 적용' },
+      ],
+      observe: '▶ 실행 후 y–t 그래프에서 두 곡선이 겹치는지 보세요. 각 공을 클릭하면 가속도가 나옵니다.',
+      vis: ['graph:y', 'vectors'], select: 'B',
+      variants: [{ label: '1 kg', set: { B: { mass: 1 } } }, { label: '5 kg (기준)' }, { label: '20 kg', set: { B: { mass: 20 } } }],
+      measure: { body: 'B', q: 'v', when: 'floor', stat: 'time', label: '바닥 도달 시각', unit: 's' },
+      explain: '중력은 질량에 비례하지만(F = mg) 가속도는 힘을 질량으로 나눈 것이라(a = F/m = g) 질량이 사라집니다. 공기 저항이 없으면 모든 물체는 같은 가속도 9.8 m/s² 로 떨어집니다. 비교표에서 질량을 20배로 해도 도달 시각이 같습니다.',
+    },
+    {
+      id: 'proj-time', cat: 'motion', title: '옆으로 던진 공과 떨어뜨린 공', level: '기초',
+      misconception: '수평 속도가 있으면 공중에 더 오래 머문다',
+      scene: 'freefall',
+      question: '같은 높이에서 한 공은 그냥 놓고, 다른 공은 옆으로 5 m/s 로 던집니다. 어느 쪽이 먼저 바닥에 닿을까요?',
+      options: [
+        { label: '동시에 닿는다', correct: true },
+        { label: '그냥 놓은 공이 먼저 닿는다', tag: '던진 공은 "날아가느라" 늦게 떨어진다는 생각 — 수평·수직 운동은 독립' },
+        { label: '던진 공이 먼저 닿는다', tag: '속도가 크면 무엇이든 빠르다는 생각' },
+      ],
+      observe: '▶ 실행 후 y–t 그래프를 보세요. 두 공의 높이 곡선이 완전히 겹칩니다. 궤적은 다르지만 높이는 같습니다.',
+      vis: ['graph:y', 'vectors'], select: 'B',
+      variants: [{ label: '0 m/s (기준)' }, { label: '5 m/s', set: { B: { vx0: 5 } } }, { label: '15 m/s', set: { B: { vx0: 15 } } }],
+      measure: { body: 'B', q: 'v', when: 'floor', stat: 'time', label: '바닥 도달 시각', unit: 's' },
+      explain: '수직 방향 운동은 수평 속도와 무관합니다. 두 공 모두 수직 방향으로는 초속도 0, 가속도 g 인 같은 운동을 하므로 같은 시각에 닿습니다. 던진 공의 속도 벡터를 보면 가로 성분은 그대로이고 세로 성분만 자라납니다.',
+    },
+    {
+      id: 'inertia', cat: 'motion', title: '힘이 없으면 멈출까', level: '기초',
+      misconception: '운동을 유지하려면 힘이 계속 필요하다',
+      scene: { floors: [_FLAT], elements: [{ key: 'A', type: 'rect', gridX: 38, gridY: 59, mass: 2, vx0: 3, label: '물체' }], view: 'fit' },
+      question: '마찰이 없는 바닥에서 물체가 3 m/s 로 미끄러지고 있습니다. 미는 힘은 없습니다. 이 물체는?',
+      options: [
+        { label: '계속 3 m/s 로 움직인다', correct: true },
+        { label: '점점 느려져 멈춘다', tag: '힘이 없으면 운동이 사라진다는 생각 — 일상에서는 마찰이 늘 있어서 생긴 직관' },
+        { label: '조금 가다가 갑자기 멈춘다', tag: '"힘이 다 떨어진다" 모형 (임페투스)' },
+      ],
+      observe: '▶ 실행 후 v–t 그래프가 수평선인지 보세요. 힘 표시를 켜면 중력과 수직항력만 있고 알짜힘은 0 입니다.',
+      vis: ['graph:v', 'forces'], select: 'A',
+      measure: { body: 'A', q: 'v', at: 4, label: '4 s 후 속력', unit: 'm/s' },
+      explain: '뉴턴 제1법칙. 알짜힘이 0 이면 속도는 변하지 않습니다. 중력과 수직항력은 서로 상쇄되어 알짜힘이 0 이고, 마찰이 없으니 물체는 영원히 같은 속도로 미끄러집니다. 일상에서 물체가 멈추는 것은 마찰이라는 힘이 있기 때문입니다.',
+    },
+    {
+      id: 'zone-return', cat: 'motion', title: '반대 방향 힘을 받는 구간', level: '심화',
+      misconception: '힘을 받으면 그 방향으로 즉시 움직인다',
+      scene: 'forcezone',
+      question: '3 m/s 로 미끄러지는 2 kg 물체가 −4 N 의 일정한 힘을 받는 구간(길이 8 m)에 들어갑니다. 물체는?',
+      options: [
+        { label: '구간 안에서 멈춘 뒤 되돌아 나온다', correct: true },
+        { label: '느려지지만 구간을 통과한다', tag: '감속 거리를 어림하지 않은 생각 — v² = v₀² + 2as 로 2.25 m 에서 멈춘다' },
+        { label: '구간에 들어가는 순간 멈춘다', tag: '힘이 속도를 바로 없앤다는 생각 — 힘은 속도를 "바꾸는" 것' },
+        { label: '구간 끝에서 정확히 멈춘다', tag: '힘과 거리의 관계를 짐작으로 맞춘 경우' },
+      ],
+      observe: '▶ 실행 후 v–t 그래프에서 속도가 0 을 지나 음수가 되는 것을 보세요. x–t 에서 되돌아오는 위치를 읽어 보세요.',
+      vis: ['graph:v', 'vectors', 'forces'], select: 'A',
+      measure: { body: 'A', q: 'x', stat: 'max', T: 6, label: '가장 멀리 간 x', unit: 'm' },
+      explain: '힘은 속도를 바꾸는 원인입니다(a = F/m = −2 m/s²). 들어갈 때 3 m/s 였으니 v² = v₀² + 2as → 0 = 9 − 4s → s = 2.25 m 에서 멈추고, 힘은 계속 −x 방향이므로 그대로 가속되어 3 m/s 로 되돌아 나옵니다. 던져 올린 공이 최고점에서 멈추고 떨어지는 것과 같은 운동입니다.',
+    },
+
+    /* ───────────── 마찰·빗면 ───────────── */
+    {
+      id: 'incline-mass', cat: 'friction', title: '빗면 가속도와 질량', level: '기초',
+      misconception: '무거운 물체가 빗면을 더 빨리 내려온다',
+      scene: 'incline',
+      question: '마찰 있는 빗면(μk = 0.25)에서 2 kg 물체가 미끄러져 내려옵니다. 질량을 4 kg 으로 바꾸면 가속도는?',
+      options: [
+        { label: '같다', correct: true },
+        { label: '2배가 된다', tag: '중력이 커지니 더 빨라진다는 생각 — 마찰력도, 관성도 함께 2배' },
+        { label: '절반이 된다', tag: '무거우면 움직이기 힘들다는 생각만 적용' },
+      ],
+      observe: '비교표의 줄을 눌러 질량을 바꿔 가며 가속도를 비교하세요. 물체를 클릭하면 수직항력·마찰력이 함께 나옵니다.',
+      vis: ['forces', 'graph:v'], select: 'A',
+      variants: [{ label: '1 kg', set: { A: { mass: 1 } } }, { label: '2 kg (기준)' }, { label: '4 kg', set: { A: { mass: 4 } } }],
+      measure: { body: 'A', q: 'a', at: 1.0, label: '가속도', unit: 'm/s²' },
+      explain: 'a = g(sin θ − μk cos θ). 중력의 빗면 성분 mg sin θ 와 마찰력 μk mg cos θ 가 모두 질량에 비례하고, 이것을 질량으로 나누면 질량이 사라집니다. 27° 빗면에서 a ≈ 9.8 × (0.447 − 0.25 × 0.894) ≈ 2.19 m/s² 로 질량과 무관합니다.',
+    },
+    {
+      id: 'incline-static', cat: 'friction', title: '미끄러질까, 멈춰 있을까', level: '기초',
+      misconception: '경사면 위 물체는 늘 미끄러진다 / 정지 마찰력은 항상 μN 이다',
+      scene: { floors: [
+          { key: 'S', x1: 38, y1: 62, x2: 62, y2: 50, isFriction: true, muS: 0.6, muK: 0.5 },
+          { key: 'G', x1: 26, y1: 62, x2: 38, y2: 62 } ],
+        elements: [{ key: 'A', type: 'rect', mass: 2, onFloor: { floor: 'S', x: 56 }, label: '물체' }], view: 'fit' },
+      question: '경사각 약 27°(tan θ = 0.5), μs = 0.6 인 빗면에 2 kg 물체를 놓습니다. 물체는?',
+      options: [
+        { label: '정지한 채 머문다 — 마찰력 ≈ 8.8 N', correct: true },
+        { label: '미끄러져 내려온다', tag: '빗면이면 미끄러진다는 직관 — 조건은 tan θ 와 μs 의 크기 비교' },
+        { label: '정지한 채 머문다 — 마찰력 = μs N ≈ 10.5 N', tag: '정지 마찰력을 항상 최대값 μs N 으로 보는 오개념 — 정지 마찰은 필요한 만큼만' },
+      ],
+      observe: '▶ 실행해도 물체가 그대로인지 보고, 물체를 클릭해 마찰력 값을 읽으세요. 바닥면을 클릭하면 tan θ 와 μs 비교가 나옵니다.',
+      vis: ['forces'], select: 'A',
+      variants: [{ label: 'μs = 0.6 (기준)' }, { label: 'μs = 0.4', set: { S: { muS: 0.4, muK: 0.35 } } }, { label: 'μs = 0.3', set: { S: { muS: 0.3, muK: 0.25 } } }],
+      measure: { body: 'A', q: 'a', at: 1.0, label: '가속도', unit: 'm/s²' },
+      explain: '미끄러지려는 힘은 mg sin θ ≈ 8.77 N, 최대 정지 마찰력은 μs mg cos θ ≈ 10.5 N. 필요한 힘이 최대값보다 작으니 물체는 정지하고, 이때 마찰력은 "필요한 만큼"인 8.77 N 입니다(μs N 이 아닙니다). 조건을 정리하면 tan θ < μs 일 때 정지. μs 를 0.4 로 내리면 tan θ = 0.5 > 0.4 라 미끄러집니다.',
+    },
+    {
+      id: 'friction-dist', cat: 'friction', title: '마찰로 멈추는 거리와 질량', level: '기초',
+      misconception: '무거운 물체는 더 멀리 미끄러진다 / 마찰력이 크니 더 빨리 멈춘다',
+      scene: { floors: [_FLATMU], elements: [{ key: 'A', type: 'rect', gridX: 36, gridY: 59, mass: 1, vx0: 4, label: '물체' }], view: 'fit' },
+      question: '4 m/s 로 미끄러지는 1 kg 물체가 마찰(μk = 0.25) 바닥에서 멈춥니다. 질량을 2 kg 으로 바꾸면 멈추기까지 거리는?',
+      options: [
+        { label: '같다', correct: true },
+        { label: '2배가 된다', tag: '무거우면 "밀고 나가는 힘"이 크다는 생각 — 마찰력도 2배' },
+        { label: '절반이 된다', tag: '마찰력이 커지는 것만 보고 관성은 보지 않은 경우' },
+      ],
+      observe: '비교표에서 질량을 바꿔 멈춘 거리를 비교하세요. x–t 그래프가 평평해지는 지점이 멈춘 곳입니다.',
+      vis: ['graph:x', 'forces'], select: 'A',
+      variants: [{ label: '1 kg (기준)' }, { label: '2 kg', set: { A: { mass: 2 } } }, { label: '5 kg', set: { A: { mass: 5 } } }],
+      measure: { body: 'A', q: 'x', when: 'stop', stat: 'dist', T: 8, label: '멈추기까지 거리', unit: 'm' },
+      explain: '마찰력 f = μk mg 가 만드는 감속도는 a = f/m = μk g 로 질량과 무관합니다. 멈추는 거리 s = v₀²/(2μk g) = 16/(2 × 0.25 × 9.8) ≈ 3.27 m 도 질량과 무관합니다. 에너지로 보면 ½mv² = μk mg s 에서 m 이 소거됩니다.',
+    },
+    {
+      id: 'pull-static', cat: 'friction', title: '당겨도 움직이지 않을 때의 마찰력', level: '심화',
+      misconception: '마찰력은 항상 μN 이다',
+      scene: { floors: [{ key: 'F', x1: 30, y1: 60, x2: 80, y2: 60, isFriction: true, muS: 0.5, muK: 0.4 }],
+        elements: [
+          { key: 'A', type: 'rect', gridX: 48, gridY: 59, mass: 2, label: '물체' },
+          { key: 'E', type: 'extforce', gridX: 54.5, gridY: 59, forceN: 6 } ],
+        ropes: [['A', 'right', 'E', 'center']], view: 'fit' },
+      question: '2 kg 물체(μs = 0.5, 최대 정지 마찰력 9.8 N)를 6 N 으로 당깁니다. 물체와 마찰력은?',
+      options: [
+        { label: '움직이지 않고, 마찰력은 6 N', correct: true },
+        { label: '움직이지 않고, 마찰력은 9.8 N', tag: '정지 마찰력 = μs N 이라는 오개념 — 그러면 물체가 뒤로 가속되어야 한다' },
+        { label: '천천히 미끄러진다', tag: '당기면 조금은 움직인다는 직관 — 6 N < 9.8 N 이면 전혀 움직이지 않는다' },
+      ],
+      observe: '▶ 실행 후 물체를 클릭해 마찰력을 읽으세요. 비교표에서 외력을 9 N, 12 N 으로 올려 언제 움직이기 시작하는지 보세요.',
+      vis: ['forces'], select: 'A',
+      variants: [{ label: '6 N (기준)' }, { label: '9 N', set: { E: { forceN: 9 } } }, { label: '12 N', set: { E: { forceN: 12 } } }],
+      measure: { body: 'A', q: 'a', at: 1.0, label: '가속도', unit: 'm/s²' },
+      explain: '정지 마찰력은 "외력에 맞서 필요한 만큼" 생기고 최대값이 μs N = 9.8 N 입니다. 6 N 으로 당기면 마찰력도 6 N 이 되어 알짜힘 0, 물체는 정지합니다. 12 N 이면 최대값을 넘어 미끄러지며, 그때는 운동 마찰 μk N = 7.84 N 이 작용해 a = (12 − 7.84)/2 ≈ 2.1 m/s² 로 가속됩니다.',
+    },
+
+    /* ───────────── 실·도르래 ───────────── */
+    {
+      id: 'atwood-T', cat: 'rope', title: '아트우드 기계의 장력', level: '기초',
+      misconception: '장력 = 매달린 물체의 무게',
+      scene: 'atwood',
+      question: '고정 도르래에 1 kg 과 1.5 kg 을 걸었습니다. 실의 장력은?',
+      options: [
+        { label: '9.8 N 과 14.7 N 사이의 값', correct: true },
+        { label: '14.7 N (무거운 쪽 무게)', tag: '무거운 물체가 실을 "자기 무게로" 당긴다는 생각 — 그러면 1 kg 은 4.9 N 의 알짜힘으로 위로 가속돼야 한다' },
+        { label: '9.8 N (가벼운 쪽 무게)', tag: '장력 = 가벼운 쪽 무게라는 생각 — 그러면 가벼운 쪽은 가속되지 않는다' },
+        { label: '24.5 N (두 무게의 합)', tag: '양쪽 무게가 실에 더해진다는 생각 — 장력은 실이 한 물체를 당기는 힘' },
+      ],
+      observe: '▶ 실행 후 실을 클릭해 장력을 읽으세요. 두 물체를 각각 클릭해 알짜힘 = ma 인지 확인하세요.',
+      vis: ['forces'], select: 'B',
+      variants: [{ label: '1.5 kg (기준)' }, { label: '3 kg', set: { B: { mass: 3 } } }, { label: '1 kg (같은 질량)', set: { B: { mass: 1 } } }],
+      measure: { body: 'B', q: 'T', at: 0.5, label: '장력', unit: 'N' },
+      explain: '장력은 가벼운 쪽을 위로 가속시킬 만큼은 그 무게보다 커야 하고(T − m₁g = m₁a), 무거운 쪽을 아래로 가속시킬 만큼은 그 무게보다 작아야 합니다(m₂g − T = m₂a). 두 식을 풀면 T = 2m₁m₂g/(m₁+m₂) = 11.76 N. 질량이 같으면 가속도 0 이고 장력은 정확히 무게 9.8 N 이 됩니다.',
+    },
+    {
+      id: 'atwood-a', cat: 'rope', title: '아트우드 가속도 예측하기', level: '심화',
+      misconception: '가속도 계산에서 계 전체 질량을 빼먹음',
+      scene: 'atwood',
+      question: '1 kg 과 1.5 kg 아트우드 기계. 물체의 가속도 크기는 몇 m/s² 일까요? (g = 9.8)',
+      answer: { measure: { body: 'B', q: 'a', at: 0.5 }, tol: '8%', unit: 'm/s²', prompt: '가속도 (m/s²)' },
+      observe: '▶ 실행 후 물체를 클릭해 가속도를 읽으세요. v–t 그래프의 기울기도 같은 값입니다.',
+      vis: ['graph:v', 'forces'], select: 'B',
+      variants: [{ label: '1.5 kg (기준)' }, { label: '2 kg', set: { B: { mass: 2 } } }, { label: '3 kg', set: { B: { mass: 3 } } }],
+      measure: { body: 'B', q: 'a', at: 0.5, label: '가속도', unit: 'm/s²' },
+      explain: '계 전체를 한 덩어리로 보면 알짜힘은 무게 차 (m₂ − m₁)g = 4.9 N 이고, 움직여야 하는 질량은 둘의 합 2.5 kg 입니다. a = 4.9/2.5 = 1.96 m/s². 흔한 실수는 무거운 쪽 질량만으로 나누는 것입니다.',
+    },
+    {
+      id: 'movable', cat: 'rope', title: '움직도르래 — 가벼운 쪽이 이긴다?', level: '심화',
+      misconception: '무거운 쪽이 항상 내려간다',
+      scene: 'movable-pulley',
+      question: '2 kg 하중이 움직도르래에 걸려 있고, 실 끝에 1.5 kg 이 매달려 있습니다. 어떻게 움직일까요?',
+      options: [
+        { label: '1.5 kg 이 내려가며 2 kg 을 들어 올린다', correct: true },
+        { label: '2 kg 이 내려가고 1.5 kg 이 올라간다', tag: '무거운 쪽이 내려간다는 직관 — 움직도르래는 힘을 반으로 나눈다' },
+        { label: '둘 다 움직이지 않는다', tag: '평형 조건을 2T = 2g, T = 1.5g 로 두지 않은 경우' },
+      ],
+      observe: '▶ 실행 후 두 물체를 클릭해 속력을 비교하세요. 1.5 kg 은 2 kg 의 두 배 속력으로 움직입니다.',
+      vis: ['vectors', 'forces'], select: 'L',
+      variants: [{ label: '1.5 kg (기준)' }, { label: '1 kg (= 하중의 절반)', set: { M: { mass: 1 } } }, { label: '0.8 kg', set: { M: { mass: 0.8 } } }],
+      measure: { body: 'L', q: 'vy', at: 1.0, label: '하중 속도 (위 +)', unit: 'm/s' },
+      explain: '움직도르래에는 실이 두 가닥 걸려 있어 하중을 2T 로 받칩니다. 하중을 정지시키는 데 필요한 장력은 T = 9.8 N 인데 1.5 kg 은 14.7 N 까지 낼 수 있으니 하중이 올라갑니다. 대신 하중이 1 m 오르려면 실은 2 m 풀려야 하므로 1.5 kg 은 두 배 속력으로 내려갑니다 — 힘은 절반, 거리는 두 배. 매단 질량이 정확히 1 kg 이면 평형입니다.',
+    },
+    {
+      id: 'pend-T', cat: 'rope', title: '진자 최저점의 장력', level: '심화',
+      misconception: '장력은 항상 무게와 같다',
+      scene: 'pendulum',
+      question: '45° 에서 놓은 진자가 가장 낮은 곳을 지나는 순간, 실의 장력은 추의 무게(9.8 N)와 비교해?',
+      options: [
+        { label: '무게보다 크다', correct: true },
+        { label: '무게와 같다', tag: '정지한 추의 직관을 움직이는 추에 적용 — 원운동에는 구심력이 필요하다' },
+        { label: '무게보다 작다', tag: '빨리 움직이면 실이 느슨해진다는 생각' },
+      ],
+      observe: '▶ 실행 후 추를 클릭하고 장력 값이 어떻게 변하는지 보세요. 힘 표시를 켜면 최저점에서 장력 화살표가 중력보다 긴 것이 보입니다.',
+      vis: ['forces', 'vectors'], select: 'A',
+      measure: { body: 'A', q: 'T', stat: 'max', T: 3, label: '최대 장력', unit: 'N' },
+      explain: '최저점에서 추는 원 궤도를 돌고 있어 위쪽(중심 방향)으로 알짜힘 mv²/L 이 필요합니다. 그래서 T − mg = mv²/L → T = mg + mv²/L. 45° 에서 놓으면 T = mg(3 − 2cos45°) ≈ 1.59 mg ≈ 15.5 N. 놓는 순간에는 T = mg cos45° ≈ 6.9 N 으로 무게보다 작습니다 — 장력은 위치마다 다릅니다.',
+    },
+
+    /* ───────────── 용수철 ───────────── */
+    {
+      id: 'spring-amp', cat: 'spring', title: '진폭과 주기', level: '기초',
+      misconception: '크게 흔들면 한 번 왕복에 더 오래 걸린다',
+      scene: 'spring',
+      question: 'k = 10 N/m 용수철에 매달린 1 kg 물체를 더 세게 밀어 진폭을 2배로 하면 주기는?',
+      options: [
+        { label: '같다', correct: true },
+        { label: '길어진다 — 더 멀리 가야 하니까', tag: '거리만 보고 속력을 보지 않은 생각 — 진폭이 크면 속력도 비례해 크다' },
+        { label: '짧아진다 — 더 세게 밀었으니까', tag: '속력만 보고 거리를 보지 않은 생각' },
+      ],
+      observe: '비교표에서 초기 속력을 바꿔 주기를 비교하세요. x–t 그래프의 봉우리 간격이 주기입니다.',
+      vis: ['graph:x'], select: 'A',
+      variants: [{ label: '1 m/s', set: { A: { vx0: -1 } } }, { label: '3 m/s (기준)' }, { label: '6 m/s', set: { A: { vx0: -6 } } }],
+      measure: { body: 'A', q: 'period', T: 8, label: '주기', unit: 's' },
+      explain: '단진동의 주기 T = 2π√(m/k) 에는 진폭이 없습니다. 진폭이 2배면 가야 할 거리도 2배지만 복원력(kx)도 2배라 속력도 2배가 되어 시간은 같습니다. 여기서는 T = 2π√(1/10) ≈ 1.99 s.',
+    },
+    {
+      id: 'spring-mass', cat: 'spring', title: '질량과 주기', level: '기초',
+      misconception: '질량 4배면 주기도 4배',
+      scene: 'spring',
+      question: '같은 용수철(k = 10 N/m)에 매단 물체의 질량을 1 kg 에서 4 kg 으로 바꾸면 주기는?',
+      options: [
+        { label: '2배가 된다', correct: true },
+        { label: '4배가 된다', tag: '주기가 질량에 비례한다는 생각 — 제곱근 관계' },
+        { label: '같다', tag: '진폭처럼 질량도 무관하다고 일반화' },
+        { label: '절반이 된다', tag: '무거우면 힘을 더 받아 빨라진다는 생각 — 힘은 k 만 정한다' },
+      ],
+      observe: '비교표에서 질량 1·4·9 kg 의 주기를 비교하세요. 주기가 1·2·3 배가 됩니다.',
+      vis: ['graph:x'], select: 'A',
+      variants: [{ label: '1 kg (기준)' }, { label: '4 kg', set: { A: { mass: 4 } } }, { label: '9 kg', set: { A: { mass: 9 } } }],
+      measure: { body: 'A', q: 'period', T: 14, label: '주기', unit: 's' },
+      explain: 'T = 2π√(m/k). 질량이 4배면 √4 = 2 배, 9배면 3배가 됩니다. 무거운 물체는 같은 힘에 덜 가속되어(a = F/m) 왕복이 느려지지만, 관계는 정비례가 아니라 제곱근입니다.',
+    },
+    {
+      id: 'spring-vmax', cat: 'spring', title: '속력이 가장 큰 곳', level: '기초',
+      misconception: '용수철이 가장 많이 눌린 곳에서 가장 빠르다',
+      scene: 'spring',
+      question: '진동하는 물체의 속력이 가장 큰 곳은 어디일까요?',
+      options: [
+        { label: '평형점 (용수철이 자연 길이일 때)', correct: true },
+        { label: '용수철이 가장 많이 압축된 곳', tag: '힘이 큰 곳 = 빠른 곳이라는 생각 — 힘이 큰 곳은 가속도가 큰 곳' },
+        { label: '용수철이 가장 많이 늘어난 곳', tag: '같은 오개념의 반대편' },
+      ],
+      observe: '▶ 실행 후 v–t 와 x–t 그래프를 번갈아 보세요. v 가 최대일 때 x 는 평형점, v 가 0 일 때 x 는 끝점입니다. 용수철을 클릭하면 변형과 탄성력이 보입니다.',
+      vis: ['graph:v', 'vectors', 'forces'], select: 'A',
+      measure: { body: 'A', q: 'v', stat: 'max', T: 4, label: '최대 속력', unit: 'm/s' },
+      explain: '끝점에서는 용수철힘(가속도)이 가장 크지만 속력은 0 입니다. 평형점을 향해 가속되어 평형점에서 속력이 최대가 되고, 지나치면 반대 방향 힘을 받아 느려집니다. 에너지로 보면 끝점의 탄성에너지 ½kA² 가 평형점에서 전부 운동에너지 ½mv² 가 됩니다.',
+    },
+    {
+      id: 'spring-energy', cat: 'spring', title: '두 배로 누르면 에너지는', level: '심화',
+      misconception: '탄성에너지는 변형에 비례한다',
+      scene: 'spring',
+      question: '초기 속력을 3 m/s 에서 6 m/s 로 올려 최대 압축을 2배로 만들면, 저장되는 탄성에너지의 최댓값은?',
+      options: [
+        { label: '4배', correct: true },
+        { label: '2배', tag: '에너지 ∝ 변형이라는 생각 — 힘은 kx, 일은 ½kx² (삼각형 면적)' },
+        { label: '같다', tag: '같은 용수철이면 에너지도 같다는 생각' },
+      ],
+      observe: 'E–t 그래프에서 탄성에너지의 봉우리 높이를 비교하세요. 최대 압축 순간 운동에너지는 0, 탄성에너지는 최대입니다.',
+      vis: ['graph:E'], select: 'A',
+      variants: [{ label: '3 m/s (기준)' }, { label: '6 m/s', set: { A: { vx0: -6 } } }],
+      measure: { body: 'A', q: 'ke', stat: 'max', T: 3, label: '최대 운동E (= 최대 탄성E)', unit: 'J' },
+      explain: '탄성에너지 ½kx² 는 변형의 제곱에 비례합니다. 힘–변형 그래프(F = kx)의 아래 면적이 일이고, 밑변과 높이가 모두 2배가 되니 면적은 4배. 속력 2배 → 운동에너지 4배 → 최대 압축에서 탄성에너지도 4배입니다.',
+    },
+
+    /* ───────────── 충돌·운동량 ───────────── */
+    {
+      id: 'coll-equal', cat: 'momentum', title: '같은 질량의 탄성 충돌', level: '기초',
+      misconception: '충돌하면 둘이 함께 절반 속도로 간다',
+      scene: 'collision',
+      question: '같은 질량의 공 A(4 m/s)가 정지한 공 B 에 탄성 충돌합니다(e = 1). 충돌 후?',
+      options: [
+        { label: 'A 는 멈추고 B 가 4 m/s 로 나간다 (속도 교환)', correct: true },
+        { label: '둘이 함께 2 m/s 로 간다', tag: '운동량 보존만 적용 — 그러면 운동에너지가 절반으로 준다 (비탄성)' },
+        { label: 'A 가 되튀어 나오고 B 도 앞으로 간다', tag: '가벼운 공이 무거운 공에 부딪힐 때의 결과를 일반화' },
+      ],
+      observe: '▶ 실행 후 v–t 그래프에서 두 곡선이 자리를 바꾸는 것을 보세요.',
+      vis: ['graph:v', 'vectors'], select: 'B',
+      variants: [{ label: 'e = 1 (기준)' }, { label: 'e = 0.5', set: { A: { e: 0.5 }, B: { e: 0.5 } } }, { label: 'e = 0 (완전 비탄성)', set: { A: { e: 0 }, B: { e: 0 } } }],
+      measure: { body: 'B', q: 'vx', at: 4, label: 'B 의 충돌 후 속도', unit: 'm/s' },
+      explain: '운동량 보존(m·4 = m·v₁ + m·v₂)과 운동에너지 보존(½m·16 = ½m·v₁² + ½m·v₂²)을 동시에 만족하는 답은 v₁ = 0, v₂ = 4 뿐입니다. 같은 질량의 탄성 충돌은 속도를 교환합니다. 반발계수를 낮추면 A 도 조금 앞으로 가고 B 는 4 보다 느립니다.',
+    },
+    {
+      id: 'coll-heavy', cat: 'momentum', title: '무거운 공이 가벼운 정지 공을 칠 때', level: '심화',
+      misconception: '충돌 후 가벼운 공은 무거운 공과 같은 속도로 간다',
+      scene: { floors: [_FLAT], elements: [
+        { key: 'A', type: 'circle', gridX: 42, gridY: 59, mass: 3, vx0: 4, e: 1, label: 'A 3kg' },
+        { key: 'B', type: 'circle', gridX: 52, gridY: 59, mass: 1, e: 1, label: 'B 1kg' } ], view: 'fit' },
+      question: '3 kg 공 A(4 m/s)가 정지한 1 kg 공 B 에 탄성 충돌합니다. 충돌 후?',
+      options: [
+        { label: '둘 다 앞으로 가고, B 가 A 보다 빠르다 (A 2 m/s, B 6 m/s)', correct: true },
+        { label: 'A 는 4 m/s 그대로, B 가 4 m/s 로 밀려난다', tag: '무거운 공은 영향을 받지 않는다는 생각 — 운동량 보존 위반' },
+        { label: 'A 는 멈추고 B 가 4 m/s 로 나간다', tag: '같은 질량 충돌의 결과를 일반화' },
+        { label: '둘이 함께 3 m/s 로 간다', tag: '완전 비탄성 결과 — e = 1 이면 운동에너지도 보존' },
+      ],
+      observe: '▶ 실행 후 두 공을 클릭해 속도를 읽고, 운동량 3×4 = 3×2 + 1×6 이 맞는지 계산해 보세요.',
+      vis: ['graph:v', 'vectors'], select: 'B',
+      variants: [{ label: 'B 1 kg (기준)' }, { label: 'B 3 kg (같은 질량)', set: { B: { mass: 3 } } }, { label: 'B 9 kg', set: { B: { mass: 9 } } }],
+      measure: { body: 'B', q: 'vx', at: 4, label: 'B 의 충돌 후 속도', unit: 'm/s' },
+      explain: '탄성 충돌 공식: v₁′ = (m₁−m₂)/(m₁+m₂)·v = (3−1)/4 × 4 = 2 m/s, v₂′ = 2m₁/(m₁+m₂)·v = 6/4 × 4 = 6 m/s. 가벼운 공은 들어온 공보다 빨리 튀어 나갑니다(최대 2배). 운동량 12 = 6 + 6, 운동에너지 24 = 6 + 18 이 모두 보존됩니다.',
+    },
+    {
+      id: 'coll-inelastic', cat: 'momentum', title: '완전 비탄성 충돌 뒤의 속력', level: '기초',
+      misconception: '충돌 뒤 속도는 속력의 평균이 아니라 운동량으로 정해진다는 것을 모름',
+      scene: { floors: [_FLAT], elements: [
+        { key: 'A', type: 'circle', gridX: 42, gridY: 59, mass: 1, vx0: 4, e: 0, label: 'A' },
+        { key: 'B', type: 'circle', gridX: 52, gridY: 59, mass: 1, e: 0, label: 'B' } ], view: 'fit' },
+      question: '1 kg 공 A(4 m/s)가 정지한 1 kg 공 B 에 부딪혀 한 덩어리가 됩니다(e = 0). 충돌 후 속력은 몇 m/s 일까요?',
+      answer: { measure: { body: 'B', q: 'vx', at: 4 }, tol: '6%', unit: 'm/s', prompt: '충돌 후 속력 (m/s)' },
+      observe: '▶ 실행 후 v–t 그래프에서 두 곡선이 한 값으로 만나는 것을 보세요. E–t 에서 운동에너지가 절반이 되는 것도 확인하세요.',
+      vis: ['graph:v'], select: 'B',
+      variants: [{ label: 'B 1 kg (기준)' }, { label: 'B 3 kg', set: { B: { mass: 3 } } }],
+      measure: { body: 'B', q: 'vx', at: 4, label: '충돌 후 속도', unit: 'm/s' },
+      explain: '운동량 보존: 1×4 = (1+1)×v → v = 2 m/s. 운동에너지는 8 J → 4 J 로 절반이 줄어 소리·열·변형으로 갑니다. 운동량은 어떤 충돌에서도 보존되지만 운동에너지는 탄성 충돌에서만 보존됩니다.',
+    },
+    {
+      id: 'coll-light', cat: 'momentum', title: '가벼운 공이 무거운 정지 공을 칠 때', level: '심화',
+      misconception: '움직이던 공은 늘 앞으로 간다',
+      scene: { floors: [_FLAT], elements: [
+        { key: 'A', type: 'circle', gridX: 42, gridY: 59, mass: 1, vx0: 4, e: 1, label: 'A 1kg' },
+        { key: 'B', type: 'circle', gridX: 52, gridY: 59, mass: 3, e: 1, label: 'B 3kg' } ], view: 'fit' },
+      question: '1 kg 공 A(4 m/s)가 정지한 3 kg 공 B 에 탄성 충돌합니다. 충돌 후 A 는?',
+      options: [
+        { label: '되튀어 반대로 움직인다 (−2 m/s)', correct: true },
+        { label: '멈춘다', tag: '같은 질량 충돌의 결과를 일반화' },
+        { label: '느려지지만 계속 앞으로 간다', tag: '움직이던 것은 앞으로 간다는 직관 — 벽에 던진 공을 생각해 보자' },
+      ],
+      observe: '▶ 실행 후 v–t 그래프에서 A 의 속도가 음수가 되는 것을 보세요. B 는 2 m/s 로 밀려납니다.',
+      vis: ['graph:v', 'vectors'], select: 'A',
+      variants: [{ label: 'B 3 kg (기준)' }, { label: 'B 1 kg (같은 질량)', set: { B: { mass: 1 } } }, { label: 'B 100 kg (벽처럼)', set: { B: { mass: 100 } } }],
+      measure: { body: 'A', q: 'vx', at: 4, label: 'A 의 충돌 후 속도', unit: 'm/s' },
+      explain: 'v₁′ = (m₁−m₂)/(m₁+m₂)·v = (1−3)/4 × 4 = −2 m/s. 상대가 더 무거우면 부호가 뒤집혀 되튀어 나옵니다. 상대 질량을 아주 크게 하면(벽) 거의 같은 속력으로 되튀고, 벽은 거의 움직이지 않습니다.',
+    },
+
+    /* ───────────── 에너지 ───────────── */
+    {
+      id: 'pend-speed', cat: 'energy', title: '진자 최저점의 속력 예측하기', level: '기초',
+      misconception: '경로 길이로 속력을 짐작함',
+      scene: 'pendulum',
+      question: '길이 8 m 의 진자를 45° 에서 놓습니다. 가장 낮은 곳에서 속력은 몇 m/s 일까요? (h = L(1 − cos45°) ≈ 2.34 m, g = 9.8)',
+      answer: { measure: { body: 'A', q: 'v', stat: 'max', T: 3 }, tol: '6%', unit: 'm/s', prompt: '최저점 속력 (m/s)' },
+      observe: '▶ 실행 후 v–t 그래프의 최댓값을 읽으세요. 추를 클릭하면 운동·위치에너지가 서로 바뀌는 것이 보입니다.',
+      vis: ['graph:v', 'vectors'], select: 'A',
+      measure: { body: 'A', q: 'v', stat: 'max', T: 3, label: '최대 속력', unit: 'm/s' },
+      explain: '역학적 에너지 보존: mgh = ½mv² → v = √(2gh) = √(2 × 9.8 × 2.34) ≈ 6.8 m/s. 질량도, 실 길이도(높이차만 같으면) 결과에 들어오지 않습니다. 경로가 곡선이어도 장력은 늘 운동 방향에 수직이라 일을 하지 않습니다.',
+    },
+    {
+      id: 'slide-path', cat: 'energy', title: '급한 빗면과 완만한 빗면', level: '기초',
+      misconception: '급한 빗면을 내려온 물체가 바닥에서 더 빠르다',
+      scene: { floors: [
+          { key: 'S1', x1: 34, y1: 49, x2: 46, y2: 61 },
+          { key: 'G',  x1: 46, y1: 61, x2: 66, y2: 61 },
+          { key: 'S2', x1: 66, y1: 61, x2: 90, y2: 49 } ],
+        elements: [
+          { key: 'A', type: 'rect', mass: 1, onFloor: { floor: 'S1', x: 35 }, label: 'A 45°' },
+          { key: 'B', type: 'rect', mass: 1, onFloor: { floor: 'S2', x: 88 }, label: 'B 27°' } ], view: 'fit' },
+      question: '같은 높이(11 m)에서 A 는 45° 빗면, B 는 27° 빗면(모두 마찰 없음)을 내려옵니다. 바닥에 도달한 순간 속력은?',
+      options: [
+        { label: '같다 — 단, A 가 먼저 도착한다', correct: true },
+        { label: 'A(급한 빗면)가 더 빠르다', tag: '가속도가 크면 최종 속력도 크다는 생각 — 가속 시간은 짧다' },
+        { label: 'B(완만한 빗면)가 더 빠르다', tag: '거리가 길면 더 많이 가속된다는 생각 — 가속도는 작다' },
+      ],
+      observe: '▶ 실행 후 v–t 그래프를 보세요. 두 곡선의 기울기는 다르지만 바닥에 닿을 때의 높이(최댓값)는 같습니다. 바닥에서 만나 충돌하는 것도 지켜보세요.',
+      vis: ['graph:v', 'vectors'], select: 'A',
+      measure: { body: 'B', q: 'v', stat: 'max', T: 6, label: '바닥 도달 속력', unit: 'm/s' },
+      explain: '마찰이 없으면 수직항력은 일을 하지 않고 중력만 일을 하므로 mgh = ½mv² — 속력은 높이차로만 정해집니다(√(2 × 9.8 × 11) ≈ 14.7 m/s). 급한 빗면은 가속도가 크지만 거리가 짧고, 완만한 빗면은 반대라 결과가 같습니다. 도달 시간은 급한 쪽이 짧습니다.',
+    },
+    {
+      id: 'friction-stop', cat: 'energy', title: '마찰로 멈추기까지의 거리 예측', level: '심화',
+      misconception: '에너지와 일의 관계(W = f·s)를 거리 계산에 쓰지 못함',
+      scene: { floors: [_FLATMU], elements: [{ key: 'A', type: 'rect', gridX: 36, gridY: 59, mass: 1, vx0: 4, label: '물체' }], view: 'fit' },
+      question: '4 m/s 로 미끄러지는 1 kg 물체가 μk = 0.25 인 바닥에서 멈춥니다. 멈출 때까지 몇 m 를 갈까요? (g = 9.8)',
+      answer: { measure: { body: 'A', q: 'x', when: 'stop', stat: 'dist', T: 8 }, tol: '8%', unit: 'm', prompt: '멈추기까지 거리 (m)' },
+      observe: '▶ 실행 후 x–t 그래프가 수평이 되는 지점의 x 를 읽고 출발 위치와의 차를 구하세요.',
+      vis: ['graph:x', 'forces'], select: 'A',
+      variants: [{ label: '4 m/s (기준)' }, { label: '8 m/s', set: { A: { vx0: 8 } } }, { label: 'μk = 0.5', set: { F: { muS: 0.6, muK: 0.5 } } }],
+      measure: { body: 'A', q: 'x', when: 'stop', stat: 'dist', T: 8, label: '멈추기까지 거리', unit: 'm' },
+      explain: '운동에너지가 마찰이 한 일로 바뀝니다: ½mv² = μk mg s → s = v²/(2μk g) = 16/(2 × 0.25 × 9.8) ≈ 3.27 m. 속력이 2배면 거리는 4배(13.1 m), 마찰계수가 2배면 거리는 절반입니다.',
+    },
+    {
+      id: 'energy-conserve', cat: 'energy', title: '진자의 에너지 그래프 읽기', level: '기초',
+      misconception: '최고점에서 운동에너지가 최대다 / 에너지가 점점 사라진다',
+      scene: 'pendulum',
+      question: '진자가 흔들릴 때 운동에너지(KE)·위치에너지(PE)·총합(E)의 시간 그래프는 어떤 모양일까요?',
+      options: [
+        { label: 'KE 와 PE 가 서로 반대로 오르내리고, 합 E 는 일정하다', correct: true },
+        { label: '최고점에서 KE 가 최대, 최저점에서 PE 가 최대다', tag: '높은 곳 = 에너지가 많다를 운동에너지에 잘못 적용' },
+        { label: '총합 E 가 점점 줄어든다', tag: '공기 저항·마찰이 있는 일상 경험 — 이 시뮬에는 없다' },
+      ],
+      observe: '▶ 실행 후 E–t 그래프에서 세 곡선을 보세요. 추를 클릭하면 값도 함께 나옵니다.',
+      vis: ['graph:E'], select: 'A',
+      measure: { body: 'A', q: 'E', stat: 'max', T: 3, label: '역학적 에너지 (최대)', unit: 'J' },
+      explain: '장력은 운동 방향에 수직이라 일을 하지 않으므로 중력만 일을 하고, 역학적 에너지 KE + PE 는 보존됩니다. 최고점(양 끝)에서 속력 0 → KE 0, PE 최대. 최저점에서 PE 최소, KE 최대. 두 곡선은 정확히 반대 위상이고 합은 수평선입니다.',
+    },
+  ];
+
+  /* ── 해설 카드: 갤러리 장면마다 "무엇을 볼지 · 왜 그런지" ── */
+  const POE_GUIDES = [
+    { scene: 'freefall', title: '자유낙하와 포물선', vis: ['graph:y', 'vectors'], select: 'B',
+      steps: [
+        '속도 벡터를 켜고 실행하세요. 던진 공의 가로 화살표는 길이가 그대로이고 세로 화살표만 자랍니다.',
+        'y–t 그래프에서 두 곡선이 겹칩니다 — 높이 변화는 가로 속도와 무관합니다.',
+        '두 공을 각각 클릭해 가속도를 비교하세요. 둘 다 (0, −9.8) 입니다.' ],
+      why: '중력은 아래로만 작용하므로 가로 속도를 바꿀 힘이 없습니다. 수평 등속 + 수직 등가속이 합쳐져 포물선이 됩니다.' },
+    { scene: 'incline', title: '마찰 있는 빗면', vis: ['forces'], select: 'A',
+      steps: [
+        '힘 표시를 켜고 물체를 클릭하세요. 중력(아래), 수직항력(면에 수직), 마찰력(면을 따라 위)이 보입니다.',
+        '실행 후 마찰력 배지가 "운동 마찰"로 바뀌고 알짜힘이 빗면 아래를 가리킵니다.',
+        '바닥면을 클릭해 μs 를 0.6 으로 올려 보세요 — tan θ = 0.5 < 0.6 이면 정지합니다.' ],
+      why: '빗면 위 물체에는 중력의 두 성분이 작용합니다. 면에 수직인 성분은 수직항력이 받아내고, 면을 따르는 성분 mg sin θ 를 마찰력이 얼마나 막느냐가 운동을 정합니다.' },
+    { scene: 'atwood', title: '아트우드 기계', vis: ['forces'], select: 'B',
+      steps: [
+        '실을 클릭해 장력을 읽으세요(11.76 N). 어느 쪽 무게도 아닙니다.',
+        '두 물체를 클릭해 알짜힘을 비교하세요 — 크기가 다르지만 가속도는 같습니다(실이 묶어 두니까).',
+        '무거운 쪽 질량을 3 kg 으로 바꿔 다시 실행하면 잔상(점선)과 비교됩니다.' ],
+      why: '두 물체는 한 실로 묶여 같은 크기의 가속도를 가집니다. 계 전체로 보면 알짜힘은 무게 차, 질량은 둘의 합입니다.' },
+    { scene: 'movable-pulley', title: '움직도르래', vis: ['vectors', 'forces'], select: 'L',
+      steps: [
+        '실행 후 하중(2 kg)과 매단 물체(1.5 kg)의 속력을 비교하세요. 정확히 1 : 2 입니다.',
+        '실을 클릭하면 어느 가닥이든 장력이 같습니다 — 마찰 없는 도르래는 장력을 그대로 전달합니다.',
+        '매단 질량을 1 kg 으로 바꾸면 정확히 평형이 되어 움직이지 않습니다.' ],
+      why: '움직도르래에는 실이 두 가닥 걸려 2T 로 하중을 받칩니다. 힘은 절반이 되지만 실을 두 배 길이로 당겨야 하므로 일은 같습니다.' },
+    { scene: 'spring', title: '용수철 진동', vis: ['graph:x', 'forces'], select: 'A',
+      steps: [
+        'x–t 그래프의 봉우리 간격(주기)을 읽으세요 — 약 1.99 s.',
+        '초기 속력을 바꿔 다시 실행해도 주기는 같습니다(진폭 무관). 질량을 4배로 하면 주기가 2배.',
+        '용수철을 클릭하면 변형 x, 탄성력 kx, 탄성에너지 ½kx² 가 실시간으로 나옵니다.' ],
+      why: '복원력이 변형에 비례하는(F = −kx) 운동은 단진동이고, 주기 T = 2π√(m/k) 는 진폭과 무관합니다.' },
+    { scene: 'pendulum', title: '진자', vis: ['graph:E', 'forces'], select: 'A',
+      steps: [
+        'E–t 그래프에서 KE 와 PE 가 반대로 오르내리고 합이 일정한 것을 보세요.',
+        '힘 표시를 켜면 장력이 최저점에서 가장 큽니다(무게보다 큼) — 원운동의 구심력 때문입니다.',
+        '최저점 속력 √(2gh) ≈ 6.8 m/s 를 v–t 그래프에서 확인하세요.' ],
+      why: '장력은 항상 운동 방향에 수직이라 일을 하지 않습니다. 그래서 중력만 일을 하고 역학적 에너지가 보존됩니다.' },
+    { scene: 'collision', title: '같은 질량의 충돌', vis: ['graph:v', 'vectors'], select: 'B',
+      steps: [
+        '실행 후 v–t 그래프에서 두 곡선이 자리를 바꿉니다 — 속도 교환.',
+        '반발계수 e 를 0 으로 바꾸면 둘이 붙어 2 m/s 로 움직이고, E–t 에서 운동에너지가 절반이 됩니다.',
+        '질량을 다르게 바꿔 운동량 보존(m₁v₁ + m₂v₂ 일정)을 계산으로 확인하세요.' ],
+      why: '운동량은 모든 충돌에서 보존되지만, 운동에너지는 탄성 충돌(e = 1)에서만 보존됩니다. 두 보존 법칙이 동시에 성립하면 같은 질량은 속도를 교환합니다.' },
+    { scene: 'forcezone', title: '힘 구간 통과', vis: ['graph:v', 'forces'], select: 'A',
+      steps: [
+        'v–t 그래프에서 구간 밖은 수평, 구간 안은 기울기 −2 인 직선입니다.',
+        '속도가 0 을 지나 음수가 되는 순간 — 물체가 되돌아 나옵니다. x–t 로 되돌아온 위치를 읽으세요.',
+        '힘구간의 F 를 −9 N 으로 바꾸면 더 짧은 거리에서 멈춥니다(v² = v₀² + 2as).' ],
+      why: '힘은 속도를 "바꾸는" 원인입니다. 힘이 있는 곳에서만 속도가 변하고, 방향이 반대면 감속 뒤 반대 방향으로 가속됩니다.' },
+  ];
+
+  /* ── 탐구 아이디어 카드: 시작 장면 + 바꿀 변수 + 측정 + 기대 그래프 (스윕 프리셋) ── */
+  const POE_IDEAS = [
+    { id: 'i-incline-angle', title: '빗면 각도와 가속도', scene: 'incline', level: '기초',
+      question: '빗면의 각도가 커지면 가속도는 어떻게 변할까? a = g(sin θ − μ cos θ) 를 그래프로 확인한다.',
+      vary: '바닥면 S 의 끝점(x2, y2)을 끌어 기울기를 바꾼다. 마찰계수 μk 스윕은 아래 프리셋.',
+      expect: '가속도–μk 그래프는 직선 (기울기 −g cos θ). μk 가 tan θ 를 넘으면 정지.',
+      sweep: { targetKey: 'S', prop: 'muK', from: 0, to: 0.5, steps: 6, bodyKey: 'A', q: 'a', when: 'at', at: 1 } },
+    { id: 'i-atwood-mass', title: '아트우드 질량비와 가속도', scene: 'atwood', level: '기초',
+      question: '한쪽 질량을 늘리면 가속도는 어디로 수렴할까? a = g(m₂−m₁)/(m₁+m₂).',
+      vary: 'B 의 질량 1 → 10 kg.',
+      expect: '가속도는 g 에 가까워지지만 넘지 못한다 (포화 곡선).',
+      sweep: { targetKey: 'B', prop: 'mass', from: 1, to: 10, steps: 10, bodyKey: 'B', q: 'a', when: 'at', at: 0.5 } },
+    { id: 'i-atwood-T', title: '질량비와 장력', scene: 'atwood', level: '심화',
+      question: 'B 를 아주 무겁게 하면 장력은 2m₁g 에 수렴한다. 왜?',
+      vary: 'B 의 질량 1 → 10 kg, 장력 측정.',
+      expect: '장력 → 2m₁g = 19.6 N 으로 포화. B 가 자유낙하에 가까워지며 A 는 g 로 위로 가속.',
+      sweep: { targetKey: 'B', prop: 'mass', from: 1, to: 10, steps: 10, bodyKey: 'A', q: 'T', when: 'at', at: 0.5 } },
+    { id: 'i-spring-k', title: '용수철 상수와 주기', scene: 'spring', level: '기초',
+      question: 'k 를 4배로 하면 주기는? T = 2π√(m/k).',
+      vary: 'k 를 5 → 40 N/m.',
+      expect: '주기 ∝ 1/√k. 로그–로그로 그리면 기울기 −1/2.',
+      sweep: { targetKey: 'S', prop: 'k', from: 5, to: 40, steps: 8, bodyKey: 'A', q: 'period' } },
+    { id: 'i-spring-m', title: '질량과 주기', scene: 'spring', level: '기초',
+      question: '질량을 1 → 9 kg 으로 바꾸면 주기는 √m 에 비례할까?',
+      vary: 'A 의 질량 1 → 9 kg (진폭이 벽에 닿지 않게 초기 속력을 1 m/s 로).',
+      expect: 'T² 이 m 에 비례 — T² 대 m 그래프가 직선.',
+      set: { A: { vx0: -1 } },
+      sweep: { targetKey: 'A', prop: 'mass', from: 1, to: 9, steps: 9, bodyKey: 'A', q: 'period' } },
+    { id: 'i-friction-v', title: '초기 속력과 미끄러진 거리', scene: 'freefall', level: '기초',
+      question: '마찰 바닥에서 초기 속력을 2배로 하면 멈추기까지 거리는 몇 배?',
+      vary: '물체 A 의 초기 속력 1 → 6 m/s. (아래 장면은 마찰 바닥 위 물체로 바꿔 시작합니다)',
+      expect: '거리 ∝ v² — v² 대 s 가 직선. s = v²/(2μk g).',
+      spec: { floors: [{ key: 'F', x1: 30, y1: 60, x2: 80, y2: 60, isFriction: true, muS: 0.3, muK: 0.25 }], elements: [{ key: 'A', type: 'rect', gridX: 34, gridY: 59, mass: 1, vx0: 3, label: '물체' }], view: 'fit' },
+      sweep: { targetKey: 'A', prop: 'vx0', from: 1, to: 6, steps: 6, bodyKey: 'A', q: 'dist' } },
+    { id: 'i-drag', title: '공기저항과 종단속도', scene: 'freefall', level: '심화',
+      question: '공기저항 F = −bv 가 있으면 낙하 속도는 어디에 수렴할까? v_t = mg/b.',
+      vary: '공 B 의 공기저항 b 를 0 → 4 N·s/m. 속성 패널에서 b 를 직접 바꿔도 된다.',
+      expect: '바닥 도달 속력이 b 가 커질수록 줄어 mg/b 에 다가간다. y–t 그래프가 직선(등속)에 가까워진다.',
+      spec: { floors: [{ key: 'F', x1: 34, y1: 90, x2: 72, y2: 90 }], elements: [{ key: 'A', type: 'circle', gridX: 46, gridY: 20, mass: 1, e: 0, label: 'b = 0' }, { key: 'B', type: 'circle', gridX: 52, gridY: 20, mass: 1, e: 0, drag: 1, label: 'b = 1' }], view: 'fit' },
+      sweep: { targetKey: 'B', prop: 'drag', from: 0, to: 4, steps: 9, bodyKey: 'B', q: 'v', when: 'floor' } },
+    { id: 'i-coll-mass', title: '질량비와 충돌 후 속도', scene: 'collision', level: '심화',
+      question: '정지한 공 B 의 질량을 바꾸면 A 는 언제 되튀기 시작할까? v₁′ = (m₁−m₂)/(m₁+m₂)·v.',
+      vary: 'B 의 질량 0.5 → 5 kg.',
+      expect: 'A 의 속도가 +에서 −로 바뀌는 지점은 정확히 m₂ = m₁ (같은 질량).',
+      sweep: { targetKey: 'B', prop: 'mass', from: 0.5, to: 5, steps: 10, bodyKey: 'A', q: 'vx', when: 'at', at: 4 } },
+    { id: 'i-coll-e', title: '반발계수와 에너지 손실', scene: 'collision', level: '심화',
+      question: 'e 를 0 → 1 로 바꾸면 충돌 뒤 운동에너지는 얼마나 남을까?',
+      vary: '두 공의 e (두 공을 같은 값으로).',
+      expect: '남는 운동에너지 비율은 (1 + e²)/2 — e = 0 에서 절반, e = 1 에서 전부.',
+      sweep: { targetKey: 'A', prop: 'e', from: 0, to: 1, steps: 6, bodyKey: 'B', q: 'ke', when: 'at', at: 4 } },
+    { id: 'i-pend-angle', title: '진자 놓는 각도와 최저점 속력', scene: 'pendulum', level: '기초',
+      question: '놓는 각도를 키우면 최저점 속력은 √(2gL(1−cos θ)) 를 따를까?',
+      vary: '추의 처음 위치를 끌어 각도를 바꾼다 (실 길이는 그대로). 아래 프리셋은 질량 스윕 — 속력이 질량과 무관함을 본다.',
+      expect: '질량을 바꿔도 최저점 속력은 같다. 각도를 바꾸면 √(1−cos θ) 에 비례.',
+      sweep: { targetKey: 'A', prop: 'mass', from: 0.5, to: 5, steps: 5, bodyKey: 'A', q: 'v', when: 'max' } },
+  ];

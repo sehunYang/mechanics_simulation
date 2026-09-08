@@ -17,6 +17,9 @@ const SUITES = [
   ['spec8', '실행 중 UI (카메라 조작 / 편집 차단 / 상태 배지)'],
   ['spec9', '회전 인식 앵커 (렌더 ↔ 히트테스트 ↔ 물리 일치)'],
   ['spec10','실 길이 보존 (물체가 도르래 림에 닿은 뒤)'],
+  ['spec11','1단계 기반 (장면 DSL·갤러리 · 공유 링크 · 시계열/CSV · 편집 경고 · 이벤트 · 배속)'],
+  ['spec12','2단계 측정·시각화 (자유물체도 분해 · 측정값 행 · 라벨 토글 · 그래프 시리즈)'],
+  ['spec13','3단계 교육 활동 (헤드리스 측정 · POE 정합성 · 수치 문항 · 비교표 · 스윕)'],
 ];
 
 const verbose = process.argv.includes('--verbose');
@@ -27,7 +30,7 @@ const failedSuites = [];
 try {
   execFileSync(process.execPath, [path.join(__dirname, 'smoke-load.js')],
     { encoding: 'utf8', stdio: 'pipe' });
-  console.log(' ok   smoke   15/15  index.html 순서대로 전체 js 로드 + 1프레임 수행');
+  console.log(' ok   smoke          index.html 순서대로 전체 js 로드 + 1프레임 수행');
 } catch (err) {
   failedSuites.push('smoke-load');
   console.log('FAIL  smoke          index.html 로드 스모크');

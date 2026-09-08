@@ -17,9 +17,11 @@
     if (elapsed < 14 && _lastTs !== 0) return;
     _lastTs = ts;
 
-    btnSpeed.style.display = STATE.simMode === 'RUNNING' ? '' : 'none';
+    const _live = STATE.simMode === 'RUNNING' || STATE.simMode === 'PAUSED';
+    btnSpeed.style.display = _live ? '' : 'none';
+    btnStep.style.display  = STATE.simMode === 'PAUSED' ? '' : 'none';
 
-    // 실행취소/다시실행 바: EDIT 모드에서만 표시
+    // 실행취소/다시실행 묶음: EDIT 모드에서만 표시 (툴바의 나머지는 항상)
     const _urBar = document.getElementById('undo-redo');
     if (_urBar) _urBar.style.display = (STATE.simMode === 'EDIT') ? 'flex' : 'none';
 
@@ -54,7 +56,7 @@
     runIndicator.classList.toggle('is-paused',  paused);
 
     const label = running
-      ? (STATE.speedMultiplier > 1 ? `실행 중 ${STATE.speedMultiplier}x` : '실행 중')
+      ? (STATE.speedMultiplier !== 1 ? `실행 중 ${STATE.speedMultiplier}x` : '실행 중')
       : '일시정지';
     if (riLabel.textContent !== label) riLabel.textContent = label;
     riTime.textContent = STATE.simTime.toFixed(2) + 's';
@@ -232,6 +234,7 @@
     if (STATE.selected && STATE.selected.drawSelection) {
       STATE.selected.drawSelection(ctx);
     }
+    if (typeof drawOverlays === 'function') drawOverlays(ctx);   // 속도·힘 벡터, 잔상 궤적
     _drawResizeHandles(ctx);    // 핸들 점 (선택 요소 위에)
     _drawDeleteZone(ctx);       // 삭제 존 (롱프레스 시)
     _drawRopeWireAnchors(ctx);  // 실 재연결 앵커 포인트

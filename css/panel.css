@@ -1,0 +1,35 @@
+/* ════════════════════════════════════════════════════════════════
+ * 5. 속성 패널 (오른쪽)
+ * ════════════════════════════════════════════════════════════════ */
+#panel-right {
+  width: var(--panel-w); flex-shrink: 0;
+  background: var(--bg-panel); border-left: 1px solid var(--border-base);
+  display: none; flex-direction: column; gap: 8px; padding: 12px 14px;
+  overflow-y: auto; z-index: 10; font-size: 11px;
+  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
+}
+.panel-label { color: var(--text-title); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+.panel-input {
+  width: 100%; background: var(--bg-item); border: 1px solid var(--border-base); color: var(--text-accent);
+  padding: 4px 6px; border-radius: var(--radius-sm); font-family: var(--font); font-size: 11px;
+}
+.panel-input:focus { outline: none; border-color: var(--border-focus); }
+.panel-btn {
+  width: 100%; background: var(--bg-glass); border: 1px solid var(--border-base); color: var(--text-accent);
+  padding: 6px; border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; text-align: center; min-height: 32px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.panel-btn:hover { background: var(--btn-h); border-color: var(--border-active); }
+.panel-btn.danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); }
+.panel-btn.danger:hover { background: #fbdada; }
+
+/* 측정값 표 — 실행 중 갱신되는 읽기 전용 행 */
+.pp-meas { border-top: 1px solid var(--border-dim); padding-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.pp-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; line-height: 1.45; }
+.pp-row .pp-k { color: var(--text-label); white-space: nowrap; }
+.pp-row .pp-v { color: var(--text-base); font-variant-numeric: tabular-nums; text-align: right; }
+.pp-row .pp-v.dim { color: var(--text-dim); }
+.pp-badge { display: inline-block; font-size: 9.5px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--border-base); color: var(--text-dim); margin-left: 4px; }
+.pp-badge.ok { border-color: var(--ok-border); color: var(--ok-text); background: var(--ok-bg); }
+.pp-badge.warn { border-color: var(--warn-border); color: var(--warn-text); background: var(--warn-bg); }
+.pp-note { color: var(--text-dim); font-size: 10px; margin-top: 1px; line-height: 1.45; }
