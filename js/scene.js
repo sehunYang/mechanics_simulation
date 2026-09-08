@@ -158,7 +158,11 @@
     const floorObjs = [];
     for (const f of (spec.floors || [])) {
       const seg = new FloorSegment(f.x1, f.y1, f.x2, f.y2);
-      for (const k of Object.keys(f)) if (k !== 'key') seg[k] = f[k];
+      for (const k of Object.keys(f)) {
+        if (k === 'key') continue;
+        if (k === 'smooth') { seg.smoothP1 = seg.smoothP2 = !!f.smooth; continue; }   // 양 끝 이음 다듬기
+        seg[k] = f[k];
+      }
       if (seg.isFriction && seg.muK == null) seg.muK = seg.muS * 0.8;
       if (f.key) { ids[f.key] = seg.id; seg._key = f.key; }
       floorObjs.push(seg);

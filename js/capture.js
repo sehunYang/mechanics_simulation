@@ -88,7 +88,11 @@
           }
         }
         // 본선: 샘플 점을 그대로 이어 SVG path 로 (곡면도 동일 기하)
-        doc.path(svgPolyline([{ x: ax, y: ay }].concat(pts.map(p => ({ x: p.x, y: p.y }))).concat([{ x: bx, y: by }])),
+        // 다듬어진 이음이 있으면 본선의 양 끝은 원래 꼭짓점이 아니라 곡선의 끝점
+        const _pp = (typeof floorIsSmoothed === 'function' && floorIsSmoothed(seg)) ? floorPathGrid(seg) : null;
+        const _s = _pp ? { x: _pp[0].x * cs, y: _pp[0].y * cs } : { x: ax, y: ay };
+        const _e = _pp ? { x: _pp[_pp.length - 1].x * cs, y: _pp[_pp.length - 1].y * cs } : { x: bx, y: by };
+        doc.path(svgPolyline([_s].concat(pts.map(p => ({ x: p.x, y: p.y }))).concat([_e])),
                  `fill="none" stroke="${INK}" stroke-width="${_lw(SN.lwTerrain)}" stroke-linejoin="round" stroke-linecap="round"`);
       }
     }

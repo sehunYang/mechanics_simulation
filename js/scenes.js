@@ -32,8 +32,8 @@
       hint: 'tan 27° ≈ 0.5 > μ 이므로 미끄러집니다. 질량을 바꿔도 가속도는 같습니다.',
       spec: {
         floors: [
-          { key: 'S', x1: 38, y1: 62, x2: 62, y2: 50, isFriction: true, muS: 0.3, muK: 0.25 },
-          { key: 'G', x1: 26, y1: 62, x2: 38, y2: 62 },
+          { key: 'S', x1: 38, y1: 62, x2: 62, y2: 50, isFriction: true, muS: 0.3, muK: 0.25, smooth: true },
+          { key: 'G', x1: 26, y1: 62, x2: 38, y2: 62, smooth: true },
         ],
         elements: [
           { key: 'A', type: 'rect', gridW: 1, gridH: 1, mass: 2, showTrail: true, onFloor: { floor: 'S', x: 56 } },
@@ -172,6 +172,21 @@
       spec: {
         floors: [{ key: 'F', x1: 30, y1: 60, x2: 80, y2: 60, isFriction: true, muS: 0.5, muK: 0.4 }],
         elements: [{ key: 'A', type: 'circle', gridX: 49.5, gridY: 50, mass: 1, e: 0.5, omega0: 12, showTrail: true }],
+        view: 'fit',
+      },
+    },
+    {
+      id: 'hill', title: '둥근 언덕 넘기', level: '심화', tag: '원운동·회전',
+      desc: '13 m/s 로 달려온 공이 꼭대기를 둥글게 다듬은 언덕(클로소이드 이음, R ≈ 5.1 m)을 넘습니다. 꼭대기에서 떠오를까요?',
+      hint: '꼭대기에서 면을 떠나지 않으려면 v² < g(R + r). 속력을 15 m/s 로 바꿔 보세요.',
+      spec: {
+        floors: [
+          { key: 'G1', x1: 22, y1: 52, x2: 30, y2: 52, smooth: true },
+          { key: 'A',  x1: 30, y1: 52, x2: 46, y2: 44, smooth: true },
+          { key: 'B',  x1: 46, y1: 44, x2: 62, y2: 52, smooth: true },
+          { key: 'G2', x1: 62, y1: 52, x2: 92, y2: 52, smooth: true },
+        ],
+        elements: [{ key: 'A', type: 'circle', gridX: 24.5, gridY: 51, mass: 1, vx0: 13, e: 0.4, showTrail: true }],
         view: 'fit',
       },
     },

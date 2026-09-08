@@ -731,6 +731,8 @@
       this.isFriction = false;
       this.muS        = CONFIG.DEFAULT_MU;   // 정지 마찰계수
       this.muK        = CONFIG.DEFAULT_MU * 0.8;  // 운동 마찰계수 (≤ muS)
+      this.smoothP1   = false;   // 끝점1 이음을 클로소이드로 다듬기 (상대 바닥면도 켜져야 성립 — joints.js)
+      this.smoothP2   = false;
       this.selected   = false;
     }
 
@@ -812,10 +814,19 @@
     /** 경로 타입에 따라 ctx에 path를 쌓는 헬퍼 (beginPath/stroke 없음) */
     _tracePath(ctx, ax, ay, bx, by) {
       switch (this.pathType) {
-        case 'LINE':
-          ctx.moveTo(ax, ay);
-          ctx.lineTo(bx, by);
+        case 'LINE': {
+          // 다듬어진 이음이 있으면 클로소이드 점열을 따라 그린다 (joints.js)
+          if (typeof floorIsSmoothed === 'function' && floorIsSmoothed(this)) {
+            const cs = CONFIG.cellSize;
+            const pts = floorPathGrid(this);
+            ctx.moveTo(pts[0].x * cs, pts[0].y * cs);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * cs, pts[i].y * cs);
+          } else {
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+          }
           break;
+        }
         case 'ELBOW_H':
           ctx.moveTo(ax, ay);
           ctx.lineTo(bx, ay);
@@ -840,7 +851,8 @@
     _samplePath(ax, ay, bx, by, spacing) {
       const pts = [];
 
-      if (this.pathType === 'LINE') {
+      const smoothed = this.pathType === 'LINE' && typeof floorIsSmoothed === 'function' && floorIsSmoothed(this);
+      if (this.pathType === 'LINE' && !smoothed) {
         const dx = bx - ax, dy = by - ay;
         const d  = Math.hypot(dx, dy);
         if (d < 1e-6) return pts;
@@ -883,8 +895,9 @@
           t += spacing;
         }
       } else {
-        // ARC: _arcSamplePoints 재사용
-        const raw = _arcSamplePoints(this, ax, ay, bx, by, 40);
+        // ARC: _arcSamplePoints 재사용 / 다듬어진 LINE: 클로소이드 점열
+        const cs = CONFIG.cellSize;
+        const raw = smoothed ? floorPathGrid(this).map(p => ({ x: p.x * cs, y: p.y * cs })) : _arcSamplePoints(this, ax, ay, bx, by, 40);
         if (raw.length < 2) return pts;
         // 총 호 길이 계산
         let arcLen = 0;

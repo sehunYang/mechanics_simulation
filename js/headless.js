@@ -72,6 +72,7 @@
       case 'p': return m * el.vx;
       case 'T': return f && f.T.length ? f.T.reduce((s, t) => s + t.mag, 0) / f.T.length : 0;
       case 'N': return f ? Math.hypot(f.N[0], f.N[1]) : 0;
+      case 'air': return el._contact ? 0 : 1;   // 면을 떠나 있음(1) — stat 'sum' 과 함께 쓰면 공중 체류 시간[s]
       case 'f': return f ? Math.hypot(f.f[0], f.f[1]) : 0;
       case 'net': return f ? Math.hypot(f.net[0], f.net[1]) : 0;
       default: return NaN;
@@ -137,7 +138,7 @@
    *   spec.q     : 물리량 ('period' 는 vx 부호 전환 간격으로 주기)
    *   spec.at    : 그 시각의 값 (기본 stat 'final')
    *   spec.when  : 'floor' (첫 바닥 접촉) | 'stop' (속력 < 0.02) | 'rest' (0.5 s 이상 정지)
-   *   spec.stat  : 'final' | 'max' | 'min' | 'time' (사건 시각) | 'dist' (이동 거리)
+   *   spec.stat  : 'final' | 'max' | 'min' | 'time' (사건 시각) | 'dist' (이동 거리) | 'sum' (Σ 값·dt — 시간 적분)
    *   spec.T     : 최대 시간
    */
   function measureScene(sceneData, spec) {
@@ -146,7 +147,7 @@
     const y0 = _baselineOf(inst0.floorSegments);
     const ctx = { y0 };
     let start = null, contactAt = null, stopAt = null, restSince = null;
-    let maxV = -Infinity, minV = Infinity, lastV = NaN, prevV = NaN, eventV = NaN, eventT = NaN;
+    let maxV = -Infinity, minV = Infinity, lastV = NaN, prevV = NaN, eventV = NaN, eventT = NaN, sumV = 0;
     let crossings = [];
     let prevVx = null;
     const targetId = () => {
@@ -164,7 +165,7 @@
         if (start === null) start = { x: el.type === 'rect' ? el.physX + el.gridW / 2 : el.physX, y: el.type === 'rect' ? el.physY + el.gridH / 2 : el.physY };
         const v = _quantity(el, q, ctx);
         prevV = lastV; lastV = v;
-        if (isFinite(v)) { if (v > maxV) maxV = v; if (v < minV) minV = v; }
+        if (isFinite(v)) { if (v > maxV) maxV = v; if (v < minV) minV = v; sumV += v * CONFIG.FIXED_DT; }
         // 주기: vx 부호 −→+ 전환 시각
         if (q === 'period') {
           if (prevVx !== null && prevVx < 0 && el.vx >= 0) crossings.push(t);
@@ -192,6 +193,7 @@
     if (stat === 'time') return isFinite(eventT) ? eventT : NaN;
     if (stat === 'max') return maxV;
     if (stat === 'min') return minV;
+    if (stat === 'sum') return sumV;
     if (stat === 'dist') {
       const el = res.elements.find(e => e.id === bid);
       if (!el || !start) return NaN;

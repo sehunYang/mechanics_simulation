@@ -689,8 +689,17 @@
 
     switch (seg.pathType) {
       case 'LINE': {
-        const s = _makeSeg(A.x,A.y,B.x,B.y);
-        if (s) segs.push(s);
+        // 다듬어진 이음(joints.js)이 있으면 클로소이드 점열을 미세 선분으로
+        const path = (typeof floorPathPhys === 'function') ? floorPathPhys(seg) : null;
+        if (path && path.length > 2) {
+          for (let i = 0; i < path.length - 1; i++) {
+            const s = _makeSeg(path[i].x, path[i].y, path[i+1].x, path[i+1].y);
+            if (s) segs.push(s);
+          }
+        } else {
+          const s = _makeSeg(A.x,A.y,B.x,B.y);
+          if (s) segs.push(s);
+        }
         break;
       }
       case 'ELBOW_H': {
@@ -721,6 +730,62 @@
       }
     }
     return segs;
+  }
+
+  /**
+   * 미세 선분 사슬(클로소이드 이음·원호)에 국소 곡률과 매끄러운 정점 법선을 붙인다.
+   *   이웃 관계는 배열 순서가 아니라 기하(앞 선분의 끝점 = 뒤 선분의 시작점)로 찾으므로,
+   *   두 바닥면의 반쪽 클로소이드가 만나는 M 도 한 사슬로 이어진다.
+   *   convexKappa > 0 : 면이 법선 반대쪽으로 굽는(볼록) 구간 — 물체가 관성으로 떠오를 수 있는 곳.
+   *                     _resolveCircleFloor 의 "접촉 유지" 판정(v²/(R+r) ≤ g·cosθ)에 쓰인다.
+   *   n1 / n2         : 시작·끝 정점의 법선. 꺾임이 10° 미만인 정점은 이웃 두 선분 법선의 평균(smooth:true).
+   *                     접촉 법선을 t 에 따라 n1→n2 로 보간하면 원이 미세 선분 위를 지날 때 법선이 연속적으로
+   *                     돌아가므로, 정점마다 한꺼번에 생기던 충격이 서브스텝마다 나눠져 수직항력 N 이
+   *                     (mg·cosθ ∓ mv²/R) 로 매끄럽게 읽힌다. 모서리(≥10°)는 그대로 둔다.
+   */
+  const CHAIN_SMOOTH_COS = Math.cos(10 * Math.PI / 180);
+  function _annotateChains(segs) {
+    const key = (x, y) => Math.round(x * 1e6) + ',' + Math.round(y * 1e6);
+    const byStart = new Map();
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      s.n1 = { x: s.normalX, y: s.normalY, smooth: false };
+      s.n2 = { x: s.normalX, y: s.normalY, smooth: false };
+      s._turnIn = null; s._turnOut = null;
+      const k = key(s.x1, s.y1);
+      if (!byStart.has(k)) byStart.set(k, i);
+    }
+    const dir = (s) => { const L = Math.hypot(s.x2 - s.x1, s.y2 - s.y1); return { x: (s.x2 - s.x1) / L, y: (s.y2 - s.y1) / L, L }; };
+    for (let i = 0; i < segs.length; i++) {
+      const a = segs[i];
+      const j = byStart.get(key(a.x2, a.y2));
+      if (j == null || j === i) continue;
+      const b = segs[j];
+      const da = dir(a), db = dir(b);
+      const cross = da.x * db.y - da.y * db.x, dot = da.x * db.x + da.y * db.y;
+      const turn = Math.atan2(cross, dot);   // > 0 : 왼쪽(법선 쪽)으로 꺾임 = 오목, < 0 : 볼록
+      a._turnOut = turn; b._turnIn = turn;
+      if (dot < CHAIN_SMOOTH_COS) continue;   // 모서리
+      let nx = a.normalX + b.normalX, ny = a.normalY + b.normalY;
+      const L = Math.hypot(nx, ny) || 1; nx /= L; ny /= L;
+      a.n2 = { x: nx, y: ny, smooth: true };
+      b.n1 = { x: nx, y: ny, smooth: true };
+    }
+    for (const s of segs) {
+      if (s._turnIn == null && s._turnOut == null) { s.convexKappa = 0; continue; }
+      const t0 = s._turnIn != null ? s._turnIn : s._turnOut;
+      const t1 = s._turnOut != null ? s._turnOut : s._turnIn;
+      const k = -(t0 + t1) / 2 / dir(s).L;   // 볼록이면 양수
+      s.convexKappa = k > 1e-6 ? k : 0;
+    }
+  }
+
+  /** 미세 선분 위 위치 t(0..1)에서의 매끄러운 접촉 법선 (정점 법선 보간). 사슬이 아니면 선분 법선. */
+  function _smoothNormal(seg, t) {
+    if (!seg.n1 || (!seg.n1.smooth && !seg.n2.smooth)) return { nx: seg.normalX, ny: seg.normalY };
+    let nx = (1 - t) * seg.n1.x + t * seg.n2.x, ny = (1 - t) * seg.n1.y + t * seg.n2.y;
+    const L = Math.hypot(nx, ny) || 1;
+    return { nx: nx / L, ny: ny / L };
   }
 
   /** 물리 좌표계에서 ARC를 n+1 개 점으로 샘플링 */
@@ -773,6 +838,7 @@
       allSegs.push(...getPhysicsSegments(fseg));
     }
     if (allSegs.length === 0) return;
+    _annotateChains(allSegs);   // 미세 선분 사슬(이음·원호)의 곡률·매끄러운 정점 법선 — 바닥면 경계(M)도 잇는다
 
     for (const el of STATE.elements) {
       if (el.type === 'circle') _resolveCircleFloor(el, allSegs, dt);
@@ -850,7 +916,10 @@
     //     사용해야 함. 인접 미세 세그먼트의 경계(joint)에서 원의 중심이
     //     표면 반대쪽으로 살짝 넘어가면 (dx,dy) 기반 방향이 뒤집혀
     //     반대 방향으로 밀어버리는 버그가 있었음.
-    let maxPen = -Infinity, bestNx = 0, bestNy = 0, bestSeg = null;
+    //   bestNx/Ny : 속도 구속(반발·마찰)에 쓰는 접촉 법선 — 미세 선분 사슬 위에서는 정점 법선을 보간한 매끄러운 법선
+    //   bestPx/Py : 위치 보정(밀어내기) 방향 — 항상 기하학적 법선(선분 법선 또는 정점 라디얼).
+    //               ⚠ 위치 보정까지 보간 법선으로 하면 r·sin(기울기) 만큼 접선 방향으로 밀려 에너지가 새거나 늘어난다.
+    let maxPen = -Infinity, bestNx = 0, bestNy = 0, bestPx = 0, bestPy = 0, bestSeg = null;
 
     for (const seg of segs) {
       const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
@@ -876,8 +945,11 @@
       const pen = r - signedDist;
       if (pen > maxPen) {
         maxPen = pen;
-        bestNx = seg.normalX;
-        bestNy = seg.normalY;
+        const sn = _smoothNormal(seg, t);
+        bestNx = sn.nx;
+        bestNy = sn.ny;
+        bestPx = seg.normalX;
+        bestPy = seg.normalY;
         bestSeg = seg;
       }
     }
@@ -892,7 +964,7 @@
     for (let i = 0; i < segs.length; i++) {
       const seg = segs[i];
       if (_backFaceSkip(el, seg, dt)) continue;   // 뒷면 통과
-      const candidates = (i === 0) ? [{x:seg.x1,y:seg.y1}, {x:seg.x2,y:seg.y2}] : [{x:seg.x2,y:seg.y2}];
+      const candidates = (i === 0) ? [{x:seg.x1,y:seg.y1,n:seg.n1}, {x:seg.x2,y:seg.y2,n:seg.n2}] : [{x:seg.x2,y:seg.y2,n:seg.n2}];
       for (const v of candidates) {
         const dx = el.physX - v.x, dy = el.physY - v.y;
         const dist = Math.hypot(dx, dy);
@@ -900,22 +972,38 @@
         const pen = r - dist;
         if (pen > maxPen) {
           maxPen = pen;
-          bestNx = dx / dist;
-          bestNy = dy / dist;
+          // 속도 법선: 매끄러운 사슬의 정점이면 정점 법선(이웃 평균), 진짜 모서리면 라디얼. 위치 보정은 늘 라디얼.
+          if (v.n && v.n.smooth) { bestNx = v.n.x; bestNy = v.n.y; }
+          else { bestNx = dx / dist; bestNy = dy / dist; }
+          bestPx = dx / dist; bestPy = dy / dist;
           bestSeg = seg;
         }
       }
     }
 
-    if (!bestSeg || maxPen <= 0) return;
+    // ── 1-3단계: 매끄러운 곡면(미세 선분 사슬) 위 "접촉 유지" ──
+    //   직전 서브스텝에 닿아 있었고, 지금은 아주 작은 틈(≤ STICK_GAP)만 벌어진 채 사슬 선분 위에 있고,
+    //   바깥 법선 속도도 작으면(≤ STICK_VN — 진짜 반발이 아님) 면 위로 다시 붙인다.
+    //   볼록 구간에서는 물리적으로 떠오를 수 있는지(v²/(R+r) > g·cosθ) 먼저 확인해, 조건이 맞으면
+    //   그대로 두어 실제로 이탈한다(언덕 꼭대기에서 v_top² > g(R+r)).
+    if ((!bestSeg || maxPen <= 0) && el._prevN) {
+      const st = _stickToChain(el, segs, r, dt);
+      if (st) { maxPen = 0; bestNx = st.nx; bestNy = st.ny; bestPx = st.nx; bestPy = st.ny; bestSeg = st.seg;
+                el.physX = st.x; el.physY = st.y;
+                el.gridX = el.physX - el.gridW/2; el.gridY = CONFIG.GRID_SIZE - el.physY - el.gridH/2;
+                const vn0 = el.vx*bestNx + el.vy*bestNy;
+                if (vn0 > 0) { el.vx -= vn0 * bestNx; el.vy -= vn0 * bestNy; } }
+      else return;
+    } else if (!bestSeg || maxPen <= 0) return;
     el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
     el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction,
                     muK: bestSeg.isFriction ? (bestSeg.muK ?? (bestSeg.muS ?? bestSeg.mu ?? 0) * 0.8) : 0 };   // 자유물체도용
+    const _prevN = el._prevN; el._subN = { nx: bestNx, ny: bestNy };
 
-    // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
+    // ── 2단계: 단 한 번만 위치/속도 보정 적용 ── (위치는 기하 법선, 속도는 접촉 법선)
     const nx = bestNx, ny = bestNy;
-    el.physX += nx * maxPen;
-    el.physY += ny * maxPen;
+    el.physX += bestPx * maxPen;
+    el.physY += bestPy * maxPen;
     el.gridX  = el.physX - el.gridW/2;
     el.gridY  = CONFIG.GRID_SIZE - el.physY - el.gridH/2;
 
@@ -928,7 +1016,8 @@
     //   v' = e·v, 반등 높이 = e²·h  (교과서 정의)
     //   ⚠ 예전에는 바닥을 e=1인 물체로 보고 sqrt(e·1)을 썼는데, 그러면 e=0.25에서
     //     반등 높이가 0.0625h가 아니라 0.25h가 되어 물리 공식과 어긋났다.
-    const e_c = el.e;
+    //   매끄러운 면 위를 굴러가는 중(직전 서브스텝 접촉, 법선 꺾임 < 10°)이면 e = 0 (_jointRestitution)
+    const e_c = _jointRestitution(el, nx, ny);
     const jn  = -(1 + e_c) * vn / (1/m);
 
     el.vx += jn/m * nx;
@@ -958,6 +1047,62 @@
       el.vy    += jt/m * ty;
       el.omega -= r * jt / I;
     }
+  }
+
+  /**
+   * 미세 선분 사슬 위 접촉 유지 판정 (_resolveCircleFloor 1-3단계).
+   *   다각선으로 근사한 곡면 위를 구르는 원은 정점마다 접선이 꺾여 수 mm 씩 떠오르는 이산화 잡음을 겪는다.
+   *   오목·볼록 모두 해당하며, 볼록에서는 이탈 조건을 먼저 본다.
+   *   반환: { seg, nx, ny, x, y } — 붙일 선분과 면 위(표면에서 r 떨어진) 중심 위치. 없으면 null.
+   */
+  const STICK_GAP = 0.06;   // [m] 이 이하의 틈만 "이산화 잡음"으로 본다
+  const STICK_VN  = 0.6;    // [m/s] 이보다 빠르게 멀어지면 진짜 반발(튐)이라 붙이지 않는다
+  function _stickToChain(el, segs, r, dt) {
+    const p = el._prevN;
+    let best = null, bestGap = Infinity;
+    for (const seg of segs) {
+      if (!seg.n1 || !(seg.n1.smooth || seg.n2.smooth || seg.convexKappa > 0)) continue;   // 사슬 선분만
+      if (seg.normalX * p.nx + seg.normalY * p.ny < JOINT_SMOOTH_COS) continue;   // 법선 급변 → 다른 면
+      if (_backFaceSkip(el, seg, dt)) continue;
+      const sdx = seg.x2 - seg.x1, sdy = seg.y2 - seg.y1;
+      const lenSq = sdx*sdx + sdy*sdy;
+      if (lenSq < 1e-12) continue;
+      const t = ((el.physX - seg.x1)*sdx + (el.physY - seg.y1)*sdy) / lenSq;
+      if (t < 0 || t > 1) continue;
+      const footX = seg.x1 + t*sdx, footY = seg.y1 + t*sdy;
+      const sd = (el.physX - footX)*seg.normalX + (el.physY - footY)*seg.normalY;
+      const gap = sd - r;
+      if (gap < 0 || gap > STICK_GAP) continue;
+      if (gap < bestGap) { const sn = _smoothNormal(seg, t); bestGap = gap; best = { seg, footX, footY, nx: sn.nx, ny: sn.ny, px: seg.normalX, py: seg.normalY }; }
+    }
+    // 정점(볼록 꼭짓점) 위: 중심이 두 이웃 선분 어느 쪽에도 투영되지 않는 쐐기 영역 — 라디얼 법선으로 처리
+    for (const seg of segs) {
+      if (!seg.n1 || !(seg.n1.smooth || seg.n2.smooth || seg.convexKappa > 0)) continue;
+      if (_backFaceSkip(el, seg, dt)) continue;
+      for (const v of [{ x: seg.x1, y: seg.y1, n: seg.n1 }, { x: seg.x2, y: seg.y2, n: seg.n2 }]) {
+        const dx = el.physX - v.x, dy = el.physY - v.y;
+        const dist = Math.hypot(dx, dy);
+        const gap = dist - r;
+        if (dist < 1e-9 || gap < 0 || gap > STICK_GAP) continue;
+        const nx = (v.n && v.n.smooth) ? v.n.x : dx / dist, ny = (v.n && v.n.smooth) ? v.n.y : dy / dist;
+        if (nx * p.nx + ny * p.ny < JOINT_SMOOTH_COS) continue;
+        if (gap < bestGap) { bestGap = gap; best = { seg, footX: v.x, footY: v.y, nx, ny, px: dx / dist, py: dy / dist }; }
+      }
+    }
+    if (!best) return null;
+    const { seg, nx, ny } = best;
+    // 진짜 반발(바깥으로 빠르게 멀어짐)이면 붙이지 않는다
+    if (el.vx*nx + el.vy*ny > STICK_VN) return null;
+    // 볼록 구간 이탈 조건: 중심 궤도 반지름 R+r 에서 필요한 구심가속도 v²/(R+r) 가 중력의 법선 성분 g·ny 를 넘으면 떠오른다
+    if (seg.convexKappa > 0) {
+      const Rc = 1 / seg.convexKappa + r;
+      const tx = -ny, ty = nx;
+      const vt = el.vx*tx + el.vy*ty;
+      const gN = (STATE.gravityOn ? CONFIG.G : 0) * ny;
+      if (vt*vt / Rc > gN) return null;
+    }
+    // 중심은 기하 법선(px,py) 방향으로 정확히 r — 보간 법선으로 놓으면 접선 방향으로 밀려 에너지가 변한다
+    return { seg, nx, ny, x: best.footX + best.px * r, y: best.footY + best.py * r };
   }
 
   /** RectBody — 단면 충돌: 법선 방향 위의 물체만 처리 */
@@ -1046,6 +1191,7 @@
     el._nonConservative = true;   // 접촉 = 반발·마찰로 에너지 변화 가능
     el._contact = { nx: bestNx, ny: bestNy, friction: !!bestSeg.isFriction,
                     muK: bestSeg.isFriction ? (bestSeg.muK ?? (bestSeg.muS ?? bestSeg.mu ?? 0) * 0.8) : 0 };   // 자유물체도용
+    el._subN = { nx: bestNx, ny: bestNy };
 
     // ── 2단계: 단 한 번만 위치/속도 보정 적용 ──
     el.physX += bestNx * maxPen;
@@ -1053,8 +1199,8 @@
     el.gridX  = el.physX;
     el.gridY  = CONFIG.GRID_SIZE - el.physY - el.gridH;
 
-    // 반발계수: 물체 ↔ 바닥 쌍의 반발계수 = el.e (원형과 동일 규약)
-    const e_c = el.e;
+    // 반발계수: 물체 ↔ 바닥 쌍의 반발계수 = el.e (원형과 동일 규약) — 매끄러운 면 위 이음은 0
+    const e_c = _jointRestitution(el, bestNx, bestNy);
     const vn  = el.vx*bestNx + el.vy*bestNy;
     if (vn < 0) {
       const jn = -(1 + e_c) * vn * el.mass;
@@ -1482,8 +1628,27 @@
 
   function _clearStepFlags() {
     for (const el of STATE.elements) {
-      if (el.type === 'rect' || el.type === 'circle') el._nonConservative = false;
+      if (el.type === 'rect' || el.type === 'circle') {
+        el._nonConservative = false;
+        // 직전 서브스텝의 접촉 법선 — "같은 매끄러운 면 위" 판정용 (아래 _jointRestitution)
+        el._prevN = el._subN || null;
+        el._subN = null;
+      }
     }
+  }
+
+  /**
+   * 이음 통과 반발계수.
+   *   직전 서브스텝에도 바닥에 닿아 있었고 법선이 10° 미만으로만 꺾였으면 "같은 매끄러운 면"이다.
+   *   매끄러운 면 위에서는 법선 속도 성분이 원래 0 이어야 하므로 반발을 적용하지 않는다(e = 0).
+   *   → 클로소이드·원호를 미세 선분으로 근사하면서 생기는 이음마다의 작은 충격을 흡수한다.
+   *   날카로운 모서리(10° 이상)나 공중에서 떨어져 닿는 충돌은 그대로 물체의 e 를 쓴다.
+   */
+  const JOINT_SMOOTH_COS = Math.cos(10 * Math.PI / 180);
+  function _jointRestitution(el, nx, ny) {
+    const p = el._prevN;
+    if (p && (p.nx * nx + p.ny * ny) > JOINT_SMOOTH_COS) return 0;
+    return el.e;
   }
 
   /** 서브스텝 시작 시점의 성분별 기준 에너지 */

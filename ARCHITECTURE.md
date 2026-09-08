@@ -21,7 +21,7 @@ python -m http.server 8123      # → http://localhost:8123
 ## 검증
 
 ```bash
-node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (16 스위트, 242 항목)
+node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (17 스위트, 249 항목)
 node test/run-all.js --verbose
 
 npm i --no-save puppeteer-core  # 1회
@@ -55,6 +55,7 @@ mechanics_simulation/
 │   ├── canvas.js              캔버스 초기화·격자
 │   ├── render.js              rAF 루프 + 씬 드로잉 (drawOverlays 호출)
 │   ├── elements.js            요소 클래스 (RectBody · CircleBody · ForceZone · ExtForce · Pulley · Spring · FloorSegment · Rope)
+│   ├── joints.js              바닥면 이음 클로소이드 다듬기 (적격 판정·경로·토글)
 │   ├── hit-test.js            히트 테스트
 │   ├── interaction.js         포인터·키보드 (실행 중에는 선택만 허용)
 │   ├── ui-controls.js         팔레트 · 하단 pill · 배속(0.25~100x) · 한 스텝
@@ -67,10 +68,10 @@ mechanics_simulation/
 │   ├── panel.js               속성 패널
 │   ├── history.js             실행취소/다시실행
 │   ├── scene.js               장면 직렬화·복원 · 선언적 DSL · 뷰 맞춤
-│   ├── scenes.js              갤러리 장면 11개 (DSL)
+│   ├── scenes.js              갤러리 장면 12개 (DSL)
 │   ├── share.js               공유 링크 (#s=…, delta 인코딩)
 │   ├── headless.js            화면 없이 장면을 돌려 측정 (POE·스윕)
-│   ├── poe-data.js            POE 문항 32 · 해설 11 · 탐구 카드 10
+│   ├── poe-data.js            POE 문항 34 · 해설 12 · 탐구 카드 10
 │   ├── poe.js                 POE 엔진 (예측→관찰→설명, CSV)
 │   ├── sweep.js               파라미터 스윕 (표·그래프·CSV·프리셋)
 │   ├── graph.js               시간 그래프 패널

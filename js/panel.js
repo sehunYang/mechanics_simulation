@@ -134,6 +134,35 @@
         panelRight.appendChild(curvHint);
       }
 
+      // 이음 다듬기 (클로소이드) — 다른 직선 바닥면과 끝점을 공유할 때만
+      if (sel.pathType === 'LINE' && typeof jointAt === 'function') {
+        for (const end of ['p1', 'p2']) {
+          const j = jointAt(sel, end);
+          if (!j) continue;
+          const name = (end === 'p1' ? '끝점1' : '끝점2') + ` 이음 — ${Math.round(j.deg)}° ${j.concave ? '오목' : '볼록'}`;
+          if (j.eligible) {
+            const jb = _btn(j.on ? '매끄럽게 ON (클로소이드)' : '매끄럽게 OFF (모서리)', '', () => {
+              setJointSmooth(sel, end, !j.on);
+              validateAll();
+              if (typeof recordHistory === 'function') recordHistory();
+              renderPanel();
+            });
+            panelRight.appendChild(_row(name, jb));
+            const jInfo = document.createElement('div');
+            jInfo.className = 'pp-note';
+            jInfo.textContent = j.on
+              ? `완화 곡선: 접선 길이 ${j.T.toFixed(2)} m, 최소 곡률 반지름 R = ${j.R.toFixed(2)} m. 접선·곡률이 연속이라 충격력이 없습니다.`
+              : '켜면 두 바닥면 사이에 곡률이 0 → 1/R → 0 으로 변하는 완화 곡선(클로소이드)이 들어가 물체가 튀지 않습니다.';
+            panelRight.appendChild(jInfo);
+          } else {
+            const jInfo = document.createElement('div');
+            jInfo.className = 'pp-note';
+            jInfo.textContent = `${name}: 매끄럽게 할 수 없음 — ${j.reason}`;
+            panelRight.appendChild(jInfo);
+          }
+        }
+      }
+
       // 마찰 토글
       const frBtn = _btn(sel.isFriction ? '마찰 ON' : '마찰 OFF', '', () => {
         sel.isFriction = !sel.isFriction;

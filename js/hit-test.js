@@ -32,9 +32,16 @@
 
       let dist = Infinity;
       switch (seg.pathType) {
-        case 'LINE':
-          dist = pointToSegmentDist(worldX, worldY, ax, ay, bx, by);
+        case 'LINE': {
+          if (typeof floorIsSmoothed === 'function' && floorIsSmoothed(seg)) {
+            const pts = floorPathGrid(seg);
+            for (let k = 0; k < pts.length - 1; k++)
+              dist = Math.min(dist, pointToSegmentDist(worldX, worldY, pts[k].x * cs, pts[k].y * cs, pts[k+1].x * cs, pts[k+1].y * cs));
+          } else {
+            dist = pointToSegmentDist(worldX, worldY, ax, ay, bx, by);
+          }
           break;
+        }
         case 'ELBOW_H': {
           const mx = bx, my = ay;
           dist = Math.min(

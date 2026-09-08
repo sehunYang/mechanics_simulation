@@ -85,9 +85,9 @@ scenario('S13-3', 'POE 데이터 — 24문항 · 6분류 · 정답 하나 · 필
     for (const g of POE_GUIDES) if (!findScene(g.scene) || !g.steps || g.steps.length < 2 || !g.why) out.bad.push('guide:' + g.scene);
     out
   `);
-  expect('문항 수 32', r.n, 32, 0, '개');
+  expect('문항 수 34', r.n, 34, 0, '개');
   expect('분류 7', r.cats, 7, 0, '개');
-  expect('해설 11', r.guides, 11, 0, '개');
+  expect('해설 12', r.guides, 12, 0, '개');
   truthy('필드·정답·태그 누락 없음: ' + r.bad.join(' '), r.bad.length === 0);
   truthy('모든 장면 로드, 경고 없음: ' + r.loadFail.join(' '), r.loadFail.length === 0);
 });
