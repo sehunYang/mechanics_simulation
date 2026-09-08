@@ -283,6 +283,14 @@
         _numInput(sel.vy0, undefined, undefined, 0.1, v => { sel.vy0 = v; })));
       panelRight.appendChild(_row('반발계수 e',
         _slider(sel.e, 0.0, 1.0, 0.01, v => { sel.e = v; })));
+      if (sel.type === 'circle') {
+        panelRight.appendChild(_row('초기 각속도 ω₀ (rad/s)',
+          _numInput(sel.omega0 || 0, undefined, undefined, 1, v => { sel.omega0 = v; })));
+        const wInfo = document.createElement('div');
+        wInfo.className = 'pp-note';
+        wInfo.textContent = '양수 = 반시계 회전. 마찰 바닥에 닿으면 스핀이 진행 속도로 바뀝니다 (v = rω₀/3).';
+        panelRight.appendChild(wInfo);
+      }
       // 공기저항 (선형 F = −bv). 0 이면 없음 — 종단속도 탐구용
       panelRight.appendChild(_row('공기저항 b (N·s/m)',
         _numInput(sel.drag || 0, 0, 50, 0.1, v => { sel.drag = Math.max(0, v); })));

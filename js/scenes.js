@@ -143,6 +143,38 @@
         view: 'fit',
       },
     },
+    {
+      id: 'projectile', title: '포물선 운동', level: '기초', tag: '힘과 운동',
+      desc: '공을 45° 로 11.3 m/s (8, 8) 로 던집니다. 최고점에서 속도는 0 일까요?',
+      hint: '가로 속도는 그대로, 세로 속도만 변합니다. 사거리 R = v²sin2θ/g ≈ 13.1 m.',
+      spec: {
+        floors: [{ key: 'F', x1: 30, y1: 70, x2: 80, y2: 70 }],
+        elements: [{ key: 'A', type: 'circle', gridX: 39.5, gridY: 69, mass: 1, vx0: 8, vy0: 8, e: 0.3, showTrail: true }],
+        view: 'fit',
+      },
+    },
+    {
+      id: 'circular', title: '원운동 (무중력)', level: '기초', tag: '원운동·회전',
+      desc: '중력을 끄고 실에 매인 공에 옆으로 5 m/s 를 줍니다. 공은 반지름 4 m 원을 돕니다.',
+      hint: '속력은 일정, 방향만 바뀝니다. 실 장력 T = mv²/r = 6.25 N 이 구심력.',
+      spec: {
+        g: false,
+        floors: [{ key: 'C', x1: 49, y1: 50, x2: 51, y2: 50 }],
+        elements: [{ key: 'A', type: 'circle', gridX: 53.5, gridY: 49.5, mass: 1, vy0: 5, showTrail: true }],
+        ropes: [['C', 's1', 'A', 'center']],
+        view: 'fit',
+      },
+    },
+    {
+      id: 'spin-drop', title: '회전하며 낙하하는 공', level: '심화', tag: '원운동·회전',
+      desc: '반시계로 12 rad/s 회전하는 공을 마찰 바닥에 떨어뜨립니다. 닿은 뒤 어디로 갈까요?',
+      hint: '바닥에 닿은 점이 오른쪽으로 미끄러지므로 마찰은 왼쪽. 굴러가는 속력은 rω₀/3 = 2 m/s.',
+      spec: {
+        floors: [{ key: 'F', x1: 30, y1: 60, x2: 80, y2: 60, isFriction: true, muS: 0.5, muK: 0.4 }],
+        elements: [{ key: 'A', type: 'circle', gridX: 49.5, gridY: 50, mass: 1, e: 0.5, omega0: 12, showTrail: true }],
+        view: 'fit',
+      },
+    },
   ];
 
   /** id 로 장면 찾기 */

@@ -185,6 +185,7 @@
       this.vy0   = 0;
       this.e     = CONFIG.DEFAULT_E;
       this.drag  = 0;          // 공기저항 계수 b [N·s/m] — F = −b·v
+      this.omega0 = 0;         // 초기 각속도 [rad/s] — 양수 = 반시계 (화면 기준). 회전 낙하·스핀 탐구용
       this.showTrail = true;   // 궤적 표시 (물체별 토글)
       this._trail = [];        // 궤적 좌표 [격자 칸] — 휘발성, serialize 제외
       this.vx = 0; this.vy = 0;

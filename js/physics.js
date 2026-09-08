@@ -112,8 +112,8 @@
         el.vx = el.vx0 || 0;
         el.vy = el.vy0 || 0;
         el.ax = 0; el.ay = 0;
-        el.omega = 0;   // 각속도 초기화
-        el.theta = 0;   // 회전각 초기화
+        el.omega = el.omega0 || 0;   // 초기 각속도 (스핀)
+        el.theta = 0;                // 회전각 초기화
         el.alpha = 0;
       }
       if (el.type === 'pulley') {

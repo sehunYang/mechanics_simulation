@@ -30,7 +30,7 @@ function num(s) { const m = String(s || '').replace(/,/g, '').match(/-?\d+(\.\d+
     /* ── 1. 데스크톱: 시작 카드 · 갤러리 · 측정값 ── */
     let p = await L.newPage(browser, 1280, 800, SHOTS ? 2 : 1);
     chk('시작 카드가 보인다', await p.evaluate(() => document.getElementById('start-guide').classList.contains('visible')));
-    chk('갤러리 8개', (await p.evaluate(() => document.querySelectorAll('#sg-gallery .gal-item').length)) === 8);
+    chk('갤러리 11개', (await p.evaluate(() => document.querySelectorAll('#sg-gallery .gal-item').length)) === 11);
     if (SHOTS) await L.shot(p, '01-start.png');
 
     await L.scene(p, 'atwood');
@@ -95,7 +95,7 @@ function num(s) { const m = String(s || '').replace(/,/g, '').match(/-?\d+(\.\d+
     await L.reset(p);
     await p.evaluate(() => { togglePOE(true); });
     await L.sleep(150);
-    chk('POE 목록: 분류 탭 8개(6 + 해설 + 탐구)', (await p.evaluate(() => document.querySelectorAll('#poe-body .poe-tab').length)) === 8);
+    chk('POE 목록: 분류 탭 9개(7 + 해설 + 탐구)', (await p.evaluate(() => document.querySelectorAll('#poe-body .poe-tab').length)) === 9);
     if (SHOTS) await L.shot(p, '05-poe-list.png');
     await p.evaluate(() => startPOE(POE_EXAMPLES.find(e => e.id === 'atwood-T')));
     await L.sleep(200);

@@ -39,7 +39,7 @@ scenario('S11-1', '갤러리 8개 장면 — 모두 로드되고 3초 동안 NaN
   const a = app();
   a.evalIn(RUN);
   const n = a.evalIn(`SCENES.length`);
-  expect('장면 수', n, 8, 0, '개');
+  expect('장면 수', n, 11, 0, '개');
   for (let i = 0; i < n; i++) {
     const r = a.evalIn(`
       const sc = SCENES[${i}];

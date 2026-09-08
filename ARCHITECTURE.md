@@ -21,7 +21,7 @@ python -m http.server 8123      # → http://localhost:8123
 ## 검증
 
 ```bash
-node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (15 스위트, 236 항목)
+node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (16 스위트, 242 항목)
 node test/run-all.js --verbose
 
 npm i --no-save puppeteer-core  # 1회
@@ -67,10 +67,10 @@ mechanics_simulation/
 │   ├── panel.js               속성 패널
 │   ├── history.js             실행취소/다시실행
 │   ├── scene.js               장면 직렬화·복원 · 선언적 DSL · 뷰 맞춤
-│   ├── scenes.js              갤러리 장면 8개 (DSL)
+│   ├── scenes.js              갤러리 장면 11개 (DSL)
 │   ├── share.js               공유 링크 (#s=…, delta 인코딩)
 │   ├── headless.js            화면 없이 장면을 돌려 측정 (POE·스윕)
-│   ├── poe-data.js            POE 문항 24 · 해설 8 · 탐구 카드 10
+│   ├── poe-data.js            POE 문항 32 · 해설 11 · 탐구 카드 10
 │   ├── poe.js                 POE 엔진 (예측→관찰→설명, CSV)
 │   ├── sweep.js               파라미터 스윕 (표·그래프·CSV·프리셋)
 │   ├── graph.js               시간 그래프 패널
@@ -141,7 +141,7 @@ simStep 은 궤적·시계열·이벤트를 건너뜁니다. POE 의 수치 정�
 
 문항 = `{ scene(갤러리 id | DSL), set, question, options[{label,correct,tag}] | answer{measure,tol}, observe, vis, select, variants, measure, explain, misconception }`.
 선택지는 문항 id 시드의 결정적 셔플. 수치 정답은 `measureScene` 으로 그 자리에서 계산해 엔진과 늘 일치합니다.
-`spec13` 이 24문항 전부의 장면 로드·필드·정답 유일성과 핵심 문항 7개의 정답–시뮬 정합을 검사합니다.
+`spec13` 이 32문항 전부의 장면 로드·필드·정답 유일성과 핵심 문항 7개의 정답–시뮬 정합을 검사합니다.
 
 ## 공유 링크 (share.js)
 
