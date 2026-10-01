@@ -142,8 +142,10 @@
       const cy = by + bh / 2;
 
       ctx.save();
-      // 스냅 회전(임시, radian) 또는 일반 회전(degree) 적용
-      const _rotRad = (this._snapRotation !== null)
+      // 막대 위에 탄 상자(실행 중) → 막대 각도, 아니면 스냅 회전(임시, radian) 또는 일반 회전(degree)
+      const _rotRad = (STATE.simMode !== 'EDIT' && this._rideRot != null)
+        ? -this._rideRot
+        : (this._snapRotation !== null)
         ? this._snapRotation
         : this.rotation * Math.PI / 180;
       if (_rotRad !== 0) {
@@ -833,6 +835,8 @@
    * 편집 중(또는 fresh=true)이면 용수철 축 x 를 막대 중심선에 투영한다.
    */
   function rodSpringD(rod, side, spring, fresh) {
+    if (side === 'right') return rod.gridW;   // 가로 용수철: 막대 오른쪽 끝(p2)에 왼쪽 끝이 닿음
+    if (side === 'left')  return 0;           //              막대 왼쪽 끝(p1)에 오른쪽 끝이 닿음
     if (!fresh && STATE.simMode !== 'EDIT' && spring._rodD && spring._rodD[side] != null) return spring._rodD[side];
     const g = rodGeometry(rod);
     const ax = spring.gridX + spring.gridW / 2;
@@ -842,7 +846,7 @@
   /** 용수철 끝이 닿은 막대 면의 점 (격자 칸) — side 'bottom' 아랫면 / 'top' 윗면 */
   function rodSpringFaceGrid(rod, side, spring) {
     const g = rodGeometry(rod), P = rodPointGrid(rod, rodSpringD(rod, side, spring));
-    const h = (side === 'bottom' ? -1 : 1) * g.t / 2;
+    const h = side === 'bottom' ? -g.t / 2 : side === 'top' ? g.t / 2 : 0;
     return { x: P.x + g.nx * h, y: P.y + g.ny * h };
   }
 

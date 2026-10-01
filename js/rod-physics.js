@@ -75,66 +75,111 @@
     return false;
   }
 
-  /**
-   * 막대에 건 실의 상대가 지원되는 종류인가.
-   *   · 고정점·네모·원·막대 — 길이 제약 (이 파일이 푼다)
-   *   · 외력 — 힘의 원천 (physics.js applyExtForces 가 작용점에 힘을 준다)
-   *   · 고정 도르래의 림 — 그 도르래에 림 실이 정확히 둘이면 "도르래를 지나는 한 실" (rodPulleyRuns)
-   * 움직도르래·림 실이 셋 이상인 도르래는 아직 아니다.
-   */
-  function rodRopeSupported(rope) {
-    if (_ropeIsExt(rope)) return true;
-    if (rodPulleyRuns().some(run => run.ropes.includes(rope))) return true;
-    for (const a of [rope.anchorA, rope.anchorB]) {
-      if (STATE.floorSegments.some(s => s.id === a.elementId)) continue;
-      const el = STATE.elements.find(e => e.id === a.elementId);
-      if (!el || !['rod', 'rect', 'circle'].includes(el.type)) return false;
-    }
-    return true;
-  }
+  const ROD_PULLEY_MASS = 0.05;   // 막대 계의 움직도르래 — 거의 무질량인 마디 [kg] (장력 오차 ≈ m·a, 1 % 안팎)
 
   function _ropeIsExt(rope) {
     return [rope.anchorA, rope.anchorB].some(a => { const el = STATE.elements.find(e => e.id === a.elementId); return el && el.type === 'extforce'; });
   }
 
   /**
-   * 고정 도르래를 지나 막대에 이어진 실 — [{ pulley, ropes:[r1, r2], segs:[{ rope, rim, body }] }]
-   * 도르래 중심이 실로 바닥면(천장)에 매여 있고, 림에 실이 정확히 둘, 그중 하나 이상이 막대에 걸린 경우.
-   * 두 구간 길이의 합이 일정한 한 줄로 푼다 (마찰 없는 도르래 → 양쪽 장력이 같다).
+   * 막대 실 네트워크 — 막대와 실로 이어진 성분 전체 (도르래를 몇 개 거치든).
+   *   ropes   : Set — 이 파일이 푸는 실 (외력 실 제외). physics.js 의 실 제약 단계는 이 실들을 건너뛴다.
+   *   pulleys : Map(id → { el, fixed }) — 성분 안의 도르래. fixed = 중심이 실로 바닥면(천장)에 매임.
+   *   groups  : [[rope, …]] — 길이 합이 일정한 한 줄. 림 실이 정확히 둘인 도르래를 지나며 이어진다
+   *             (직렬 도르래·움직도르래). 도르래를 지나지 않는 실은 한 가닥짜리 줄.
+   *   bad     : Set(rope) — 림 실이 셋 이상인 도르래에 걸린 실. 실이 어느 길로 지나는지 정할 수 없다.
+   * 실행 중에는 같은 장면에 대해 한 번만 계산한다.
    */
-  function rodPulleyRuns() {
-    const out = [];
-    for (const p of STATE.elements) {
-      if (p.type !== 'pulley') continue;
-      const mine = STATE.ropes.filter(r => r.anchorA.elementId === p.id || r.anchorB.elementId === p.id);
-      const centerFixed = mine.some(r => {
-        const pa = r.anchorA.elementId === p.id ? r.anchorA : r.anchorB, oa = pa === r.anchorA ? r.anchorB : r.anchorA;
-        return pa.attachPoint === 'center' && STATE.floorSegments.some(s => s.id === oa.elementId);
-      });
-      if (!centerFixed) continue;
-      const rim = mine.filter(r => (r.anchorA.elementId === p.id ? r.anchorA : r.anchorB).attachPoint !== 'center');
-      if (rim.length !== 2) continue;
-      const segs = rim.map(r => {
-        const rimA = r.anchorA.elementId === p.id ? r.anchorA : r.anchorB;
-        return { rope: r, rim: rimA, body: rimA === r.anchorA ? r.anchorB : r.anchorA };
-      });
-      const ok = segs.every(sg => STATE.floorSegments.some(f => f.id === sg.body.elementId) ||
-        ['rod', 'rect', 'circle'].includes((STATE.elements.find(e => e.id === sg.body.elementId) || {}).type));
-      const hasRod = segs.some(sg => (STATE.elements.find(e => e.id === sg.body.elementId) || {}).type === 'rod');
-      if (ok && hasRod) out.push({ pulley: p, ropes: rim, segs });
+  let _netCache = null;
+  function rodRopeNetwork() {
+    if (_netCache && STATE.simMode !== 'EDIT' && _netCache.ropesRef === STATE.ropes && _netCache.elsRef === STATE.elements) return _netCache;
+    const byId = id => STATE.elements.find(e => e.id === id);
+    const isFloor = id => STATE.floorSegments.some(s => s.id === id);
+    const uf = new Map();
+    const find = x => { while (uf.get(x) !== x) { uf.set(x, uf.get(uf.get(x))); x = uf.get(x); } return x; };
+    const add = x => { if (!uf.has(x)) uf.set(x, x); };
+    const ropes0 = STATE.ropes.filter(r => !_ropeIsExt(r));
+    for (const r of ropes0) {
+      const ids = [r.anchorA.elementId, r.anchorB.elementId].filter(id => !isFloor(id) && byId(id));
+      ids.forEach(add);
+      if (ids.length === 2) uf.set(find(ids[0]), find(ids[1]));
     }
-    return out;
+    const rodRoots = new Set(STATE.elements.filter(e => e.type === 'rod' && uf.has(e.id)).map(e => find(e.id)));
+    const inSys = id => uf.has(id) && rodRoots.has(find(id));
+    const ropes = new Set(ropes0.filter(r => [r.anchorA, r.anchorB].some(a => inSys(a.elementId))));
+
+    const pulleys = new Map(), rimOf = new Map();
+    for (const el of STATE.elements) {
+      if (el.type !== 'pulley' || !inSys(el.id)) continue;
+      let fixed = false;
+      for (const r of ropes) {
+        const pa = r.anchorA.elementId === el.id ? r.anchorA : (r.anchorB.elementId === el.id ? r.anchorB : null);
+        if (!pa) continue;
+        const oa = pa === r.anchorA ? r.anchorB : r.anchorA;
+        if (pa.attachPoint === 'center') { if (isFloor(oa.elementId)) fixed = true; }
+        else { if (!rimOf.has(el.id)) rimOf.set(el.id, []); rimOf.get(el.id).push(r); }
+      }
+      pulleys.set(el.id, { el, fixed });
+    }
+    // 림 실 둘을 가진 도르래로 실을 잇는다 (한 실이 도르래를 지나간다)
+    const ru = new Map();
+    const rfind = x => { while (ru.get(x) !== x) { ru.set(x, ru.get(ru.get(x))); x = ru.get(x); } return x; };
+    for (const r of ropes) ru.set(r, r);
+    const bad = new Set();
+    for (const [, list] of rimOf) {
+      if (list.length === 2 && list[0] !== list[1]) ru.set(rfind(list[0]), rfind(list[1]));
+      else if (list.length > 2) list.forEach(r => bad.add(r));
+    }
+    const gm = new Map();
+    for (const r of ropes) {
+      if (bad.has(r)) continue;
+      const k = rfind(r);
+      if (!gm.has(k)) gm.set(k, []);
+      gm.get(k).push(r);
+    }
+    const groups = [...gm.values()];
+    const groupOf = new Map();
+    for (const gp of groups) for (const r of gp) groupOf.set(r, gp);
+    const net = { ropes, pulleys, groups, groupOf, bad, ropesRef: STATE.ropes, elsRef: STATE.elements };
+    if (STATE.simMode !== 'EDIT') _netCache = net;
+    return net;
   }
 
-  /** 이 실을 막대 쪽(이 파일)이 푸는가 — 막대에 직접 걸렸거나 막대로 가는 도르래 줄의 한 구간 */
+  /** 이 실을 막대 쪽(이 파일)이 푸는가 — 막대와 실(도르래 포함)로 이어진 성분의 실 */
   function ropeInRodSystem(rope) {
-    if (_ropeIsExt(rope)) return false;
-    return ropeTouchesRod(rope) || rodPulleyRuns().some(run => run.ropes.includes(rope));
+    return rodRopeNetwork().ropes.has(rope);
+  }
+
+  /**
+   * 막대 쪽 실이 지원되는 모양인가.
+   *   · 외력 실 — 힘의 원천 (physics.js applyExtForces 가 작용점에 힘)
+   *   · 고정점·네모·원·막대·도르래(고정/움직) — 길이 제약
+   *   · 림 실이 셋 이상인 도르래에 걸린 실은 아니다 (지나는 길을 정할 수 없다)
+   */
+  function rodRopeSupported(rope) {
+    if (_ropeIsExt(rope)) return true;
+    const net = rodRopeNetwork();
+    if (net.bad.has(rope)) return false;
+    for (const a of [rope.anchorA, rope.anchorB]) {
+      if (STATE.floorSegments.some(s => s.id === a.elementId)) continue;
+      const el = STATE.elements.find(e => e.id === a.elementId);
+      if (!el || !['rod', 'rect', 'circle', 'pulley'].includes(el.type)) return false;
+    }
+    return true;
   }
 
   /* ── 실행 시작 ── */
   function initRodPhysics() {
     const GS = CONFIG.GRID_SIZE;
+    _netCache = null;
+    // 막대 계의 움직도르래 = 가벼운 마디 (위치·속도를 이 파일이 적분)
+    const net = rodRopeNetwork();
+    for (const el of STATE.elements) {
+      if (el.type !== 'pulley') continue;
+      const info = net.pulleys.get(el.id);
+      el._rodNode = !!(info && !info.fixed);
+      if (el._rodNode) { el.vx = 0; el.vy = 0; el.ax = 0; el.ay = 0; }
+    }
     for (const el of STATE.elements) {
       if (el.type !== 'rod') continue;
       if (!(el.mass > 0)) el.mass = 0.1;
@@ -150,8 +195,9 @@
       if (sp.type !== 'spring') continue;
       sp._rodD = {};
       const L = STATE.elements.find(e => e.id === sp.leftElementId), R = STATE.elements.find(e => e.id === sp.rightElementId);
-      if (L && L.type === 'rod') sp._rodD.bottom = rodSpringD(L, 'bottom', sp, true);
-      if (R && R.type === 'rod') sp._rodD.top    = rodSpringD(R, 'top',    sp, true);
+      const ls = sp.isVertical ? 'bottom' : 'right', rs = sp.isVertical ? 'top' : 'left';
+      if (L && L.type === 'rod') sp._rodD[ls] = rodSpringD(L, ls, sp, true);
+      if (R && R.type === 'rod') sp._rodD[rs] = rodSpringD(R, rs, sp, true);
     }
     for (const f of STATE.elements) {
       if (f.type !== 'fulcrum') continue;
@@ -172,7 +218,8 @@
   /** 용수철 끝이 닿은 막대 위 점 (물리) — side 'bottom' = 아랫면, 'top' = 윗면. 실행 시작 때 정한 d 를 따라 돈다 */
   function rodSpringPoint(rod, side, spring) {
     const d = rodSpringD(rod, side, spring);
-    const P = rodPhysPoint(rod, d), h = (side === 'bottom' ? -1 : 1) * rod.gridH / 2;
+    const P = rodPhysPoint(rod, d);
+    const h = side === 'bottom' ? -rod.gridH / 2 : side === 'top' ? rod.gridH / 2 : 0;   // 가로 용수철은 막대 끝(중심선)
     return { x: P.x - Math.sin(rod.theta) * h, y: P.y + Math.cos(rod.theta) * h };
   }
 
@@ -220,6 +267,7 @@
     if (!el) return null;
     if (el.type === 'rod') return { el, im: 1 / el.mass, ii: 1 / rodInertia(el), rod: true };
     if (el.type === 'rect') return { el, im: 1 / (el.mass || 1), ii: 0, rod: false };
+    if (el.type === 'pulley' && el._rodNode) return { el, im: 1 / ROD_PULLEY_MASS, ii: 0, rod: false };
     // 원: 균일 원판 I = ½mr² — 막대 위에서 구를 수 있게 회전 항을 둔다 (실은 중심에 걸려 r = 0)
     if (el.type === 'circle') { const r = el.gridW / 2, m = el.mass || 1; return { el, im: 1 / m, ii: 2 / (m * r * r), rod: false }; }
     return null;   // 바닥면·받침·도르래 등 — 움직이지 않는 상대
@@ -227,9 +275,12 @@
 
   const _cross = (rx, ry, dx, dy) => rx * dy - ry * dx;
 
+  /* 항의 각 성분 r × d — 같은 물체의 여러 점을 합친 항(움직도르래·한 줄이 두 번 지나는 막대)은 미리 합한 ang 을 쓴다.
+     d 는 단위벡터가 아닐 수 있다 (합친 항) → 유효 역질량 = (1/m)|d|² + (r×d)²/I */
+  const _ang = (t) => (t.ang != null ? t.ang : _cross(t.rx, t.ry, t.dx, t.dy));
   function _rowK(row) {
     let k = 0;
-    for (const t of row.terms) { const c = _cross(t.rx, t.ry, t.dx, t.dy); k += t.rb.im + t.rb.ii * c * c; }
+    for (const t of row.terms) { const c = _ang(t); k += t.rb.im * (t.dx * t.dx + t.dy * t.dy) + t.rb.ii * c * c; }
     return k;
   }
   function _rowJv(row) {
@@ -237,7 +288,7 @@
     for (const t of row.terms) {
       const el = t.rb.el;
       v += el.vx * t.dx + el.vy * t.dy;
-      if (t.rb.ii) v += el.omega * _cross(t.rx, t.ry, t.dx, t.dy);
+      if (t.rb.ii) v += el.omega * _ang(t);
     }
     return v;
   }
@@ -246,7 +297,7 @@
       const el = t.rb.el;
       el.vx += t.rb.im * dl * t.dx;
       el.vy += t.rb.im * dl * t.dy;
-      if (t.rb.ii) el.omega += t.rb.ii * dl * _cross(t.rx, t.ry, t.dx, t.dy);
+      if (t.rb.ii) el.omega += t.rb.ii * dl * _ang(t);
     }
   }
   /** 위치 단계 — 같은 행 구조로 위치·각도를 직접 옮긴다 (속도 불변) */
@@ -255,7 +306,7 @@
       const el = t.rb.el;
       el.physX += t.rb.im * dl * t.dx;
       el.physY += t.rb.im * dl * t.dy;
-      if (t.rb.ii) el.theta += t.rb.ii * dl * _cross(t.rx, t.ry, t.dx, t.dy);
+      if (t.rb.ii) el.theta += t.rb.ii * dl * _ang(t);
     }
   }
 
@@ -331,7 +382,19 @@
       if (pen > -SL) out.push({ px: C.x - dx * r, py: C.y - dy * r, nx: dx, ny: dy, pen });
       return out;
     }
-    // 네모
+    // 네모 ── ⓪ 막대 위에 탄 상자: 중심이 막대 위쪽(윗면 쪽)이고 막대 길이 안이면, 상자가 막대 면에 붙어
+    //    함께 기운 것으로 본다 — 중심이 면에서 (두께/2 + 높이/2) 떨어진 자리가 접촉. 그림도 막대 각도로 기운다
+    //    (_rideRot). 상자 자체의 회전 관성·넘어짐은 다루지 않는다 (면을 따라 미끄러지는 물체).
+    {
+      const Lc = loc(_bodyCenter(b)), sg = Lc.h >= 0 ? 1 : -1;
+      if (ny * sg > 0.2 && Math.abs(Lc.s) <= a) {
+        const gap = Math.abs(Lc.h) - hb - b.gridH / 2;
+        if (gap < SL && gap > -(hb + b.gridH / 2)) {
+          out.push({ px: RC.x + ux * Lc.s + nx * hb * sg, py: RC.y + uy * Lc.s + ny * hb * sg, nx: nx * sg, ny: ny * sg, pen: -gap, ride: true });
+        }
+        return out;
+      }
+    }
     const x0 = b.physX, y0 = b.physY, x1 = x0 + b.gridW, y1 = y0 + b.gridH;
     // ① 네모 꼭짓점 → 막대 안
     //    막대 면(법선 ±n)에 닿은 꼭짓점들은 접점 하나로 묶어 **상자 중심 바로 아래**에 둔다.
@@ -449,62 +512,44 @@
       }
     }
 
-    // ④ 막대에 건 실 (팽팽할 때만) — 외력 실은 힘, 도르래 줄은 ⑤
-    const runs = rodPulleyRuns(), runRopes = new Set(runs.flatMap(r => r.ropes));
-    for (const rope of STATE.ropes) {
-      if (!ropeTouchesRod(rope) || _ropeIsExt(rope) || runRopes.has(rope) || !rodRopeSupported(rope)) continue;
-      const row = _ropeRow(rope);
-      if (row && row.active) rows.push(row);
-    }
-    // ⑤ 고정 도르래를 지나는 줄 — 두 구간 길이 합 일정
-    for (const run of runs) {
-      const row = _runRow(run);
+    // ④ 막대 쪽 실 — 한 줄(도르래를 지나는 실 포함)마다 한 행, 팽팽할 때만
+    for (const gp of rodRopeNetwork().groups) {
+      const row = _netRow(gp);
       if (row && row.active) rows.push(row);
     }
     return rows;
   }
 
-  /** 실 하나의 행 — 양 끝을 서로 당기는 방향. active = 팽팽함 */
-  function _ropeRow(rope) {
-    const A = getAttachPhysPos(rope.anchorA), B = getAttachPhysPos(rope.anchorB);
-    if (!A || !B) return null;
-    const dx = B.x - A.x, dy = B.y - A.y, dist = Math.hypot(dx, dy);
-    if (dist < 1e-9) return null;
-    const L = rope.calibratedLength ?? rope.ropeLength;
-    const ux = dx / dist, uy = dy / dist;
-    const terms = [];
-    const add = (anchor, P, sx, sy, side) => {
-      const el = STATE.elements.find(e => e.id === anchor.elementId);
-      const rb = _rb(el);
-      if (!rb) return;
-      const rx = rb.rod ? P.x - el.physX : 0, ry = rb.rod ? P.y - el.physY : 0;
-      terms.push({ rb, rx, ry, dx: sx, dy: sy, side, px: P.x, py: P.y });
-    };
-    add(rope.anchorA, A, ux, uy, 'A');
-    add(rope.anchorB, B, -ux, -uy, 'B');
-    if (!terms.length) return null;
-    return { terms, lo: 0, hi: Infinity, target: 0, tag: 'rope:' + rope.id, kind: 'T', rope,
-             active: dist >= L - 1e-4, C: L - dist };
-  }
-
-  /** 도르래 줄 행 — 각 구간 끝의 물체를 림 쪽으로 당긴다. C = L − (d₁ + d₂) */
-  function _runRow(run) {
-    const terms = [];
+  /**
+   * 실 한 줄(rope 1개 또는 도르래를 지나며 이어진 여러 구간)의 행. C = L − Σd ≥ 0, λ ≥ 0 은 장력.
+   *   구간마다 양 끝 물체를 서로 쪽으로 당기는 방향을 더한다 — 움직도르래는 두 구간에서 받으므로
+   *   항이 합쳐져(dx, dy 가 단위가 아님) "2T 로 끌어올리는" 관계가 자연히 들어간다.
+   *   고정 도르래·바닥면은 움직이지 않는 상대라 항이 없다.
+   *   parts: 막대 위 실제 작용점별 성분 — 자유물체도 기록용.
+   */
+  function _netRow(group) {
+    const terms = new Map();
     let sum = 0, L = 0;
-    for (const sg of run.segs) {
-      const R = getAttachPhysPos(sg.rim), P = getAttachPhysPos(sg.body);
-      if (!R || !P) return null;
-      const dx = R.x - P.x, dy = R.y - P.y, d = Math.hypot(dx, dy);
+    for (const rope of group) {
+      const A = getAttachPhysPos(rope.anchorA), B = getAttachPhysPos(rope.anchorB);
+      if (!A || !B) return null;
+      const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
       if (d < 1e-9) return null;
-      sum += d; L += sg.rope.calibratedLength ?? sg.rope.ropeLength;
-      const el = STATE.elements.find(e => e.id === sg.body.elementId), rb = _rb(el);
-      if (!rb) continue;
-      terms.push({ rb, rx: rb.rod ? P.x - el.physX : 0, ry: rb.rod ? P.y - el.physY : 0, dx: dx / d, dy: dy / d,
-                   px: P.x, py: P.y, side: sg.rope.id, ref: sg.rope });
+      sum += d; L += rope.calibratedLength ?? rope.ropeLength;
+      const ux = dx / d, uy = dy / d;
+      for (const [anc, P, sx, sy, side] of [[rope.anchorA, A, ux, uy, 'A'], [rope.anchorB, B, -ux, -uy, 'B']]) {
+        const el = STATE.elements.find(e => e.id === anc.elementId), rb = _rb(el);
+        if (!rb) continue;
+        const rx = rb.rod ? P.x - el.physX : 0, ry = rb.rod ? P.y - el.physY : 0;
+        let t = terms.get(el.id);
+        if (!t) { t = { rb, dx: 0, dy: 0, ang: 0, parts: [] }; terms.set(el.id, t); }
+        t.dx += sx; t.dy += sy; t.ang += _cross(rx, ry, sx, sy);
+        t.parts.push({ dx: sx, dy: sy, px: P.x, py: P.y, ref: rope, side: rope.id + side });
+      }
     }
-    if (!terms.length) return null;
-    return { terms, lo: 0, hi: Infinity, target: 0, tag: 'run:' + run.pulley.id, kind: 'T', ropes: run.ropes,
-             active: sum >= L - 1e-4, C: L - sum };
+    if (!terms.size) return null;
+    return { terms: [...terms.values()], lo: 0, hi: Infinity, target: 0, tag: 'rope:' + group[0].id, kind: 'T',
+             ropes: group, active: sum >= L - 1e-4, C: L - sum };
   }
 
   /* ── 스텝 시작 / 끝 — 임펄스를 모아 힘으로 ── */
@@ -514,6 +559,8 @@
         el._imp = new Map();
         el._ext = new Map();   // 외력·용수철처럼 힘으로 적분되는 것 — 서브스텝 합 (rodAddForce)
         el._vxPre = el.vx; el._vyPre = el.vy; el._omPre = el.omega;
+      } else if (el.type === 'rect') {
+        el._rideRot = null;    // 이번 스텝에 막대 위에 탔으면 _recordRow 가 다시 채운다
       } else if (el.type === 'fulcrum') {
         el._imp = { jx: 0, jy: 0, jn: 0, jt: 0 };
         el._contactRod = null;
@@ -542,6 +589,15 @@
     for (const t of row.terms) {
       if (!t.rb.rod) continue;
       const el = t.rb.el;
+      if (t.parts) {   // 실: 막대 위 작용점마다 따로 (같은 막대에 같은 줄이 두 번 걸릴 수 있다)
+        for (const q of t.parts) {
+          const key = row.tag + ':' + q.side;
+          let e = el._imp && el._imp.get(key);
+          if (!e) { e = { kind: 'T', jx: 0, jy: 0, px: q.px, py: q.py, ref: q.ref }; if (el._imp) el._imp.set(key, e); }
+          e.jx += row.acc * q.dx; e.jy += row.acc * q.dy; e.px = q.px; e.py = q.py;
+        }
+        continue;
+      }
       const key = row.tag + (t.side ? ':' + t.side : '');
       let e = el._imp && el._imp.get(key);
       if (!e) { e = { kind: row.kind, jx: 0, jy: 0, px: 0, py: 0, ref: t.ref || row.ful || row.rope || row.body || null }; if (el._imp) el._imp.set(key, e); }
@@ -557,6 +613,7 @@
     if (row.rope && row.rope._rodImp != null) row.rope._rodImp += row.acc;
     if (row.ropes) for (const rp of row.ropes) if (rp._rodImp != null) rp._rodImp += row.acc;   // 도르래 줄: 양쪽 같은 장력
     // 막대 위 물체: 바닥에 닿아 있지 않으면 막대 면을 "접촉면" 으로 알려 자유물체도가 N·f 로 나누게 한다
+    if (row.body && row.kind === 'N' && row.acc > 0 && row.cn.ride) row.body._rideRot = row.rod.theta;   // 상자가 막대와 함께 기운다
     if (row.body && row.kind === 'N' && row.acc > 0 && !row.body._contact) {
       row.body._contact = { nx: row.cn.nx, ny: row.cn.ny, friction: (row.rod.muS ?? 0.4) > 0,
                             muK: row.rod.muK ?? (row.rod.muS ?? 0.4) * 0.8, onRod: row.rod.id };
@@ -704,16 +761,8 @@
           }
         }
       }
-      const runs = rodPulleyRuns(), runRopes = new Set(runs.flatMap(r => r.ropes));
-      for (const rope of STATE.ropes) {
-        if (!ropeTouchesRod(rope) || _ropeIsExt(rope) || runRopes.has(rope) || !rodRopeSupported(rope)) continue;
-        const row = _ropeRow(rope);
-        if (!row || row.C >= 0) continue;
-        for (const t of row.terms) touched.add(t.rb.el);
-        _rowShift(row, -row.C / _rowK(row));
-      }
-      for (const run of runs) {
-        const row = _runRow(run);
+      for (const gp of rodRopeNetwork().groups) {
+        const row = _netRow(gp);
         if (!row || row.C >= 0) continue;
         for (const t of row.terms) touched.add(t.rb.el);
         _rowShift(row, -row.C / _rowK(row));
@@ -753,6 +802,7 @@
       if (!comps.has(root)) comps.set(root, { els: [], ropes: [], closed: true });
       const el = STATE.elements.find(e => e.id === id);
       if (el.type !== 'pulley') comps.get(root).els.push(el);   // 고정 도르래는 움직이지 않는 중계점
+      else if (el._rodNode) comps.get(root).hasNode = true;
     }
     for (const rp of ropes) {
       const id = [rp.anchorA.elementId, rp.anchorB.elementId].find(i => parent.has(i));
@@ -791,8 +841,9 @@
     if (!refs) return;
     for (const { c, e0 } of refs) {
       if (c.els.some(el => el._nonConservative || el._touchSub)) continue;
-      const runsNow = rodPulleyRuns();
-      if (c.ropes.some(rp => { const run = runsNow.find(x => x.ropes.includes(rp)); const r = run ? _runRow(run) : _ropeRow(rp); return !r || !r.active; })) continue;
+      if (c.hasNode) continue;   // 움직도르래(가벼운 마디)가 낀 계는 보정하지 않는다
+      const net = rodRopeNetwork();
+      if (c.ropes.some(rp => { const gp = net.groupOf.get(rp); const r = gp && _netRow(gp); return !r || !r.active; })) continue;
       let ke = 0;
       for (const el of c.els) {
         ke += 0.5 * (el.mass || 1) * (el.vx * el.vx + el.vy * el.vy);

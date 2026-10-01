@@ -21,7 +21,7 @@ python -m http.server 8123      # → http://localhost:8123
 ## 검증
 
 ```bash
-node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (19 스위트, 274 항목)
+node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (20 스위트, 279 항목)
 node test/run-all.js --verbose
 
 npm i --no-save puppeteer-core  # 1회
@@ -136,8 +136,12 @@ mechanics_simulation/
   힘은 잔차로 풀지 않고 **제약 임펄스를 직접 기록**해 작용점과 함께 `rod._fbd.forces` 에 남긴다 → 돌림힘 r × F.
   중력·핀·팽팽한 실만 받는 막대 계는 서브스텝 에너지 차를 속도 배율로 되돌린다 (진자 10 s 에너지 오차 0.1 %).
   막대 ↔ 네모·원 접촉도 같은 묶음에서 푼다 (`rodBodyContacts`: 상자는 중심 바로 아래 한 점, 원은 최근접점 — 원은 I = ½mr² 로 구른다).
-  외력·용수철은 `rodAddForce` 로 작용점에 힘(질량중심 가속도 + 각가속도)을 준다. 고정 도르래를 지나 막대로 가는 실은
-  `rodPulleyRuns` 가 "두 구간 길이 합 일정" 한 행으로 푼다 — 이런 실은 `ropeInRodSystem` 으로 실 제약 단계에서 빠진다.
+  외력·용수철은 `rodAddForce` 로 작용점에 힘(질량중심 가속도 + 각가속도)을 준다.
+  **막대 실 네트워크** (`rodRopeNetwork`): 막대와 실로 이어진 성분 전체(도르래를 몇 개 거치든)를 이 파일이 푼다.
+  림 실이 정확히 둘인 도르래를 지나며 이어진 실은 "길이 합 일정" 한 줄 = 한 행 (`_netRow`, 같은 물체의 항은 합침 —
+  움직도르래는 두 구간에서 받아 2T). 막대 계의 움직도르래는 0.05 kg 의 가벼운 마디(`_rodNode`)로 integrate 가 함께 적분한다.
+  이 실들은 `ropeInRodSystem` 으로 기존 실 제약 단계에서 빠진다. 막대 위에 탄 상자는 막대 면에 붙어 기운 것으로 보고
+  (`_rideRot`, 그림도 기움) 중심이 면에서 (두께 + 높이)/2 떨어진 자리를 접촉으로 둔다.
   `physX/Y` 는 질량중심 (`rod.com` 으로 옮길 수 있다) — 그림 상자는 `_rodSyncGrid` 가 질량중심에서 되짚는다.
   설계 근거: [design/rod-fulcrum.md](design/rod-fulcrum.md).
 

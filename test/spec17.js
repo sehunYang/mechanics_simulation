@@ -294,18 +294,20 @@ scenario('S17-13', '편집 스냅 — 막대 끝 핸들(길이 0.5 m · 각도 5
   truthy('막대 중심선이 받침 꼭짓점을 지난다', r.cH < 1e-9);
 });
 
-scenario('S17-14', '편집 경고 — 받침·실 없는 막대 / 막대 ↔ 도르래 실 / 받침 위 막대는 경고 없음', () => {
+scenario('S17-14', '편집 경고 — 받침·실 없는 막대 / 막대 쪽 도르래 림 실 세 가닥 / 받침 위 막대는 경고 없음', () => {
   const a = app(); a.evalIn(RUN);
   const r = a.evalIn(`
     const out = {};
     build({ elements: [ rod('R', 6, 2, 50, 50) ] }); out.lone = STATE.warnings.slice();
     build({ elements: [ rod('R', 6, 2, 50, 50), ful('F', 50, 50) ] }); out.ok = STATE.warnings.slice();
-    build({ elements: [ rod('R', 6, 2, 50, 50), ful('F', 50, 50), { key:'P', type:'pulley', gridX:55, gridY:44 } ],
-            ropes: [['R','p2','P','left']] }); out.pul = STATE.warnings.slice();
+    build({ floors: [{ key:'C', x1:50, y1:40, x2:60, y2:40 }],
+            elements: [ rod('R', 6, 2, 50, 50), ful('F', 50, 50), { key:'P', type:'pulley', gridX:55, gridY:44 },
+                        { key:'A', type:'rect', gridX:57.5, gridY:48, mass:1 }, { key:'B', type:'rect', gridX:55.5, gridY:48, mass:1 } ],
+            ropes: [['P','center','C','s5'], ['R','p2','P','left'], ['P','right','A','top'], ['P','bottom','B','top']] }); out.pul = STATE.warnings.slice();
     out`);
   truthy('혼자인 막대 경고', r.lone.includes('막대가 받침에도 실에도 걸려 있지 않습니다'));
   truthy('받침 위 막대: 경고 없음', r.ok.length === 0);
-  truthy('막대 ↔ 도르래 실 경고', r.pul.includes('막대에 이은 실은 고정점·물체·막대·외력·고정 도르래에만 걸 수 있습니다'));
+  truthy('막대 쪽 도르래 림에 실 세 가닥 경고', r.pul.includes('막대 쪽 도르래에 실이 세 가닥 이상 걸려 있습니다'));
 });
 
 scenario('S17-15', 'POE 돌림힘 문항 — 정답이 시뮬레이션과 맞는다 (핵심 6문항)', () => {

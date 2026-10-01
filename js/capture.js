@@ -128,7 +128,8 @@
 
       if (el.type === 'rect') {
         // 빗면에 얹혀 기운 네모 — 화면(draw)과 같은 회전을 꼭짓점에 적용한다
-        const rot = (el._snapRotation !== null && el._snapRotation !== undefined) ? el._snapRotation : (el.rotation || 0) * Math.PI / 180;
+        const rot = (STATE.simMode !== 'EDIT' && el._rideRot != null) ? -el._rideRot
+          : (el._snapRotation !== null && el._snapRotation !== undefined) ? el._snapRotation : (el.rotation || 0) * Math.PI / 180;
         if (rot) {
           const c = Math.cos(rot), sn = Math.sin(rot);
           const pts = [[bx, by], [bx + bw, by], [bx + bw, by + bh], [bx, by + bh]]

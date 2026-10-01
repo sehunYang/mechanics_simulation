@@ -650,7 +650,8 @@
   function integrate(dt) {
     const GS = CONFIG.GRID_SIZE;
     // 도르래는 무질량 중계점 — 위치는 제약 해소가 결정하므로 자유 적분 제외
-    const movers = STATE.elements.filter(el => el.type === 'rect' || el.type === 'circle' || el.type === 'rod');
+    // 막대 계의 움직도르래(_rodNode)는 rod-physics.js 가 가벼운 마디로 풀므로 함께 적분한다
+    const movers = STATE.elements.filter(el => el.type === 'rect' || el.type === 'circle' || el.type === 'rod' || (el.type === 'pulley' && el._rodNode));
     for (const el of movers) {
       el.vx += el.ax * dt;
       el.vy += el.ay * dt;
@@ -673,6 +674,9 @@
       } else if (el.type === 'rod') {
         el.theta += el.omega * dt;
         _rodSyncGrid(el);            // 질량중심 → 그림 상자 (질량중심이 가운데가 아닐 수 있다)
+      } else if (el.type === 'pulley') {
+        el.gridX = el.physX - el.gridW / 2;
+        el.gridY = GS - el.physY - el.gridH / 2;
       } else {
         el.gridX = el.physX - el.gridW / 2;
         el.gridY = GS - el.physY - el.gridH / 2;
@@ -1862,7 +1866,7 @@
     if (subDt && subDt > 0) {
       const compPulleySet = new Set(component ? component.pulleys : []);
       for (const el of STATE.elements) {
-        if (el.type !== 'pulley' || compPulleySet.has(el.id)) continue;
+        if (el.type !== 'pulley' || compPulleySet.has(el.id) || el._rodNode) continue;   // 막대 계 도르래는 rod-physics.js 몫
         const p0 = prePos.get(el.id);
         if (!p0) continue;
         el.vx = (el.physX - p0.x) / subDt;
@@ -2398,6 +2402,15 @@
         if (Math.abs(el.gridX - rightX) <= SNAP_TOL && el.gridY < botY && el.gridY + el.gridH > topY)
           rightId = el.id;
       }
+      // 수평 막대의 끝: 용수철 왼쪽 끝이 막대 오른쪽 끝(p2)에 / 오른쪽 끝이 막대 왼쪽 끝(p1)에, 높이는 중심선이 용수철 폭 안
+      const axisY = spring.gridY + spring.gridH / 2;
+      for (const r of STATE.elements) {
+        if (r.type !== 'rod' || Math.abs(r.angle0 || 0) > 1e-9) continue;
+        const g = rodGeometry(r);
+        if (Math.abs(g.cy - axisY) > spring.gridH / 2 + 1e-9) continue;
+        if (!leftId  && Math.abs(g.p2.x - leftX)  <= SNAP_TOL) leftId  = r.id;
+        if (!rightId && Math.abs(g.p1.x - rightX) <= SNAP_TOL) rightId = r.id;
+      }
       const endL = seg => (seg.x1 === leftX  && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === leftX  && seg.y2 >= topY && seg.y2 <= botY);
       const endR = seg => (seg.x1 === rightX && seg.y1 >= topY && seg.y1 <= botY) || (seg.x2 === rightX && seg.y2 >= topY && seg.y2 <= botY);
       for (const pass of [0, 1]) {
@@ -2500,7 +2513,9 @@
       if (!onFulcrum && !hung && !sprung) warnings.push('막대가 받침에도 실에도 걸려 있지 않습니다');
     }
     for (const rp of STATE.ropes) {
-      if (ropeTouchesRod(rp) && !rodRopeSupported(rp)) warnings.push('막대에 이은 실은 고정점·물체·막대·외력·고정 도르래에만 걸 수 있습니다');
+      if (!ropeTouchesRod(rp) && !ropeInRodSystem(rp)) continue;
+      if (rodRopeNetwork().bad.has(rp)) warnings.push('막대 쪽 도르래에 실이 세 가닥 이상 걸려 있습니다');
+      else if (!rodRopeSupported(rp)) warnings.push('막대에 이은 실은 고정점·물체·막대·외력·도르래에만 걸 수 있습니다');
     }
 
     for (const s of STATE.elements) {
