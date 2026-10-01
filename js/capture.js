@@ -127,7 +127,14 @@
       const geomAttr = `fill="${SN.bodyFill}" stroke="${INK}" stroke-width="${_lw(SN.lwGeom)}"`;
 
       if (el.type === 'rect') {
-        doc.path(svgRect(bx, by, bw, bh), geomAttr);
+        // 빗면에 얹혀 기운 네모 — 화면(draw)과 같은 회전을 꼭짓점에 적용한다
+        const rot = (el._snapRotation !== null && el._snapRotation !== undefined) ? el._snapRotation : (el.rotation || 0) * Math.PI / 180;
+        if (rot) {
+          const c = Math.cos(rot), sn = Math.sin(rot);
+          const pts = [[bx, by], [bx + bw, by], [bx + bw, by + bh], [bx, by + bh]]
+            .map(([x, y]) => ({ x: cx + (x - cx) * c - (y - cy) * sn, y: cy + (x - cx) * sn + (y - cy) * c }));
+          doc.path(svgPolyline(pts, true), geomAttr);
+        } else doc.path(svgRect(bx, by, bw, bh), geomAttr);
         const fs = Math.max(bh * 0.20, Math.min(18, bh * 0.34));
         if (STATE.showLabels === false) { /* 빈 문항 그림 */ }
         else if (snLabelFits(el.mass + ' kg', fs, bw)) doc.text(el.mass + ' kg', cx, cy, _n2(fs), { italic: true });

@@ -305,10 +305,10 @@ scenario('S17-14', '편집 경고 — 받침·실 없는 막대 / 막대 ↔ 도
     out`);
   truthy('혼자인 막대 경고', r.lone.includes('막대가 받침에도 실에도 걸려 있지 않습니다'));
   truthy('받침 위 막대: 경고 없음', r.ok.length === 0);
-  truthy('막대 ↔ 도르래 실 경고', r.pul.includes('막대에 이은 실은 고정점·물체·막대에만 걸 수 있습니다'));
+  truthy('막대 ↔ 도르래 실 경고', r.pul.includes('막대에 이은 실은 고정점·물체·막대·외력·고정 도르래에만 걸 수 있습니다'));
 });
 
-scenario('S17-15', 'POE 돌림힘 문항 — 정답이 시뮬레이션과 맞는다 (6문항)', () => {
+scenario('S17-15', 'POE 돌림힘 문항 — 정답이 시뮬레이션과 맞는다 (핵심 6문항)', () => {
   const a = app(); a.evalIn(RUN);
   const r = a.evalIn(`
     const ex = id => POE_EXAMPLES.find(e => e.id === id);
@@ -323,7 +323,7 @@ scenario('S17-15', 'POE 돌림힘 문항 — 정답이 시뮬레이션과 맞는
     d = loadEx(ex('pivot-end')); out.al = measureScene(d, { body:'R', q:'alpha', at:0.02 }); out.L = K('R').gridW;
     out.cat = POE_EXAMPLES.filter(e => e.cat === 'torque').length;
     out`);
-  expect('돌림힘 문항 수', r.cat, 6, 0, '개');
+  expect('돌림힘 문항 수', r.cat, 8, 0, '개');
   expect('지레: 기울지 않음', r.bal, 0, 1e-3, '°');
   expect('받침의 힘 = 5.5g', r.N, 5.5 * g, '1%', 'N');
   truthy('두 받침: 오른쪽이 훨씬 크다', r.N2 > 5 * r.N1 && r.N1 > 0);

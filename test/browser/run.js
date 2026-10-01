@@ -30,7 +30,7 @@ function num(s) { const m = String(s || '').replace(/,/g, '').match(/-?\d+(\.\d+
     /* ── 1. 데스크톱: 시작 카드 · 갤러리 · 측정값 ── */
     let p = await L.newPage(browser, 1280, 800, SHOTS ? 2 : 1);
     chk('시작 카드가 보인다', await p.evaluate(() => document.getElementById('start-guide').classList.contains('visible')));
-    chk('갤러리 15개', (await p.evaluate(() => document.querySelectorAll('#sg-gallery .gal-item').length)) === 15);
+    chk('갤러리 17개', (await p.evaluate(() => document.querySelectorAll('#sg-gallery .gal-item').length)) === 17);
     if (SHOTS) await L.shot(p, '01-start.png');
 
     await L.scene(p, 'atwood');

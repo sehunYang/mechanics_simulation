@@ -113,7 +113,7 @@ scenario('S15-5', '회전 낙하 — 접촉점 각운동량 보존: v = rω₀/3
   expect('질량 무관', r.heavy.vx, -2, 0.03, 'm/s');
 });
 
-scenario('S15-6', '새 장면·문항 — 갤러리 15, POE 40/8분류, 원운동 문항 정답 = 시뮬', () => {
+scenario('S15-6', '새 장면·문항 — 갤러리 17, POE 42/8분류, 원운동 문항 정답 = 시뮬', () => {
   const a = app(); a.evalIn(RUN);
   const r = a.evalIn(`
     const ids = SCENES.map(s => s.id);
@@ -126,16 +126,16 @@ scenario('S15-6', '새 장면·문항 — 갤러리 15, POE 40/8분류, 원운�
        circ: POE_EXAMPLES.filter(e => e.cat === 'circular').length, range: ans('proj-range'), tens: ans('circ-tension'), spin: ans('spin-speed'),
        omega0: back.elements[0].omega0, guides: POE_GUIDES.length })
   `);
-  expect('갤러리 15', r.n, 15, 0, '개');
+  expect('갤러리 17', r.n, 17, 0, '개');
   truthy('새 장면 3개 존재', r.has);
-  expect('POE 40 문항', r.poe, 40, 0, '개');
+  expect('POE 42 문항', r.poe, 42, 0, '개');
   expect('분류 8', r.cats, 8, 0, '개');
   expect('원운동·회전 7 문항', r.circ, 7, 0, '개');
   expect('사거리 정답 ≈ 13.06', r.range, 13.06, '2%', 'm');
   expect('구심력 정답 6.25', r.tens, 6.25, '1%', 'N');
   expect('스핀 속력 정답 2', r.spin, 2, '2%', 'm/s');
   expect('공유 링크에 ω₀ 보존', r.omega0, 12, 0, 'rad/s');
-  expect('해설 15', r.guides, 15, 0, '개');
+  expect('해설 17', r.guides, 17, 0, '개');
 });
 
 /* ── 보고 ── */

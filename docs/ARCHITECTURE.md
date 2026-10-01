@@ -21,7 +21,7 @@ python -m http.server 8123      # → http://localhost:8123
 ## 검증
 
 ```bash
-node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (18 스위트, 264 항목)
+node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (19 스위트, 274 항목)
 node test/run-all.js --verbose
 
 npm i --no-save puppeteer-core  # 1회
@@ -70,10 +70,10 @@ mechanics_simulation/
 │   ├── panel.js               속성 패널
 │   ├── history.js             실행취소/다시실행
 │   ├── scene.js               장면 직렬화·복원 · 선언적 DSL · 뷰 맞춤
-│   ├── scenes.js              갤러리 장면 15개 (DSL)
+│   ├── scenes.js              갤러리 장면 17개 (DSL)
 │   ├── share.js               공유 링크 (#s=…, delta 인코딩)
 │   ├── headless.js            화면 없이 장면을 돌려 측정 (POE·스윕)
-│   ├── poe-data.js            POE 문항 40 · 해설 15 · 탐구 카드 11
+│   ├── poe-data.js            POE 문항 42 · 해설 17 · 탐구 카드 11
 │   ├── poe.js                 POE 엔진 (예측→관찰→설명, CSV)
 │   ├── sweep.js               파라미터 스윕 (표·그래프·CSV·프리셋)
 │   ├── graph.js               시간 그래프 패널
@@ -135,6 +135,10 @@ mechanics_simulation/
   받침 꼭짓점·실 앵커가 모두 중심선에 있어 평형이 중립이다(두께는 그림용, 바닥 충돌만 네 모서리).
   힘은 잔차로 풀지 않고 **제약 임펄스를 직접 기록**해 작용점과 함께 `rod._fbd.forces` 에 남긴다 → 돌림힘 r × F.
   중력·핀·팽팽한 실만 받는 막대 계는 서브스텝 에너지 차를 속도 배율로 되돌린다 (진자 10 s 에너지 오차 0.1 %).
+  막대 ↔ 네모·원 접촉도 같은 묶음에서 푼다 (`rodBodyContacts`: 상자는 중심 바로 아래 한 점, 원은 최근접점 — 원은 I = ½mr² 로 구른다).
+  외력·용수철은 `rodAddForce` 로 작용점에 힘(질량중심 가속도 + 각가속도)을 준다. 고정 도르래를 지나 막대로 가는 실은
+  `rodPulleyRuns` 가 "두 구간 길이 합 일정" 한 행으로 푼다 — 이런 실은 `ropeInRodSystem` 으로 실 제약 단계에서 빠진다.
+  `physX/Y` 는 질량중심 (`rod.com` 으로 옮길 수 있다) — 그림 상자는 `_rodSyncGrid` 가 질량중심에서 되짚는다.
   설계 근거: [design/rod-fulcrum.md](design/rod-fulcrum.md).
 
 ## 장면 DSL (scene.js)

@@ -467,6 +467,7 @@
 
       const face = (el, side) => {
         if (el.type === 'floorSegment') return null;
+        if (el.type === 'rod') { const p = rodSpringFaceGrid(el, side, this); return { x: p.x * cs, y: p.y * cs }; }
         const x = el.gridX * cs, y = el.gridY * cs, w = (el.gridW || 1) * cs, h = (el.gridH || 1) * cs;
         switch (side) {
           case 'right':  return { x: x + w,     y: y + h / 2 };
@@ -590,10 +591,10 @@
         // X 중심: rect/circle은 그 중심, FloorSegment는 spring 자체 중심 사용
         // (긴 바닥면의 midX를 쓰면 용수철이 옆으로 밀리는 버그 발생)
         const springCX = (this.gridX + this.gridW / 2) * cs;
-        const topCX = (topEl.type !== 'floorSegment')
+        const topCX = (topEl.type !== 'floorSegment' && topEl.type !== 'rod')   // 막대는 길어서 용수철 축을 쓴다
           ? (topEl.gridX + (topEl.gridW || this.gridW) / 2) * cs
           : springCX;
-        const botCX = (botEl.type !== 'floorSegment')
+        const botCX = (botEl.type !== 'floorSegment' && botEl.type !== 'rod')
           ? (botEl.gridX + (botEl.gridW || this.gridW) / 2) * cs
           : springCX;
         const cx = (topCX + botCX) / 2;
@@ -670,6 +671,9 @@
       this.mass   = 1.0;
       this.angle0 = 0;           // 초기 각도 [°] (반시계 +)
       this.e      = 0;           // 바닥 충돌 반발계수 (막대는 기본 비탄성)
+      this.muS    = 0.4;         // 막대 윗면 마찰 (막대 위에 올린 물체)
+      this.muK    = 0.3;
+      this.com    = null;        // 질량중심 — 왼쪽 끝(p1)에서의 거리 [m]. null = 가운데 (균일한 막대)
       this.ticks  = 0;           // 눈금 칸 수 (0 = 없음)
       this.dims   = 'off';       // 치수선: 'off' | 'm' | 'L'
       this.showTrail = false;
@@ -716,6 +720,7 @@
       this.gridW  = 1;
       this.gridH  = 1;
       this.pinned = false;       // 막대를 받침에 고정 (회전축)
+      this.flip   = false;       // 거꾸로 — 밑변이 위(천장), 꼭짓점이 아래. 매단 회전축
       this.muS    = 0.5;         // 고정하지 않았을 때 접점 정지 마찰계수
       this.muK    = 0.4;         // 운동 마찰계수
     }
@@ -793,10 +798,17 @@
     return ids;
   }
 
-  /** 받침 꼭짓점 (격자 칸) */
+  /** 받침 꼭짓점 (격자 칸) — 거꾸로면 아래쪽 */
   function fulcrumApexGrid(f) {
-    return { x: f.gridX + f.gridW / 2, y: f.gridY };
+    return { x: f.gridX + f.gridW / 2, y: f.flip ? f.gridY + f.gridH : f.gridY };
   }
+
+  /** 질량중심 — p1 에서의 거리 [칸] (지정하지 않으면 가운데) */
+  function rodComD(el) {
+    return (el.com == null || !isFinite(el.com)) ? el.gridW / 2 : clamp(el.com, 0, el.gridW);
+  }
+  /** 질량중심 (격자 칸) */
+  function rodComGrid(el) { return rodPointGrid(el, rodComD(el)); }
 
   /**
    * 받침 꼭짓점이 닿아 있는 막대 → { rod, d(p1 로부터 칸), h(중심선과의 거리) } | null
@@ -810,10 +822,28 @@
       const g = rodGeometry(r);
       const dx = A.x - g.cx, dy = A.y - g.cy;
       const s = dx * g.ux + dy * g.uy, h = dx * g.nx + dy * g.ny;
-      if (Math.abs(s) > g.L / 2 + 1e-6 || Math.abs(h) > FULCRUM_TOL) continue;
-      if (!best || Math.abs(h) < Math.abs(best.h)) best = { rod: r, d: s + g.L / 2, h };
+      if (Math.abs(s) > g.L / 2 + 0.02 || Math.abs(h) > FULCRUM_TOL) continue;   // 끝에 고정하는 경우 반올림 오차를 봐준다
+      if (!best || Math.abs(h) < Math.abs(best.h)) best = { rod: r, d: clamp(s + g.L / 2, 0, g.L), h };
     }
     return best;
+  }
+
+  /**
+   * 용수철 축이 막대에 닿는 점의 p1 거리 [칸]. 실행 중에는 시작 때 정한 값(spring._rodD),
+   * 편집 중(또는 fresh=true)이면 용수철 축 x 를 막대 중심선에 투영한다.
+   */
+  function rodSpringD(rod, side, spring, fresh) {
+    if (!fresh && STATE.simMode !== 'EDIT' && spring._rodD && spring._rodD[side] != null) return spring._rodD[side];
+    const g = rodGeometry(rod);
+    const ax = spring.gridX + spring.gridW / 2;
+    return clamp(Math.abs(g.ux) > 1e-9 ? (ax - g.p1.x) / g.ux : g.L / 2, 0, g.L);
+  }
+
+  /** 용수철 끝이 닿은 막대 면의 점 (격자 칸) — side 'bottom' 아랫면 / 'top' 윗면 */
+  function rodSpringFaceGrid(rod, side, spring) {
+    const g = rodGeometry(rod), P = rodPointGrid(rod, rodSpringD(rod, side, spring));
+    const h = (side === 'bottom' ? -1 : 1) * g.t / 2;
+    return { x: P.x + g.nx * h, y: P.y + g.ny * h };
   }
 
   /* ── 그림 조각 — 화면(Path2D)과 SVG 촬영이 같은 목록을 그린다 ──
@@ -896,6 +926,12 @@
       labelOff = off + 25 / s / cs;
     }
 
+    // 질량중심 표시 — 가운데가 아닐 때만 (균일하지 않은 막대): 중심선 위 검은 점
+    if (Math.abs(rodComD(el) - g.L / 2) > 1e-9) {
+      const c = at(rodComD(el), 0);
+      shapes.push({ d: svgCircle(c.x, c.y, 2.4 / s), fill: SN.ink });
+    }
+
     // 질량 라벨 — 막대가 얇아 안에 들어가지 않으므로 수능처럼 밖(위쪽)에
     if (STATE.showLabels !== false) {
       const fs = SN_FS.bodyMin + 4;
@@ -907,8 +943,8 @@
 
   function fulcrumPictureParts(f, s) {
     const cs = CONFIG.cellSize;
-    const A = fulcrumApexGrid(f);
-    const pts = [A, { x: f.gridX + f.gridW, y: f.gridY + f.gridH }, { x: f.gridX, y: f.gridY + f.gridH }]
+    const A = fulcrumApexGrid(f), by = f.flip ? f.gridY : f.gridY + f.gridH;   // 밑변 높이
+    const pts = [A, { x: f.gridX + f.gridW, y: by }, { x: f.gridX, y: by }]
       .map(p => ({ x: p.x * cs, y: p.y * cs }));
     return { shapes: [{ d: svgPolyline(pts, true), fill: SN.bodyFill, stroke: SN.ink, lw: SN.lwGeom }], labels: [] };
   }

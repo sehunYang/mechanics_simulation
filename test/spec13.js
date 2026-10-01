@@ -65,7 +65,7 @@ scenario('S13-2', '헤드리스 측정 규격 — at / when:floor / stat:time / 
   expect('마찰 정지 거리 v²/(2μg)', r.dist, 16 / (2 * 0.25 * 9.8), '6%', 'm');
 });
 
-scenario('S13-3', 'POE 데이터 — 40문항 · 8분류 · 정답 하나 · 필수 필드 · 장면 로드', () => {
+scenario('S13-3', 'POE 데이터 — 42문항 · 8분류 · 정답 하나 · 필수 필드 · 장면 로드', () => {
   const a = app();
   const r = a.evalIn(`
     const out = { n: POE_EXAMPLES.length, cats: new Set(POE_EXAMPLES.map(e => e.cat)).size, bad: [], loadFail: [], guides: POE_GUIDES.length };
@@ -85,9 +85,9 @@ scenario('S13-3', 'POE 데이터 — 40문항 · 8분류 · 정답 하나 · 필
     for (const g of POE_GUIDES) if (!findScene(g.scene) || !g.steps || g.steps.length < 2 || !g.why) out.bad.push('guide:' + g.scene);
     out
   `);
-  expect('문항 수 40', r.n, 40, 0, '개');
+  expect('문항 수 42', r.n, 42, 0, '개');
   expect('분류 8', r.cats, 8, 0, '개');
-  expect('해설 15', r.guides, 15, 0, '개');
+  expect('해설 17', r.guides, 17, 0, '개');
   truthy('필드·정답·태그 누락 없음: ' + r.bad.join(' '), r.bad.length === 0);
   truthy('모든 장면 로드, 경고 없음: ' + r.loadFail.join(' '), r.loadFail.length === 0);
 });

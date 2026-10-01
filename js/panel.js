@@ -549,8 +549,18 @@
         placeAt(d, P);
         validateAll();
       })));
+    panelRight.appendChild(_row('질량중심 (왼쪽 끝에서, m)',
+      _numInput(+rodComD(sel).toFixed(3), 0, sel.gridW, 0.5, v => {
+        const c = clamp(v, 0, sel.gridW);
+        sel.com = Math.abs(c - sel.gridW / 2) < 1e-9 ? null : c;   // 가운데면 균일한 막대
+        validateAll(); renderPanel();
+      })));
     panelRight.appendChild(_row('반발계수 e (바닥)',
       _slider(sel.e ?? 0, 0.0, 1.0, 0.01, v => { sel.e = v; })));
+    panelRight.appendChild(_row('윗면 마찰 μs (올린 물체)',
+      _slider(sel.muS ?? 0.4, 0.0, 1.5, 0.01, v => { sel.muS = v; if ((sel.muK ?? 0) > v) { sel.muK = v; renderPanel(); } })));
+    panelRight.appendChild(_row('윗면 마찰 μk',
+      _slider(sel.muK ?? 0.3, 0.0, 1.5, 0.01, v => { sel.muK = Math.min(v, sel.muS ?? 0.4); })));
     panelRight.appendChild(_row('눈금 (등분 수, 0 = 없음)',
       _numInput(sel.ticks || 0, 0, 20, 1, v => { sel.ticks = Math.max(0, Math.round(v)); })));
     const DIMS = ['off', 'm', 'L'], DIM_NAME = { off: '끔', m: '길이 (m)', L: 'L 의 배수' };
@@ -560,20 +570,28 @@
       renderPanel();
     })));
     const I = sel.mass * sel.gridW * sel.gridW / 12;
-    panelRight.appendChild(_note(`균일한 얇은 막대 — 질량중심은 가운데, I = ML²/12 = ${fmtNum(I, 3)} kg·m². 양 끝 핸들을 끌면 길이·각도가 바뀝니다.`));
-    panelRight.appendChild(_note('실은 막대 위 0.5 m 마다 걸 수 있습니다 (실 도구로 막대 위 점을 클릭).'));
+    panelRight.appendChild(_note(sel.com == null
+      ? `균일한 얇은 막대 — 질량중심은 가운데, I = ML²/12 = ${fmtNum(I, 3)} kg·m². 양 끝 핸들을 끌면 길이·각도가 바뀝니다.`
+      : `질량중심을 왼쪽 끝에서 ${fmtNum(rodComD(sel), 2)} m 로 지정 (검은 점). 회전 관성은 균일한 막대 값 ML²/12 를 그대로 씁니다 — 평형 문제에는 영향이 없습니다.`));
+    panelRight.appendChild(_note('실은 막대 위 0.5 m 마다 걸 수 있습니다 (실 도구로 막대 위 점을 클릭). 네모·원을 막대 위로 끌면 얹히고, 세로 용수철 끝을 막대 면에 대면 체결됩니다.'));
   }
 
   /* 받침 속성 — 막대가 꼭짓점에 닿아 있을 때만 "고정" 체크박스 */
   function _fulcrumPanel(sel) {
     panelRight.appendChild(_row('크기 (칸)',
       _numInput(sel.gridW, 0.5, 4, 0.5, v => {
-        const ax = sel.gridX + sel.gridW / 2, baseY = sel.gridY + sel.gridH;   // 밑변 가운데를 그대로
+        const ax = sel.gridX + sel.gridW / 2, baseY = sel.flip ? sel.gridY : sel.gridY + sel.gridH;   // 밑변 가운데를 그대로
         const size = clamp(Math.round(v * 2) / 2, 0.5, 4);
         sel.gridW = sel.gridH = size;
-        sel.gridX = ax - size / 2; sel.gridY = baseY - size;
+        sel.gridX = ax - size / 2; sel.gridY = sel.flip ? baseY : baseY - size;
         validateAll(); renderPanel();
       })));
+    panelRight.appendChild(_check('거꾸로 (천장에 매단 회전축)', !!sel.flip, v => {
+      const A = fulcrumApexGrid(sel);          // 꼭짓점 자리를 그대로 두고 삼각형만 뒤집는다
+      sel.flip = v;
+      sel.gridY = v ? A.y - sel.gridH : A.y;
+      validateAll(); renderPanel();
+    }));
     const c = fulcrumRodContact(sel);
     if (c) {
       panelRight.appendChild(_note(`막대에 닿음 — 왼쪽 끝에서 ${fmtNum(c.d, 2)} m, 오른쪽 끝에서 ${fmtNum(c.rod.gridW - c.d, 2)} m`));

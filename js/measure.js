@@ -195,7 +195,8 @@
         if (F.kind === 'g') continue;
         const mag = Math.hypot(F.fx, F.fy);
         if (mag < 1e-6) continue;
-        const name = F.kind === 'T' ? '장력' : F.kind === 'R' ? '받침 반작용' : F.kind === 'N' ? (F.ref ? '받침 수직항력' : '바닥 수직항력') : '마찰력';
+        const on = !F.ref ? '바닥' : F.ref.type === 'fulcrum' ? '받침' : (F.ref.type === 'rect' || F.ref.type === 'circle') ? '물체' : '';
+        const name = F.kind === 'T' ? '장력' : F.kind === 'R' ? '받침 반작용' : F.kind === 'N' ? `${on} 수직항력` : F.kind === 'F' ? '외력' : F.kind === 'S' ? '탄성력' : `${on} 마찰력`;
         rows.push({ k: `${name} ${F.label}`, v: _u(mag, 'N', 2) });
       }
       if (piv) {

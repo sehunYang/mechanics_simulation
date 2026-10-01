@@ -1,5 +1,5 @@
 /* ============================================================
-   scenes.js — 장면 갤러리 (대표 상황 15개)
+   scenes.js — 장면 갤러리 (대표 상황 17개)
    ─ 클래식 스크립트: 전역 스코프 공유, index.html 순서대로 로드 ─
 
    각 항목은 scene.js 의 DSL(spec) 로 적는다. 시작 카드·갤러리·POE 가
@@ -241,6 +241,37 @@
           { key: 'A', type: 'rect', gridX: 48.5, gridY: 52, mass: 1 },
         ],
         ropes: [['C', 's4', 'R', 's1'], ['C', 's9', 'R', 'p2'], ['R', 's2', 'A', 'top']],
+        view: 'fit',
+      },
+    },
+    {
+      id: 'seesaw-boxes', title: '시소 위의 두 상자', level: '기초', tag: '돌림힘·평형',
+      desc: '받침에 고정한 8 m 시소 위에 3 kg 상자를 받침에서 2 m, 2 kg 상자를 반대쪽 3 m 에 올렸습니다. 시소는 기울까요?',
+      hint: '3 kg × 2 m = 2 kg × 3 m. 상자를 끌어 옮기면 막대 위에 얹힙니다 — 2 kg 을 4 m 로 옮겨 보세요.',
+      spec: {
+        floors: [
+          { key: 'T', x1: 48, y1: 51, x2: 52, y2: 51 },
+          { key: 'G', x1: 38, y1: 58, x2: 62, y2: 58 },
+        ],
+        elements: [
+          { key: 'F', type: 'fulcrum', gridX: 49.5, gridY: 50, pinned: true },
+          { key: 'R', type: 'rod', gridX: 46, gridY: 49.875, gridW: 8, mass: 2, ticks: 8 },
+          { key: 'A', type: 'rect', gridX: 47.5, gridY: 48.875, mass: 3 },
+          { key: 'B', type: 'rect', gridX: 52.5, gridY: 48.875, mass: 2 },
+        ],
+        view: 'fit',
+      },
+    },
+    {
+      id: 'rod-pendulum', title: '매달린 막대 진자', level: '심화', tag: '돌림힘·평형',
+      desc: '천장에 거꾸로 단 받침에 6 m 막대의 끝을 고정하고 30° 기울여 놓습니다. 같은 길이의 실 진자와 주기를 비교해 보세요.',
+      hint: '막대 진자의 주기는 2π√(2L/3g) ≈ 4.0 s — 길이 6 m 단진자(4.9 s)보다 짧습니다. 질량이 막대 전체에 퍼져 있어 "실제 길이"가 2L/3 인 셈입니다.',
+      spec: {
+        floors: [{ key: 'C', x1: 44, y1: 44, x2: 56, y2: 44 }],
+        elements: [
+          { key: 'F', type: 'fulcrum', gridX: 49.5, gridY: 44, pinned: true, flip: true },
+          { key: 'R', type: 'rod', gridX: 45.5000, gridY: 47.4731, gridW: 6, mass: 2, angle0: 60 },
+        ],
         view: 'fit',
       },
     },

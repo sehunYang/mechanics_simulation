@@ -35,11 +35,11 @@ const RUN = `
 `;
 
 /* ────────────────────────────────────────────────────────────── */
-scenario('S11-1', '갤러리 15개 장면 — 모두 로드되고 3초 동안 NaN 없이 돈다', () => {
+scenario('S11-1', '갤러리 17개 장면 — 모두 로드되고 3초 동안 NaN 없이 돈다', () => {
   const a = app();
   a.evalIn(RUN);
   const n = a.evalIn(`SCENES.length`);
-  expect('장면 수', n, 15, 0, '개');
+  expect('장면 수', n, 17, 0, '개');
   for (let i = 0; i < n; i++) {
     const r = a.evalIn(`
       const sc = SCENES[${i}];

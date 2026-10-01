@@ -166,7 +166,7 @@
     const pulleyRopeIds = new Set();
     for (const rope of STATE.ropes) {
       if (_ropeHasExtForce(rope)) continue;   // 외력 실은 제약 제외 (#2)
-      if (ropeTouchesRod(rope)) continue;     // 막대에 건 실은 단순 실처럼 길이만 잰다 (rod-physics.js 가 푼다)
+      if (ropeInRodSystem(rope)) continue;    // 막대 쪽 실(도르래 줄 포함)은 단순 실처럼 길이만 잰다 (rod-physics.js 가 푼다)
       const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
       const aIsRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
@@ -229,14 +229,14 @@
       const efPos = getAttachPhysPos(efAnchor);
       if (!efPos) continue;
 
-      if (otherEl.type === 'rect' || otherEl.type === 'circle') {
-        // ── 직접 부착 ──
+      if (otherEl.type === 'rect' || otherEl.type === 'circle' || otherEl.type === 'rod') {
+        // ── 직접 부착 (막대면 실을 건 점에 — 돌림힘) ──
         const bodyPos = getAttachPhysPos(otherAnchor);
         if (!bodyPos) continue;
         const offX = efPos.x - bodyPos.x, offY = efPos.y - bodyPos.y;
         const dist = Math.hypot(offX, offY);
         if (dist < 1e-9) continue;
-        ef._targets.push({ bodyId: otherEl.id, fdx: offX / dist, fdy: offY / dist });
+        ef._targets.push({ bodyId: otherEl.id, fdx: offX / dist, fdy: offY / dist, anchor: otherAnchor });
         ef._offX = offX; ef._offY = offY;      // 앵커 추종 오프셋
         ef._followAnchor = otherAnchor;
       } else if (otherEl.type === 'pulley') {
@@ -582,6 +582,11 @@
       // 도르래 경유 시 여러 물체가 대상일 수 있음.
       for (const t of ef._targets) {
         const body = STATE.elements.find(e => e.id === t.bodyId);
+        if (body && body.type === 'rod' && t.anchor) {
+          const P = getAttachPhysPos(t.anchor);
+          if (P) rodAddForce(body, ef.forceN * t.fdx, ef.forceN * t.fdy, P.x, P.y, 'F', 'F', 'ext:' + ef.id, ef);
+          continue;
+        }
         if (!body || !['rect', 'circle'].includes(body.type)) continue;
         body.ax += (ef.forceN * t.fdx) / body.mass;
         body.ay += (ef.forceN * t.fdy) / body.mass;
@@ -667,8 +672,7 @@
         el.gridY = GS - el.physY - el.gridH;
       } else if (el.type === 'rod') {
         el.theta += el.omega * dt;
-        el.gridX = el.physX - el.gridW / 2;
-        el.gridY = GS - el.physY - el.gridH / 2;
+        _rodSyncGrid(el);            // 질량중심 → 그림 상자 (질량중심이 가운데가 아닐 수 있다)
       } else {
         el.gridX = el.physX - el.gridW / 2;
         el.gridY = GS - el.physY - el.gridH / 2;
@@ -1795,7 +1799,7 @@
 
     for (const rope of STATE.ropes) {
       if (_ropeHasExtForce(rope)) continue;   // 외력 실은 제약 제외 (#2)
-      if (ropeTouchesRod(rope)) continue;     // 막대에 건 실은 rod-physics.js 가 막대 제약과 함께 푼다
+      if (ropeInRodSystem(rope)) continue;    // 막대 쪽 실은 rod-physics.js 가 막대 제약과 함께 푼다
       const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
 
@@ -1819,7 +1823,7 @@
     const runs = _buildRuns(pulleyGroups, fixedPulleys);
     const { component, dynamicRopeIds } = _buildDynamicComponent(runs, pulleyRopeIds, fixedPulleys);
 
-    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id) && !dynamicRopeIds.has(r.id) && !_ropeHasExtForce(r) && !ropeTouchesRod(r));
+    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id) && !dynamicRopeIds.has(r.id) && !_ropeHasExtForce(r) && !ropeInRodSystem(r));
 
     // 무질량 노드 속도 유도용: 서브스텝 제약 해소 전 도르래 위치 기록
     const prePos = new Map();
@@ -2088,7 +2092,8 @@
    * 부착점은 요소의 해당 면 중앙 → 물체가 2D로 움직이면 부착점도 함께 이동
    * → 용수철 축이 회전(완전 2D). floorSegment는 caller가 투영 처리(null 반환).
    */
-  function _springAttachFace(el, side) {
+  function _springAttachFace(el, side, spring) {
+    if (el.type === 'rod') return rodSpringPoint(el, side, spring);   // 막대: 용수철 축이 닿은 점 (rod-physics.js)
     if (el.type === 'rect') {
       switch (side) {
         case 'right':  return { x: el.physX + el.gridW,     y: el.physY + el.gridH / 2 };
@@ -2169,9 +2174,9 @@
 
       // 각 끝단 좌표: 물체=부착면 / 미연결=자유단(고정 핀) / 바닥면=null(아래서 보정)
       let A = !leftEl  ? _springFreeEnd(spring, 'left')
-                       : _springAttachFace(leftEl,  leftSide);   // 바닥면이면 null
+                       : _springAttachFace(leftEl,  leftSide, spring);   // 바닥면이면 null
       let B = !rightEl ? _springFreeEnd(spring, 'right')
-                       : _springAttachFace(rightEl, rightSide);
+                       : _springAttachFace(rightEl, rightSide, spring);
       if (A === null && B === null) {
         A = { x: (leftEl.x1 + leftEl.x2)/2,  y: GS - (leftEl.y1 + leftEl.y2)/2 };
         B = { x: (rightEl.x1 + rightEl.x2)/2, y: GS - (rightEl.y1 + rightEl.y2)/2 };
@@ -2201,6 +2206,8 @@
       const leftTransmit  = spring.leftLocked  || sForce < 0;
       const rightTransmit = spring.rightLocked || sForce < 0;
       // A(left)에는 +sForce·û(늘어나면 B쪽으로), B(right)에는 반대로.
+      if (leftTransmit  && leftEl  && leftEl.type  === 'rod') rodAddForce(leftEl,   sForce * ux,  sForce * uy, A.x, A.y, 'S', 'F탄', 'spr:' + spring.id, spring);
+      if (rightTransmit && rightEl && rightEl.type === 'rod') rodAddForce(rightEl, -sForce * ux, -sForce * uy, B.x, B.y, 'S', 'F탄', 'spr:' + spring.id, spring);
       if (leftTransmit  && leftEl  && (leftEl.type  === 'rect' || leftEl.type  === 'circle')) {
         leftEl.ax  += sForce * ux / leftEl.mass;
         leftEl.ay  += sForce * uy / leftEl.mass;
@@ -2421,6 +2428,15 @@
         if (Math.abs(el.gridY - botY) <= SNAP_TOL && el.gridX < rightX && el.gridX + el.gridW > leftX)
           rightId = el.id;
       }
+      // 수평 막대: 용수철 위 끝이 막대 아랫면 / 아래 끝이 막대 윗면에 닿고, 용수철 축이 막대 길이 안
+      const axisX = spring.gridX + spring.gridW / 2;
+      for (const r of STATE.elements) {
+        if (r.type !== 'rod' || Math.abs(r.angle0 || 0) > 1e-9) continue;
+        const g = rodGeometry(r);
+        if (axisX < g.p1.x - 1e-9 || axisX > g.p2.x + 1e-9) continue;
+        if (!leftId  && Math.abs((g.cy + g.t / 2) - topY) <= SNAP_TOL) leftId  = r.id;
+        if (!rightId && Math.abs((g.cy - g.t / 2) - botY) <= SNAP_TOL) rightId = r.id;
+      }
       const endT = seg => (seg.y1 === topY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === topY && seg.x2 >= leftX && seg.x2 <= rightX);
       const endB = seg => (seg.y1 === botY && seg.x1 >= leftX && seg.x1 <= rightX) || (seg.y2 === botY && seg.x2 >= leftX && seg.x2 <= rightX);
       for (const pass of [0, 1]) {
@@ -2480,10 +2496,11 @@
       if (r.type !== 'rod') continue;
       const onFulcrum = STATE.elements.some(f => f.type === 'fulcrum' && (fulcrumRodContact(f) || {}).rod === r);
       const hung = STATE.ropes.some(rp => rp.anchorA.elementId === r.id || rp.anchorB.elementId === r.id);
-      if (!onFulcrum && !hung) warnings.push('막대가 받침에도 실에도 걸려 있지 않습니다');
+      const sprung = STATE.elements.some(sp => sp.type === 'spring' && (sp.leftElementId === r.id || sp.rightElementId === r.id));
+      if (!onFulcrum && !hung && !sprung) warnings.push('막대가 받침에도 실에도 걸려 있지 않습니다');
     }
     for (const rp of STATE.ropes) {
-      if (ropeTouchesRod(rp) && !rodRopeSupported(rp)) warnings.push('막대에 이은 실은 고정점·물체·막대에만 걸 수 있습니다');
+      if (ropeTouchesRod(rp) && !rodRopeSupported(rp)) warnings.push('막대에 이은 실은 고정점·물체·막대·외력·고정 도르래에만 걸 수 있습니다');
     }
 
     for (const s of STATE.elements) {

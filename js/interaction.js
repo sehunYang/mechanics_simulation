@@ -856,6 +856,19 @@
       const cs    = CONFIG.cellSize;
       const GS    = CONFIG.GRID_SIZE;
 
+      // ── 막대 윗면 스냅 (네모·원) — 수평 막대 위에 얹는다. 바닥면보다 먼저 본다 ──
+      if (_dragEl.type === 'rect' || _dragEl.type === 'circle') {
+        const rawGX = (world.x - STATE.dragOffset.x) / cs, rawGY = (world.y - STATE.dragOffset.y) / cs;
+        const top = _rodTopSnap(_dragEl, rawGX, rawGY);
+        if (top) {
+          _dragEl._snapRotation = null;
+          _dragEl.gridX = clamp(top.gx, 0, GS - _dragEl.gridW);
+          _dragEl.gridY = clamp(top.gy, 0, GS - _dragEl.gridH);
+          validateAll();
+          return;
+        }
+      }
+
       // ── 바닥면 스냅 (rect·circle·forceZone 대상) ──
       if (['rect','circle','forceZone'].includes(_dragEl.type)) {
         const snap = _computeFloorSnap(_dragEl, world.x, world.y);
@@ -985,20 +998,34 @@
     rod.gridY = clamp(rod.gridY, 0, GS - t);
   }
 
+  /** 네모·원을 수평 막대 윗면에 — 밑면이 윗면 0.6칸 안, 가운데가 막대 길이 안이면. 가로는 반칸 격자 */
+  function _rodTopSnap(el, rawGX, rawGY) {
+    for (const r of STATE.elements) {
+      if (r.type !== 'rod' || Math.abs(r.angle0 || 0) > 1e-9) continue;
+      const g = rodGeometry(r);
+      const top = g.cy - g.t / 2;
+      const gx = Math.round(rawGX * 2) / 2, cx = gx + el.gridW / 2;
+      if (cx < g.p1.x || cx > g.p2.x) continue;
+      if (Math.abs(rawGY + el.gridH - top) > 0.6) continue;
+      return { gx, gy: top - el.gridH };
+    }
+    return null;
+  }
+
   /** 받침 끌기 — 반칸 격자, 밑변이 수평 바닥면 근처면 얹고, 아니면 꼭짓점을 막대 중심선에 */
   function _dragFulcrum(f, rawGX, rawGY) {
     const GS = CONFIG.GRID_SIZE;
     f.gridX = clamp(Math.round(rawGX * 2) / 2, 0, GS - f.gridW);
     f.gridY = clamp(Math.round(rawGY * 2) / 2, 0, GS - f.gridH);
-    const ax = f.gridX + f.gridW / 2, baseY = rawGY + f.gridH;
-    // ① 밑변 ↔ 바닥면 (거의 수평인 직선 바닥면, 밑변 가운데 아래 0.6칸 이내)
+    const ax = f.gridX + f.gridW / 2, baseY = f.flip ? rawGY : rawGY + f.gridH;   // 거꾸로면 밑변이 위 (천장)
+    // ① 밑변 ↔ 바닥면 (거의 수평인 직선 바닥면, 밑변 가운데에서 0.6칸 이내)
     for (const seg of STATE.floorSegments) {
       if (seg.pathType !== 'LINE' || Math.abs(seg.x2 - seg.x1) < 1e-9) continue;
       if (Math.abs(seg.y2 - seg.y1) > 0.2 * Math.abs(seg.x2 - seg.x1)) continue;
       const t = (ax - seg.x1) / (seg.x2 - seg.x1);
       if (t < 0 || t > 1) continue;
       const fy = seg.y1 + t * (seg.y2 - seg.y1);
-      if (Math.abs(fy - baseY) <= 0.6) { f.gridY = fy - f.gridH; return; }
+      if (Math.abs(fy - baseY) <= 0.6) { f.gridY = f.flip ? fy : fy - f.gridH; return; }
     }
     // ② 꼭짓점 ↔ 막대 중심선 (세로로만 옮긴다)
     for (const r of STATE.elements) {
@@ -1008,7 +1035,8 @@
       const s = (ax - g.cx) / g.ux;
       if (Math.abs(s) > g.L / 2) continue;
       const ly = g.cy + g.uy * s;
-      if (Math.abs(ly - f.gridY) <= ROD_SNAP_CELLS) { f.gridY = ly; return; }
+      const apexY = f.flip ? f.gridY + f.gridH : f.gridY;
+      if (Math.abs(ly - apexY) <= ROD_SNAP_CELLS) { f.gridY = f.flip ? ly - f.gridH : ly; return; }
     }
   }
 
