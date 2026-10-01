@@ -294,6 +294,8 @@ python -m http.server 8123     # → http://localhost:8123
 
 검증:
 
+`main` 에 push 하면 GitHub Actions 가 같은 검증을 돌리고 **통과했을 때만** 사이트에 배포합니다 (`.github/workflows/deploy.yml`).
+
 ```bash
 node test/run-all.js          # 물리·모듈 수치 검증 — 20 스위트 279 항목 (Node, 의존성 없음)
 node test/browser/run.js      # 화면에 보이는 값 49 항목 — 헤드리스 Chrome (puppeteer-core)

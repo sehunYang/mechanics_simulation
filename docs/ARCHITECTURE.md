@@ -35,6 +35,10 @@ node test/browser/run.js --shots   # + docs/images 스크린샷 갱신
 - `test/browser/` — puppeteer-core. 속성 패널 텍스트, 툴바 토글, 패널 표시, 공유 링크를 **새 탭에서 URL 로 열어** 왕복, 모바일 뷰포트.
 
 물리나 입력 처리를 손볼 때는 `run-all` 을, 렌더·패널·UI 를 손볼 때는 `browser/run` 도 함께 돌리세요.
+
+**배포 (CI)** — `.github/workflows/deploy.yml`. `main` 에 push 하면 GitHub Actions 가 `node test/run-all.js` 를 돌리고,
+통과했을 때만 GitHub Pages 에 배포한다 (Pages 소스 = GitHub Actions). 실패하면 사이트는 직전 버전 그대로다.
+pull request 는 검증만 하고, Actions 탭의 Run workflow 로 손으로 다시 배포할 수 있다. 브라우저 검증은 CI 에 없다.
 기대값은 항상 시뮬레이터와 무관한 닫힌형 공식으로 적습니다 (자기참조 검증 금지).
 
 ---
@@ -184,4 +188,4 @@ simStep 은 궤적·시계열·이벤트를 건너뜁니다. POE 의 수치 정�
 - 물리 코드가 UI 를 부를 때는 `typeof fn === 'function'` 가드 (Node 하네스 호환).
 - 주석은 한국어. 모듈 머리말에 설계 의도·규약·주의를 적는다.
 - 새 CSS 는 `responsive.css` 앞에. 토큰 이름은 `tokens.css` 의 circuit 규약을 따른다.
-- 배포 전 `index.html` 의 `?v=` 날짜를 올린다 (GitHub Pages 캐시).
+- 배포 전 `index.html` 의 `?v=` 날짜를 올린다 (GitHub Pages 캐시). 배포는 main push → Actions (검증 통과 시).

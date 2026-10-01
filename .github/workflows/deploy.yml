@@ -1,0 +1,49 @@
+# 테스트를 통과한 커밋만 GitHub Pages 에 배포한다 (이슈 #1).
+#   · main 에 push        → 물리·모듈 검증(node test/run-all.js) → 통과하면 배포
+#   · pull request        → 검증만 (배포하지 않음)
+#   · Actions → Run workflow → 손으로 다시 배포 (검증은 똑같이 거친다)
+# 검증이 실패하면 배포 단계가 실행되지 않아, 수업에서 쓰는 사이트는 직전 버전 그대로 남는다.
+name: Test & Deploy Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나. 진행 중인 배포를 도중에 끊지 않는다 (GitHub Pages 공식 예제와 같은 설정).
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: 물리·모듈 검증 (의존성 없음, 약 10초)
+        run: node test/run-all.js
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v5
