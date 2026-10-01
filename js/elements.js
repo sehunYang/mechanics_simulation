@@ -649,6 +649,283 @@
   }
 
   /* ──────────────────────────────────────────────────────────────
+     RodBody — 막대 (돌림힘)
+       · 균일한 얇은 막대: 질량중심 = 가운데, I = M·L²/12.
+       · 편집 상태: gridX/gridY = 회전 전 상자의 좌상단, gridW = 길이 L, gridH = 두께(그림용).
+         초기 각도 angle0 [°] 는 반시계(+)가 양수 — 원의 ω 와 같은 부호 규약.
+       · 실행 중: physX/physY = 질량중심(물리, y 위로), theta [rad] = 현재 각도.
+       · 물리에서는 **두께 없는 선분(중심선)** 이다. 두께는 그림용이고, 받침 꼭짓점·실 앵커가
+         모두 중심선 위에 있어 평형이 "중립"으로 유지된다 (얇은 막대 이상화 — 교과서와 같다).
+       · 기하는 rodGeometry() 한 곳에서만 계산한다 — 렌더·히트테스트·촬영·물리가 공유.
+  ────────────────────────────────────────────────────────────── */
+  const ROD_THICK = 0.25;      // 막대 두께 [칸] — 그림용 (물리는 중심선)
+  const FULCRUM_TOL = 0.2;     // 받침 꼭짓점 ↔ 막대 중심선 "붙어 있음" 허용 거리 [칸]
+
+  class RodBody extends Element {
+    constructor() {
+      super();
+      this.type   = 'rod';
+      this.gridW  = 6;           // 길이 L [칸 = m]
+      this.gridH  = ROD_THICK;   // 두께 (고정)
+      this.mass   = 1.0;
+      this.angle0 = 0;           // 초기 각도 [°] (반시계 +)
+      this.e      = 0;           // 바닥 충돌 반발계수 (막대는 기본 비탄성)
+      this.ticks  = 0;           // 눈금 칸 수 (0 = 없음)
+      this.dims   = 'off';       // 치수선: 'off' | 'm' | 'L'
+      this.showTrail = false;
+      this._trail = [];
+      this.vx = 0; this.vy = 0;
+      this.ax = 0; this.ay = 0;
+      this.physX = 0; this.physY = 0;
+      this.theta = 0; this.omega = 0; this.alpha = 0;
+    }
+
+    /** 회전된 막대 판정 — 얇아서 화면 6px 까지는 여유를 준다 */
+    hitTest(wx, wy) {
+      const cs = CONFIG.cellSize, s = VIEWPORT.scale;
+      const g = rodGeometry(this);
+      const dx = wx / cs - g.cx, dy = wy / cs - g.cy;
+      const along = dx * g.ux + dy * g.uy, across = dx * g.nx + dy * g.ny;
+      const padN = Math.max(g.t / 2, 6 / s / cs), padA = 3 / s / cs;
+      return Math.abs(along) <= g.L / 2 + padA && Math.abs(across) <= padN;
+    }
+
+    draw(ctx) {
+      drawPictureParts(ctx, rodPictureParts(this, VIEWPORT.scale));
+      if (STATE.selected === this) this.drawSelection(ctx);
+    }
+
+    drawSelection(ctx) {
+      const cs = CONFIG.cellSize, s = VIEWPORT.scale;
+      const pts = rodCorners(rodGeometry(this), 2 / s / cs, 2 / s / cs).map(p => ({ x: p.x * cs, y: p.y * cs }));
+      snStroke(ctx, svgPolyline(pts, true), 2, '#3b82f6', [4, 3]);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     Fulcrum — 받침 쐐기 (고정)
+       · 이등변삼각형: 밑변 = gridW, 높이 = gridH, 꼭짓점 = 윗변 가운데 (gridX + W/2, gridY).
+       · 꼭짓점이 막대 중심선에 닿아 있으면 그 막대를 받친다 (fulcrumRodContact).
+       · pinned = true → 막대를 꼭짓점에 핀으로 고정 (회전축). false → 받치기만 (들림·미끄러짐 가능).
+       · 실행 중에도 움직이지 않는다 (바닥면처럼 역질량 0).
+  ────────────────────────────────────────────────────────────── */
+  class Fulcrum extends Element {
+    constructor() {
+      super();
+      this.type   = 'fulcrum';
+      this.gridW  = 1;
+      this.gridH  = 1;
+      this.pinned = false;       // 막대를 받침에 고정 (회전축)
+      this.muS    = 0.5;         // 고정하지 않았을 때 접점 정지 마찰계수
+      this.muK    = 0.4;         // 운동 마찰계수
+    }
+
+    draw(ctx) {
+      drawPictureParts(ctx, fulcrumPictureParts(this, VIEWPORT.scale));
+      if (STATE.selected === this) this.drawSelection(ctx);
+    }
+
+    /** 고정 핀 — 막대 위에 그려야 하므로 drawElements 가 모든 요소 다음에 부른다 */
+    drawOver(ctx) {
+      drawPictureParts(ctx, fulcrumPinParts(this, VIEWPORT.scale));
+    }
+  }
+
+  /* ── 막대 기하 ── */
+
+  /** 현재 각도 [rad] — 편집 중에는 angle0, 실행·일시정지 중에는 물리 theta */
+  function rodAngle(el) {
+    if (STATE.simMode !== 'EDIT' && typeof el.theta === 'number') return el.theta;
+    return (el.angle0 || 0) * Math.PI / 180;
+  }
+
+  /**
+   * 막대 기하 (격자 칸, 화면 y 아래로 증가)
+   *   cx, cy : 질량중심    ux, uy : 축 방향(p1 → p2)    nx, ny : 위쪽 법선    L, t : 길이·두께
+   *   p1, p2 : 양 끝 (중심선)
+   */
+  function rodGeometry(el) {
+    const a = rodAngle(el);
+    const L = el.gridW, t = el.gridH;
+    const cx = el.gridX + L / 2, cy = el.gridY + t / 2;
+    const ux = Math.cos(a), uy = -Math.sin(a);
+    const nx = -Math.sin(a), ny = -Math.cos(a);
+    return { cx, cy, ux, uy, nx, ny, L, t, angle: a,
+             p1: { x: cx - ux * L / 2, y: cy - uy * L / 2 },
+             p2: { x: cx + ux * L / 2, y: cy + uy * L / 2 } };
+  }
+
+  /** 막대 네 모서리 (격자 칸) — padA/padN 만큼 바깥으로 */
+  function rodCorners(g, padA, padN) {
+    const a = g.L / 2 + (padA || 0), n = g.t / 2 + (padN || 0);
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) =>
+      ({ x: g.cx + g.ux * a * i + g.nx * n * j, y: g.cy + g.uy * a * i + g.ny * n * j }));
+  }
+
+  /** 중심선 위, p1 에서 d 칸 간 점 (격자 칸) */
+  function rodPointGrid(el, d) {
+    const g = rodGeometry(el);
+    const s = d - g.L / 2;
+    return { x: g.cx + g.ux * s, y: g.cy + g.uy * s };
+  }
+
+  /** 앵커 id ↔ p1 로부터의 거리 [칸].  'p1' · 'p2' · 'c'(가운데) · 's<d>' */
+  function rodAnchorDist(el, pointId) {
+    const L = el.gridW;
+    if (pointId === 'p2') return L;
+    if (pointId === 'c')  return L / 2;
+    const m = /^s(-?\d+(?:\.\d+)?)$/.exec(pointId || '');
+    if (m) return clamp(parseFloat(m[1]), 0, L);
+    return 0;
+  }
+
+  /** 막대 앵커 id 목록 — 양 끝, 가운데, 0.5칸마다 */
+  function rodAnchorIds(el) {
+    const L = el.gridW, step = CONFIG.FLOOR_ANCHOR_STEP || 0.5;
+    const ids = ['p1'];
+    const n = Math.floor((L - 1e-9) / step);
+    for (let i = 1; i <= n; i++) {
+      const d = +(i * step).toFixed(3);
+      ids.push(Math.abs(d - L / 2) < 1e-9 ? 'c' : 's' + d);
+    }
+    if (!ids.includes('c')) ids.push('c');
+    ids.push('p2');
+    return ids;
+  }
+
+  /** 받침 꼭짓점 (격자 칸) */
+  function fulcrumApexGrid(f) {
+    return { x: f.gridX + f.gridW / 2, y: f.gridY };
+  }
+
+  /**
+   * 받침 꼭짓점이 닿아 있는 막대 → { rod, d(p1 로부터 칸), h(중심선과의 거리) } | null
+   * 꼭짓점이 중심선 FULCRUM_TOL 안, 막대 길이 범위 안에 있어야 한다. 여럿이면 가장 가까운 것.
+   */
+  function fulcrumRodContact(f, elements) {
+    const A = fulcrumApexGrid(f);
+    let best = null;
+    for (const r of (elements || STATE.elements)) {
+      if (r.type !== 'rod') continue;
+      const g = rodGeometry(r);
+      const dx = A.x - g.cx, dy = A.y - g.cy;
+      const s = dx * g.ux + dy * g.uy, h = dx * g.nx + dy * g.ny;
+      if (Math.abs(s) > g.L / 2 + 1e-6 || Math.abs(h) > FULCRUM_TOL) continue;
+      if (!best || Math.abs(h) < Math.abs(best.h)) best = { rod: r, d: s + g.L / 2, h };
+    }
+    return best;
+  }
+
+  /* ── 그림 조각 — 화면(Path2D)과 SVG 촬영이 같은 목록을 그린다 ──
+     shapes: [{ d, fill?, stroke?, lw?(화면 px), dash?(화면 px) }]
+     labels: [{ text, x, y, size(화면 px), italic?, ko? }]  (좌표는 월드 픽셀, 가운데 정렬) */
+
+  function drawPictureParts(ctx, parts) {
+    for (const p of parts.shapes) {
+      if (p.fill) snFill(ctx, p.d, p.fill);
+      if (p.stroke) snStroke(ctx, p.d, p.lw || SN.lwGeom, p.stroke, p.dash);
+    }
+    for (const l of parts.labels) snLabel(ctx, l.text, l.x, l.y, l.size, { italic: l.italic, ko: l.ko, halo: 3 });
+  }
+
+  /** 막대 위 "의미 있는 점" (p1 로부터 칸) — 끝, 받침, 실 매단 곳. 치수선이 이 점들을 잇는다 */
+  function rodKeyPoints(el) {
+    const ds = [0, el.gridW];
+    for (const f of STATE.elements) {
+      if (f.type !== 'fulcrum') continue;
+      const c = fulcrumRodContact(f);
+      if (c && c.rod === el) ds.push(c.d);
+    }
+    for (const r of STATE.ropes) {
+      for (const a of [r.anchorA, r.anchorB]) if (a.elementId === el.id) ds.push(rodAnchorDist(el, a.attachPoint));
+    }
+    ds.sort((a, b) => a - b);
+    return ds.filter((d, i) => i === 0 || d - ds[i - 1] > 1e-6);
+  }
+
+  /** 치수 라벨 — 'm' 이면 미터, 'L' 이면 가장 짧은 구간의 정수배 (안 되면 미터) */
+  function rodDimLabels(lens, style) {
+    const meters = lens.map(v => (+v.toFixed(2)) + ' m');
+    if (style !== 'L' || !lens.length) return meters;
+    const ints = lens.map(v => Math.round(v * 1000));
+    const gcd = (a, b) => b ? gcd(b, a % b) : a;
+    const unit = ints.reduce((g, v) => gcd(g, v), 0);
+    if (!unit || ints.some(v => v / unit > 12)) return meters;
+    return ints.map(v => (v / unit === 1 ? 'L' : (v / unit) + 'L'));
+  }
+
+  function rodPictureParts(el, s) {
+    const cs = CONFIG.cellSize;
+    const g = rodGeometry(el);
+    const W = p => ({ x: p.x * cs, y: p.y * cs });
+    const at = (d, off) => ({ x: (g.cx + g.ux * (d - g.L / 2) + g.nx * off) * cs,
+                              y: (g.cy + g.uy * (d - g.L / 2) + g.ny * off) * cs });
+    const shapes = [], labels = [];
+
+    // 수능 규격: 가는 검정 테두리 + 연회색 채움 (물체와 같은 표현)
+    shapes.push({ d: svgPolyline(rodCorners(g).map(W), true), fill: SN.bodyFill, stroke: SN.ink, lw: SN.lwGeom });
+
+    // 눈금 — 막대를 등분하는 짧은 가로선
+    const n = Math.round(el.ticks || 0);
+    if (n >= 2) {
+      const segs = [];
+      for (let i = 1; i < n; i++) segs.push(svgPolyline([at(g.L * i / n, -g.t / 2), at(g.L * i / n, g.t / 2)]));
+      shapes.push({ d: segs.join(' '), stroke: SN.ink, lw: SN.lwThin });
+    }
+
+    // 치수선 — 막대 위쪽, 끝·받침·실 매단 점 사이를 양끝 화살표로
+    let labelOff = g.t / 2 + 5 / s / cs;
+    if (el.dims === 'm' || el.dims === 'L') {
+      const ds = rodKeyPoints(el);
+      const off = g.t / 2 + 0.55;
+      const lens = [];
+      for (let i = 0; i + 1 < ds.length; i++) lens.push(ds[i + 1] - ds[i]);
+      const texts = rodDimLabels(lens, el.dims);
+      const ext = ds.map(d => svgPolyline([at(d, g.t / 2 + 2 / s / cs), at(d, off + 4 / s / cs)]));
+      shapes.push({ d: ext.join(' '), stroke: SN.ink, lw: SN.lwThin, dash: [3, 2.5] });
+      for (let i = 0; i < lens.length; i++) {
+        const a = at(ds[i], off), b = at(ds[i + 1], off);
+        const dim = svgDimension(a.x, a.y, b.x, b.y, Math.min(7 / s, lens[i] * cs * 0.4), 2.6 / s);
+        shapes.push({ d: dim.shaft, stroke: SN.ink, lw: SN.lwThin });
+        shapes.push({ d: dim.heads, fill: SN.ink });
+        if (STATE.showLabels !== false) {
+          const m = at((ds[i] + ds[i + 1]) / 2, off + 9 / s / cs);
+          labels.push({ text: texts[i], x: m.x, y: m.y, size: SN_FS.force, italic: true });
+        }
+      }
+      labelOff = off + 25 / s / cs;
+    }
+
+    // 질량 라벨 — 막대가 얇아 안에 들어가지 않으므로 수능처럼 밖(위쪽)에
+    if (STATE.showLabels !== false) {
+      const fs = SN_FS.bodyMin + 4;
+      const m = at(g.L / 2, labelOff + fs * 0.55 / s / cs);
+      labels.push({ text: el.mass + ' kg', x: m.x, y: m.y, size: fs, italic: true });
+    }
+    return { shapes, labels };
+  }
+
+  function fulcrumPictureParts(f, s) {
+    const cs = CONFIG.cellSize;
+    const A = fulcrumApexGrid(f);
+    const pts = [A, { x: f.gridX + f.gridW, y: f.gridY + f.gridH }, { x: f.gridX, y: f.gridY + f.gridH }]
+      .map(p => ({ x: p.x * cs, y: p.y * cs }));
+    return { shapes: [{ d: svgPolyline(pts, true), fill: SN.bodyFill, stroke: SN.ink, lw: SN.lwGeom }], labels: [] };
+  }
+
+  /** 고정 핀 — 도르래 축핀과 같은 표현 (흰 원 + 검정 축점) */
+  function fulcrumPinParts(f, s) {
+    if (!f.pinned) return { shapes: [], labels: [] };
+    const cs = CONFIG.cellSize;
+    const A = fulcrumApexGrid(f);
+    const x = A.x * cs, y = A.y * cs;
+    return { shapes: [
+      { d: svgCircle(x, y, 3.4 / s), fill: '#ffffff', stroke: SN.ink, lw: SN.lwThin },
+      { d: svgCircle(x, y, 1.2 / s), fill: SN.ink },
+    ], labels: [] };
+  }
+
+  /* ──────────────────────────────────────────────────────────────
      FloorSegment — 바닥면 (Connection)
   ────────────────────────────────────────────────────────────── */
   /**
@@ -1052,6 +1329,10 @@
 
   function getAttachPointWorld(el, pointId) {
     const cs = CONFIG.cellSize;
+    if (el.type === 'rod') {
+      const p = rodPointGrid(el, rodAnchorDist(el, pointId));
+      return { x: p.x * cs, y: p.y * cs };
+    }
     const bw = el.gridW * cs, bh = el.gridH * cs;
     const cx = el.gridX * cs + bw / 2, cy = el.gridY * cs + bh / 2;
     const o = attachLocalOffset(pointId, bw, bh);
@@ -1068,6 +1349,9 @@
     if (el.type === 'pulley') return ['center', 'top', 'bottom', 'left', 'right'];
     // 용수철: 방향에 따라 양 끝단에만 (가로=left/right, 세로=top/bottom)
     if (el.type === 'spring') return el.isVertical ? ['top', 'bottom'] : ['left', 'right'];
+    // 막대: 양 끝 · 가운데 · 0.5칸마다 (바닥면 앵커와 같은 이름 규약) / 받침: 실을 걸지 않는다
+    if (el.type === 'rod') return rodAnchorIds(el);
+    if (el.type === 'fulcrum') return [];
     return ['top', 'bottom', 'left', 'right'];
   }
 

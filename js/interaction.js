@@ -111,6 +111,12 @@
         return [{ type: 'bottom', sx: p.sx, sy: p.sy }];
       }
     }
+    // 막대: 양 끝 — 끌면 반대쪽 끝을 축으로 길이·각도가 함께 바뀐다
+    if (sel.type === 'rod') {
+      const g = rodGeometry(sel);
+      const a = ws(g.p1.x * cs, g.p1.y * cs), b = ws(g.p2.x * cs, g.p2.y * cs);
+      return [{ type: 'p1', sx: a.sx, sy: a.sy }, { type: 'p2', sx: b.sx, sy: b.sy }];
+    }
     // 나머지 (rect, circle, pulley, forceZone): 우측 하단
     if (['rect','circle','pulley','forceZone'].includes(sel.type)) {
       const p = ws((sel.gridX + sel.gridW) * cs, (sel.gridY + sel.gridH) * cs);
@@ -162,6 +168,8 @@
       case 'pulley':    clone = Object.assign(new Pulley(),      data); break;
       case 'spring':    clone = Object.assign(new Spring(),      data); break;
       case 'extforce':  clone = Object.assign(new ExtForce(),    data); break;
+      case 'rod':       clone = Object.assign(new RodBody(),     data); break;
+      case 'fulcrum':   clone = Object.assign(new Fulcrum(),     data); break;
       default: return null;
     }
     STATE.elements.push(clone);
@@ -256,10 +264,7 @@
     const hits = [];
     for (let i = STATE.elements.length - 1; i >= 0; i--) {
       const el = STATE.elements[i];
-      const box = el.getBBox ? el.getBBox() : null;
-      if (!box) continue;
-      const cs = CONFIG.cellSize;
-      if (wx >= box.x && wx <= box.x+box.w && wy >= box.y && wy <= box.y+box.h) hits.push(el);
+      if (elementContains(el, wx, wy)) hits.push(el);
     }
     // FloorSegment와 Rope도 포함
     const cs = CONFIG.cellSize;
@@ -823,6 +828,9 @@
           tgt.gridH  = newH;
           validateAll();
         }
+      } else if (tgt.type === 'rod') {
+        _resizeRodEnd(tgt, _resizeHandle, world.x / cs, world.y / cs);
+        validateAll();
       } else if (tgt.type === 'circle' || tgt.type === 'pulley') {
         // 정사각형 유지: 가로 세로 중 더 큰 값으로 동일하게
         const newW = clamp(Math.round(gx - tgt.gridX), 1, GS - tgt.gridX);
@@ -877,6 +885,10 @@
       const newWY = world.y - STATE.dragOffset.y;
       const rawGX = newWX / cs, rawGY = newWY / cs;   // 스냅 전 원시 격자 좌표
 
+      // 막대 · 받침: 서로 맞물리는 전용 스냅 (반칸 격자 + 받침 꼭짓점 ↔ 막대 중심선, 받침 밑변 ↔ 바닥면)
+      if (_dragEl.type === 'rod')     { _dragRod(_dragEl, rawGX, rawGY);     validateAll(); return; }
+      if (_dragEl.type === 'fulcrum') { _dragFulcrum(_dragEl, rawGX, rawGY); validateAll(); return; }
+
       // 도르래: 연결된 실의 상대 앵커와 rim 을 자석 정렬 (원시 좌표 기준 판정)
       const align = _dragEl.type === 'pulley'
         ? _applyPulleyRimAlign(_dragEl, rawGX, rawGY)
@@ -919,6 +931,86 @@
       drawGrid();
     }
   });
+
+  /* ════════════════════════════════
+     막대 · 받침 편집
+  ════════════════════════════════ */
+  const ROD_SNAP_CELLS  = 0.5;   // 받침 꼭짓점 ↔ 막대 중심선 자석 거리 [칸]
+  const ROD_ANGLE_STEP  = 5;     // 끝 핸들 각도 스냅 [°]
+
+  /** 끝 핸들: 반대쪽 끝을 고정하고 커서 쪽 끝을 옮긴다 (길이 0.5칸, 각도 5° 단위).
+   *  고정 끝은 드래그를 시작할 때 한 번 정한다 — 각도가 ±90° 를 넘어 p1·p2 가 뒤바뀌어도
+   *  같은 끝을 계속 붙잡도록. */
+  function _resizeRodEnd(rod, handle, gx, gy) {
+    if (!handle.fixed) {
+      const g = rodGeometry(rod);
+      handle.fixed = handle.type === 'p1' ? g.p2 : g.p1;
+    }
+    const F = handle.fixed;
+    const dx = gx - F.x, dy = gy - F.y;
+    const len = clamp(Math.round(Math.hypot(dx, dy) * 2) / 2, 1, 30);
+    const phi = Math.round(Math.atan2(-dy, dx) * 180 / Math.PI / ROD_ANGLE_STEP) * ROD_ANGLE_STEP;
+    const a = phi * Math.PI / 180;
+    const M = { x: F.x + Math.cos(a) * len, y: F.y - Math.sin(a) * len };
+    let deg = phi;                                     // 막대 각도는 [−90°, 90°] — 선분 방향만 같으면 된다
+    while (deg > 90)   deg -= 180;
+    while (deg <= -90) deg += 180;
+    rod.gridW = len; rod.angle0 = deg;
+    rod.gridX = (F.x + M.x) / 2 - len / 2;
+    rod.gridY = (F.y + M.y) / 2 - rod.gridH / 2;
+  }
+
+  /** 막대 끌기 — 중심선을 반칸 격자에, 받침 꼭짓점이 가까우면 중심선을 꼭짓점에 맞춘다 */
+  function _dragRod(rod, rawGX, rawGY) {
+    const GS = CONFIG.GRID_SIZE, t = rod.gridH, L = rod.gridW;
+    let cx = rawGX + L / 2, cy = rawGY + t / 2;
+    const horiz = Math.abs(rod.angle0 || 0) < 1e-9;
+    // 수평 막대는 끝(p1)을, 기운 막대는 중심을 반칸 격자에
+    cx = horiz ? Math.round((cx - L / 2) * 2) / 2 + L / 2 : Math.round(cx * 2) / 2;
+    cy = Math.round(cy * 2) / 2;
+    rod.gridX = cx - L / 2; rod.gridY = cy - t / 2;
+    // 받침 꼭짓점 자석: 법선 방향으로만 옮겨 꼭짓점을 중심선 위에 올린다
+    const g = rodGeometry(rod);
+    let best = null;
+    for (const f of STATE.elements) {
+      if (f.type !== 'fulcrum') continue;
+      const A = fulcrumApexGrid(f);
+      const dx = A.x - g.cx, dy = A.y - g.cy;
+      const s = dx * g.ux + dy * g.uy, h = dx * g.nx + dy * g.ny;
+      if (Math.abs(s) > L / 2 || Math.abs(h) > ROD_SNAP_CELLS) continue;
+      if (!best || Math.abs(h) < Math.abs(best)) best = h;
+    }
+    if (best != null) { rod.gridX += g.nx * best; rod.gridY += g.ny * best; }
+    rod.gridX = clamp(rod.gridX, 0, GS - L);
+    rod.gridY = clamp(rod.gridY, 0, GS - t);
+  }
+
+  /** 받침 끌기 — 반칸 격자, 밑변이 수평 바닥면 근처면 얹고, 아니면 꼭짓점을 막대 중심선에 */
+  function _dragFulcrum(f, rawGX, rawGY) {
+    const GS = CONFIG.GRID_SIZE;
+    f.gridX = clamp(Math.round(rawGX * 2) / 2, 0, GS - f.gridW);
+    f.gridY = clamp(Math.round(rawGY * 2) / 2, 0, GS - f.gridH);
+    const ax = f.gridX + f.gridW / 2, baseY = rawGY + f.gridH;
+    // ① 밑변 ↔ 바닥면 (거의 수평인 직선 바닥면, 밑변 가운데 아래 0.6칸 이내)
+    for (const seg of STATE.floorSegments) {
+      if (seg.pathType !== 'LINE' || Math.abs(seg.x2 - seg.x1) < 1e-9) continue;
+      if (Math.abs(seg.y2 - seg.y1) > 0.2 * Math.abs(seg.x2 - seg.x1)) continue;
+      const t = (ax - seg.x1) / (seg.x2 - seg.x1);
+      if (t < 0 || t > 1) continue;
+      const fy = seg.y1 + t * (seg.y2 - seg.y1);
+      if (Math.abs(fy - baseY) <= 0.6) { f.gridY = fy - f.gridH; return; }
+    }
+    // ② 꼭짓점 ↔ 막대 중심선 (세로로만 옮긴다)
+    for (const r of STATE.elements) {
+      if (r.type !== 'rod') continue;
+      const g = rodGeometry(r);
+      if (Math.abs(g.ux) < 1e-6) continue;
+      const s = (ax - g.cx) / g.ux;
+      if (Math.abs(s) > g.L / 2) continue;
+      const ly = g.cy + g.uy * s;
+      if (Math.abs(ly - f.gridY) <= ROD_SNAP_CELLS) { f.gridY = ly; return; }
+    }
+  }
 
   /* ── pointerup / pointercancel ── */
   function onPointerEnd(e) {

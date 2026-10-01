@@ -13,7 +13,8 @@
      measureScene(sceneData, measureSpec)               → 값 (수치)
      applyVariant(sceneData, set)                       → 새 sceneData (키 → 속성 변경)
 
-   measureSpec = { body:'키|라벨|인덱스', q:'v'|'vx'|'vy'|'x'|'y'|'a'|'ke'|'pe'|'E'|'T'|'N'|'f'|'period',
+   measureSpec = { body:'키|라벨|인덱스', q:'v'|'vx'|'vy'|'x'|'y'|'a'|'ke'|'pe'|'E'|'T'|'N'|'f'|'period'
+                   | 막대 'theta'(°)|'omega'|'alpha'|'tau'(받침 기준 Στ)|'T1'|'T2' | 받침 'N'|'R'|'Ry'|'f',
                    at:초 | when:'floor'|'stop'|'rest', stat:'final'|'max'|'min'|'time' }
    ============================================================ */
 
@@ -52,6 +53,39 @@
   /** 물체의 즉시 물리량 */
   function _quantity(el, q, ctx) {
     const GS = CONFIG.GRID_SIZE;
+    // 받침: 막대를 받치는 힘
+    if (el.type === 'fulcrum') {
+      const F = el._force;
+      if (!F) return 0;
+      switch (q) {
+        case 'N':  return el._pinRod ? Math.hypot(F.fx, F.fy) : F.N;
+        case 'R':  return Math.hypot(F.fx, F.fy);
+        case 'Ry': return F.fy;
+        case 'f':  return Math.abs(F.f);
+        default:   return NaN;
+      }
+    }
+    // 막대: 회전 물리량 (나머지는 질량중심으로 아래 공통 경로)
+    if (el.type === 'rod') {
+      switch (q) {
+        case 'theta': return el.theta * 180 / Math.PI;
+        case 'omega': return el.omega;
+        case 'alpha': return el._alphaMeas || 0;
+        case 'ke':    return 0.5 * el.mass * (el.vx * el.vx + el.vy * el.vy) + 0.5 * rodInertia(el) * el.omega * el.omega;
+        case 'tau': {
+          const piv = STATE.elements.find(f => f.type === 'fulcrum' && (f._pinRod === el.id || f._contactRod === el.id));
+          return piv && piv._apex ? rodTorqueAbout(el, piv._apex.x, piv._apex.y, piv) : NaN;
+        }
+        case 'T': {
+          const ts = el._fbd ? el._fbd.forces.filter(F => F.kind === 'T').map(F => Math.hypot(F.fx, F.fy)) : [];
+          return ts.length ? ts.reduce((a, b) => a + b, 0) / ts.length : 0;
+        }
+        case 'T1': case 'T2': case 'T3': {   // 왼쪽(p1)부터 번호 붙인 장력
+          const F = el._fbd && el._fbd.forces.find(x => x.label === q || (q === 'T1' && x.kind === 'T' && x.label === 'T'));
+          return F ? Math.hypot(F.fx, F.fy) : 0;
+        }
+      }
+    }
     const cx = el.type === 'rect' ? el.physX + el.gridW / 2 : el.physX;
     const cy = el.type === 'rect' ? el.physY + el.gridH / 2 : el.physY;
     const m = el.mass || 1, g = STATE.gravityOn ? CONFIG.G : 0;
@@ -171,8 +205,8 @@
           if (prevVx !== null && prevVx < 0 && el.vx >= 0) crossings.push(t);
           prevVx = el.vx;
         }
-        // 사건
-        const speed = Math.hypot(el.vx, el.vy);
+        // 사건 — 막대는 제자리에서 돌기만 해도 움직이는 것이다 (끝의 속력까지 본다)
+        const speed = Math.hypot(el.vx || 0, el.vy || 0) + (el.type === 'rod' ? Math.abs(el.omega) * el.gridW / 2 : 0);
         if (spec.when === 'floor' && contactAt === null && el._contact) { contactAt = t; eventV = isFinite(prevV) ? prevV : v; eventT = t; }
         if (spec.when === 'stop' && stopAt === null && t > 0.1 && speed < 0.02) { stopAt = t; eventV = v; eventT = t; }
         if (spec.when === 'rest') {

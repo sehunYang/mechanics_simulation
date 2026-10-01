@@ -18,11 +18,14 @@
     extforce:  [['forceN', '외력 F [N]', 0, 20]],
     forceZone: [['fx', '힘 Fx [N]', -10, 10], ['fy', '힘 Fy [N]', -10, 10]],
     floorSegment: [['muK', '운동 마찰계수 μk', 0, 0.8], ['muS', '정지 마찰계수 μs', 0, 1]],
+    rod:       [['mass', '막대 질량 M [kg]', 0.5, 5], ['angle0', '초기 각도 θ₀ [°]', -40, 40]],
+    fulcrum:   [['muS', '받침 정지 마찰계수 μs', 0, 1]],
   };
   const SWEEP_Q = [
     ['v', '속력 |v|', 'm/s'], ['vx', '속도 vx', 'm/s'], ['vy', '속도 vy', 'm/s'], ['a', '가속도 |a|', 'm/s²'],
     ['x', '위치 x', 'm'], ['y', '위치 y', 'm'], ['ke', '운동에너지', 'J'], ['E', '역학적 에너지', 'J'],
     ['T', '장력 T', 'N'], ['N', '수직항력 N', 'N'], ['f', '마찰력 f', 'N'], ['period', '주기 (vx 부호 전환)', 's'], ['dist', '멈추기까지 거리', 'm'],
+    ['theta', '막대 각도 θ', '°'], ['omega', '막대 각속도 ω', 'rad/s'], ['tau', '막대 돌림힘 합 Στ (받침 기준)', 'N·m'], ['R', '받침 반작용 |R|', 'N'],
   ];
   const SWEEP_WHEN = [['at', '시각 t 에서'], ['max', '최댓값'], ['min', '최솟값'], ['floor', '바닥에 닿는 순간'], ['floor-time', '바닥 도달 시각'], ['stop', '멈추는 순간']];
 
@@ -52,7 +55,7 @@
   function _opt(v, t) { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
   function _targets() {
     const out = [];
-    for (const e of STATE.elements) if (SWEEP_PROPS[e.type]) out.push({ id: e.id, key: e._key, type: e.type, label: (e.type === 'rect' || e.type === 'circle') ? bodyLabel(e) : ({ spring: '용수철', extforce: '외력', forceZone: '힘구간' })[e.type] });
+    for (const e of STATE.elements) if (SWEEP_PROPS[e.type]) out.push({ id: e.id, key: e._key, type: e.type, label: (e.type === 'rect' || e.type === 'circle' || e.type === 'rod' || e.type === 'fulcrum') ? bodyLabel(e) : ({ spring: '용수철', extforce: '외력', forceZone: '힘구간' })[e.type] });
     for (const s of STATE.floorSegments) if (s.isFriction) out.push({ id: s.id, key: s._key, type: 'floorSegment', label: '마찰 바닥면' });
     return out;
   }
@@ -65,7 +68,7 @@
     _fillProps();
     // 측정 대상 물체
     const bsel = _sEl('sweep-body'); bsel.innerHTML = '';
-    for (const e of STATE.elements) if (e.type === 'rect' || e.type === 'circle') bsel.appendChild(_opt(e.id, bodyLabel(e)));
+    for (const e of STATE.elements) if (['rect', 'circle', 'rod', 'fulcrum'].includes(e.type)) bsel.appendChild(_opt(e.id, bodyLabel(e)));
   }
   function _fillProps() {
     const sel = _sEl('sweep-target'), ps = _sEl('sweep-prop');

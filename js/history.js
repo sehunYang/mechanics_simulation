@@ -38,6 +38,8 @@
         case 'pulley':    el = new Pulley();      break;
         case 'spring':    el = new Spring();      break;
         case 'extforce':  el = new ExtForce();    break;
+        case 'rod':       el = new RodBody();     break;
+        case 'fulcrum':   el = new Fulcrum();     break;
         default: return null;
       }
       Object.assign(el, d);

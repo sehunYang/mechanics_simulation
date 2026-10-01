@@ -55,6 +55,8 @@
       case 'pulley':    el = new Pulley();      break;
       case 'spring':    el = new Spring();      break;
       case 'extforce':  el = new ExtForce();    break;
+      case 'rod':       el = new RodBody();     break;
+      case 'fulcrum':   el = new Fulcrum();     break;
       default: return;
     }
 
@@ -75,6 +77,7 @@
       : clamp(snapToGridIndex(world.y / cs * cs), 0, GS - el.gridH);
     el.gridX = gx;
     el.gridY = gy;
+    if (el.type === 'rod') el.gridY = clamp(gy - el.gridH / 2, 0, GS - el.gridH);   // 중심선을 격자선에
 
     STATE.elements.push(el);
     _selectObject(el);

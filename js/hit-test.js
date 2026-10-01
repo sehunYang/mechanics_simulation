@@ -6,16 +6,20 @@
      [HIT TESTS] — 5종 히트 테스트
   ────────────────────────────────────────────────────────────── */
 
-  /** Element bbox 판정 (역순 순회) */
+  /** 요소 하나의 판정 — 회전된 막대처럼 자기 판정(hitTest)이 있으면 그것, 없으면 bbox */
+  function elementContains(el, worldX, worldY) {
+    if (el.hitTest) return el.hitTest(worldX, worldY);
+    if (!el.getBBox) return false;
+    const box = el.getBBox();
+    return worldX >= box.x && worldX <= box.x + box.w &&
+           worldY >= box.y && worldY <= box.y + box.h;
+  }
+
+  /** Element 판정 (역순 순회) */
   function hitTestElement(worldX, worldY) {
     for (let i = STATE.elements.length - 1; i >= 0; i--) {
-      const el  = STATE.elements[i];
-      if (!el.getBBox) continue;
-      const box = el.getBBox();
-      if (worldX >= box.x && worldX <= box.x + box.w &&
-          worldY >= box.y && worldY <= box.y + box.h) {
-        return el;
-      }
+      const el = STATE.elements[i];
+      if (elementContains(el, worldX, worldY)) return el;
     }
     return null;
   }
@@ -116,7 +120,7 @@
     let firstMatch = null;
     let pulleyRimMatch = null;
     for (const el of STATE.elements) {
-      if (!['rect','circle','pulley','extforce'].includes(el.type)) continue;
+      if (!['rect','circle','pulley','extforce','rod'].includes(el.type)) continue;
       for (const pt of getAttachPoints(el)) {
         if (Math.hypot(worldX - pt.worldX, worldY - pt.worldY) < thresh) {
           const match = { elementId: el.id, attachPoint: pt.id };

@@ -65,7 +65,7 @@ scenario('S13-2', '헤드리스 측정 규격 — at / when:floor / stat:time / 
   expect('마찰 정지 거리 v²/(2μg)', r.dist, 16 / (2 * 0.25 * 9.8), '6%', 'm');
 });
 
-scenario('S13-3', 'POE 데이터 — 24문항 · 6분류 · 정답 하나 · 필수 필드 · 장면 로드', () => {
+scenario('S13-3', 'POE 데이터 — 40문항 · 8분류 · 정답 하나 · 필수 필드 · 장면 로드', () => {
   const a = app();
   const r = a.evalIn(`
     const out = { n: POE_EXAMPLES.length, cats: new Set(POE_EXAMPLES.map(e => e.cat)).size, bad: [], loadFail: [], guides: POE_GUIDES.length };
@@ -85,9 +85,9 @@ scenario('S13-3', 'POE 데이터 — 24문항 · 6분류 · 정답 하나 · 필
     for (const g of POE_GUIDES) if (!findScene(g.scene) || !g.steps || g.steps.length < 2 || !g.why) out.bad.push('guide:' + g.scene);
     out
   `);
-  expect('문항 수 34', r.n, 34, 0, '개');
-  expect('분류 7', r.cats, 7, 0, '개');
-  expect('해설 12', r.guides, 12, 0, '개');
+  expect('문항 수 40', r.n, 40, 0, '개');
+  expect('분류 8', r.cats, 8, 0, '개');
+  expect('해설 15', r.guides, 15, 0, '개');
   truthy('필드·정답·태그 누락 없음: ' + r.bad.join(' '), r.bad.length === 0);
   truthy('모든 장면 로드, 경고 없음: ' + r.loadFail.join(' '), r.loadFail.length === 0);
 });
@@ -214,7 +214,7 @@ scenario('S13-9', 'index.html — POE·스윕 DOM, 스크립트 순서', () => {
 });
 
 
-scenario('S13-10', '탐구 카드 10개 — 장면·스윕 프리셋 유효 / 공기저항 종단속도 mg/b', () => {
+scenario('S13-10', '탐구 카드 11개 — 장면·스윕 프리셋 유효 / 공기저항 종단속도 mg/b', () => {
   const a = app();
   const r = a.evalIn(`
     const bad = [];
@@ -234,7 +234,7 @@ scenario('S13-10', '탐구 카드 10개 — 장면·스윕 프리셋 유효 / �
     const noDrag = measureScene(applyVariant(sceneToData(), { A: { drag: 0 } }), { body:'A', q:'v', at: 2 });
     ({ n: POE_IDEAS.length, bad, vt, noDrag })
   `);
-  expect('탐구 카드 10개', r.n, 10, 0, '개');
+  expect('탐구 카드 11개', r.n, 11, 0, '개');
   truthy('카드 필드·장면·프리셋 유효: ' + r.bad.join(' '), r.bad.length === 0);
   expect('종단속도 mg/b = 4.9', r.vt, 4.9, '2%', 'm/s');
   expect('저항 없으면 2 s 후 19.6', r.noDrag, 19.6, '1%', 'm/s');

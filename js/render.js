@@ -108,7 +108,7 @@
 
     // ── Element 앵커 포인트 (원형) ──
     for (const el of STATE.elements) {
-      if (!['rect', 'circle', 'pulley', 'extforce'].includes(el.type)) continue;
+      if (!['rect', 'circle', 'pulley', 'extforce', 'rod'].includes(el.type)) continue;
       const pts = getAttachPoints(el);
       for (const pt of pts) {
         const isPending = (
@@ -116,12 +116,14 @@
           STATE.pendingRopeAnchor.elementId  === el.id &&
           STATE.pendingRopeAnchor.attachPoint === pt.id
         );
+        // 막대는 0.5칸마다 앵커가 있어 촘촘하다 — 끝·가운데만 크게, 나머지는 작게
+        const small = el.type === 'rod' && /^s/.test(pt.id) && !isPending;
         ctx.save();
         ctx.fillStyle   = isPending ? '#3b82f6' : '#f59e0b';
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth   = 1 / s;
         ctx.beginPath();
-        ctx.arc(pt.worldX, pt.worldY, r, 0, Math.PI * 2);
+        ctx.arc(pt.worldX, pt.worldY, small ? r * 0.6 : r, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
@@ -214,8 +216,9 @@
 
   /** elements, floorSegments, ropes 렌더 */
   function drawElements(ctx) {
+    // 힘 구간·받침은 맨 아래 — 받침 꼭짓점은 막대 중심선까지 올라와 막대 채움에 가려진다
     for (const el of STATE.elements) {
-      if (el.type === 'forceZone' && el.draw) el.draw(ctx);
+      if ((el.type === 'forceZone' || el.type === 'fulcrum') && el.draw) el.draw(ctx);
     }
     for (const seg of STATE.floorSegments) {
       if (seg.draw) seg.draw(ctx);
@@ -229,7 +232,10 @@
       if (rope.draw) rope.draw(ctx);
     }
     for (const el of STATE.elements) {
-      if (el.type !== 'forceZone' && el.draw) el.draw(ctx);
+      if (el.type !== 'forceZone' && el.type !== 'fulcrum' && el.draw) el.draw(ctx);
+    }
+    for (const el of STATE.elements) {
+      if (el.drawOver) el.drawOver(ctx);   // 받침 고정 핀 — 막대 위에
     }
     if (STATE.selected && STATE.selected.drawSelection) {
       STATE.selected.drawSelection(ctx);

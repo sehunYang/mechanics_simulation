@@ -16,7 +16,7 @@
 ## 구조
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — 빌드 없는 정적 웹앱의 로드 순서, `STATE` 와 이벤트 버스,
-  물리 엔진(고정 dt·서브스텝·단면 바닥·실/도르래 제약·자유물체도 분해·클로소이드 이음), 검증 스위트 구성.
+  물리 엔진(고정 dt·서브스텝·단면 바닥·실/도르래 제약·자유물체도 분해·클로소이드 이음·막대 강체), 검증 스위트 구성.
   코드를 고치기 전에 읽는 문서.
 
 ## 설계 근거 (`design/`)
@@ -24,6 +24,7 @@
 | 문서 | 요약 | 시점 |
 |---|---|---|
 | [suneung-drawing-convention.md](design/suneung-drawing-convention.md) | 2022~2026학년도 수능 물리학Ⅰ·Ⅱ 역학 문항 그림의 작도 관례를 조사해 정리하고, 시뮬레이터 요소(물체·바닥면·실·도르래·용수철·힘 화살표·서체)를 그 규격으로 바꾼 근거. 📷 촬영(SVG 내보내기)의 규격 문서. | 2026-07-31 |
+| [rod-fulcrum.md](design/rod-fulcrum.md) | 돌림힘 요소(막대·받침)의 설계 — 수능 작도 규격 대조(막대·삼각 받침·축핀·치수선), 얇은 막대 강체 모델과 제약 풀이 순서, 편집 스냅, 측정(작용점·Στ), 검증 목록, 다음 단계(막대 위 물체 등). | 2026-10-01 |
 | [circuit-port-analysis.md](design/circuit-port-analysis.md) | 형제 프로젝트 [circuit_simulation](https://github.com/sehunYang/circuit_simulation) 의 구조·기능을 분석해 역학 앱에 무엇을 어떤 형태로 옮길지 4단계 로드맵으로 정리. 갤러리·POE·스윕·헤드리스 측정·교사용 README 가 여기서 나왔다. 구현 현황 주석 포함. | 2026-09-08 |
 | [persona-rubric-evaluation.md](design/persona-rubric-evaluation.md) | 네 사용자 유형(흥미 위주 · 학습 보조 · 개념 점검 · 심화 탐구)에 대고 루브릭으로 채점한 유용성 진단. 로드맵이 놓친 보정 항목(느린 배속, 자유물체도, 실행 겹쳐 보기, 수치 예측형 문항, 파라미터 스윕 등)의 출처. | 2026-09-08 |
 

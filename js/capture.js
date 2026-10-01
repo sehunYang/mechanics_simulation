@@ -115,6 +115,10 @@
                `fill="none" stroke="${INK}" stroke-width="${_lw(SN.lwGeom)}"`);
     }
 
+    /* ── 받침 → 막대 (화면과 같은 그림 조각: elements.js rodPictureParts / fulcrumPictureParts) ── */
+    for (const el of STATE.elements) if (el.type === 'fulcrum') _svgParts(doc, fulcrumPictureParts(el, VIEWPORT.scale));
+    for (const el of STATE.elements) if (el.type === 'rod')     _svgParts(doc, rodPictureParts(el, VIEWPORT.scale));
+
     /* ── 요소 ── */
     for (const el of STATE.elements) {
       const bx = el.gridX * cs, by = el.gridY * cs;
@@ -193,6 +197,9 @@
       }
     }
 
+    /* ── 받침 고정 핀 (막대 위) ── */
+    for (const el of STATE.elements) if (el.type === 'fulcrum') _svgParts(doc, fulcrumPinParts(el, VIEWPORT.scale));
+
     /* ── viewBox: 내용 bbox + 여백 ── */
     const bb = doc.bb;
     if (!isFinite(bb.x0)) { bb.x0 = 0; bb.y0 = 0; bb.x1 = 100; bb.y1 = 100; }
@@ -204,6 +211,17 @@
       + `<svg xmlns="${_SVG_NS}" viewBox="${vx} ${vy} ${vw} ${vh}" width="${vw}" height="${vh}">\n`
       + `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#ffffff"/>\n`
       + doc.parts.join('\n') + `\n</svg>\n`;
+  }
+
+  /** 그림 조각 목록 → <path>·<text> (선 굵기·점선은 화면 px 기준이라 _lw 로 환산) */
+  function _svgParts(doc, parts) {
+    for (const p of parts.shapes) {
+      let a = `fill="${p.fill || 'none'}"`;
+      a += p.stroke ? ` stroke="${p.stroke}" stroke-width="${_lw(p.lw || SN.lwGeom)}" stroke-linejoin="round" stroke-linecap="round"` : ' stroke="none"';
+      if (p.stroke && p.dash) a += ` stroke-dasharray="${p.dash.map(_lw).join(',')}"`;
+      doc.path(p.d, a);
+    }
+    for (const l of parts.labels) doc.text(l.text, l.x, l.y, _n2(l.size / VIEWPORT.scale), { italic: l.italic, ko: l.ko });
   }
 
   /** 촬영 버튼: SVG 파일로 저장 */

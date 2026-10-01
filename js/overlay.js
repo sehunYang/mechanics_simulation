@@ -78,7 +78,7 @@
     if (STATE.simMode !== 'EDIT' && OV._kF) return OV._kF;
     let mRef = 0;
     for (const el of STATE.elements) {
-      if (el.type !== 'rect' && el.type !== 'circle') continue;
+      if (el.type !== 'rect' && el.type !== 'circle' && el.type !== 'rod') continue;
       mRef = Math.max(mRef, el.mass || 0);
     }
     if (mRef <= 0) mRef = 1;
@@ -109,6 +109,7 @@
     _drawScaleLegend(ctx, kF, kV);
 
     for (const el of STATE.elements) {
+      if (el.type === 'rod') { _drawRodOverlay(ctx, el, live, kF, kV); continue; }
       if (el.type !== 'rect' && el.type !== 'circle') continue;
       const c = _bodyCenterWorld(el);
 
@@ -143,6 +144,67 @@
         const len = v * kV;
         if (len >= OV.minCells * cs) _arrow(ctx, c.x, c.y, vx, vy, len, OV.vColor, `v ${_fmt(v, 2)} m/s`, { side: 1, lw: 2 });
       }
+    }
+  }
+
+  /**
+   * 막대 — 힘은 질량중심이 아니라 **작용점**에 그린다 (돌림힘은 어디에 작용하느냐로 정해진다).
+   *   중력 = 질량중심, 장력 = 실 매단 점, 받침 힘 = 꼭짓점, 바닥 힘 = 닿은 모서리.
+   *   받침이 있으면 그 옆에 Στ, 막대를 선택하면 힘마다 작용선(점선)과 받침에서 내린 팔(수선)을 그린다.
+   */
+  function _drawRodOverlay(ctx, el, live, kF, kV) {
+    const cs = CONFIG.cellSize, GS = CONFIG.GRID_SIZE, s = VIEWPORT.scale;
+    const W = (x, y) => ({ x: x * cs, y: (GS - y) * cs });
+    const g = STATE.gravityOn ? CONFIG.G : 0;
+    const M = el.mass || 1;
+    const geo = rodGeometry(el);
+    const com = live ? { x: el.physX, y: el.physY } : { x: geo.cx, y: GS - geo.cy };
+    const forces = live && el._fbd ? el._fbd.forces
+      : [{ kind: 'g', label: 'mg', fx: 0, fy: -M * g, px: com.x, py: com.y }];
+    const piv = (typeof rodPivotFulcrum === 'function') ? rodPivotFulcrum(el) : null;
+    const A = piv ? (piv._apex && live ? piv._apex : { x: fulcrumApexGrid(piv).x, y: GS - fulcrumApexGrid(piv).y }) : null;
+
+    if (STATE.showForces) {
+      // 같은 점에 여러 힘이 모이면(받침의 N·f) 라벨이 겹치지 않게 번갈아 비킨다
+      let side = 1;
+      for (const F of forces) {
+        const m = Math.hypot(F.fx, F.fy);
+        if (m * kF < OV.minCells * cs) continue;
+        const p = W(F.px, F.py);
+        _arrow(ctx, p.x, p.y, F.fx, F.fy, m * kF, OV.fColor, `${F.label} ${_fmt(m, 1)} N`, { side });
+        side = -side;
+      }
+      if (A && live && el._fbd) {
+        const tau = rodTorqueAbout(el, A.x, A.y, piv);
+        const p = W(A.x, A.y);
+        snLabel(ctx, `Στ ${_fmt(tau, 2)} N·m`, p.x, p.y + (piv.gridH * cs) + 12 / s, 11, { italic: true, halo: 3, color: OV.netColor });
+      }
+      // 선택한 막대: 받침에서 각 힘의 작용선까지의 팔 (수선의 발)
+      if (A && STATE.selected === el) {
+        for (const F of forces) {
+          if (F.ref === piv) continue;
+          const m = Math.hypot(F.fx, F.fy);
+          if (m < 1e-6) continue;
+          const ux = F.fx / m, uy = F.fy / m;
+          const t = (A.x - F.px) * ux + (A.y - F.py) * uy;              // 작용선 위 수선의 발
+          const foot = { x: F.px + ux * t, y: F.py + uy * t };
+          const arm = Math.hypot(A.x - foot.x, A.y - foot.y);
+          if (arm < 0.05) continue;
+          // 작용선: 작용점과 수선의 발을 포함하도록 양쪽으로 조금 더
+          const t0 = Math.min(0, t) - 0.3, t1 = Math.max(0, t) + 0.3;
+          const a0 = W(F.px + ux * t0, F.py + uy * t0), a1 = W(F.px + ux * t1, F.py + uy * t1);
+          snStroke(ctx, `M ${a0.x} ${a0.y} L ${a1.x} ${a1.y}`, 1, 'rgba(185,28,28,0.45)', [4, 3]);
+          const pa = W(A.x, A.y), pf = W(foot.x, foot.y);
+          snStroke(ctx, `M ${pa.x} ${pa.y} L ${pf.x} ${pf.y}`, 1.2, OV.netColor, [2, 2]);
+          snLabel(ctx, `${_fmt(arm, 2)} m`, (pa.x + pf.x) / 2, (pa.y + pf.y) / 2 - 8 / s, 10, { italic: true, halo: 3, color: OV.netColor });
+        }
+      }
+    }
+
+    if (STATE.showVectors && live) {
+      const v = Math.hypot(el.vx, el.vy), len = v * kV;
+      const c = W(com.x, com.y);
+      if (len >= OV.minCells * cs) _arrow(ctx, c.x, c.y, el.vx, el.vy, len, OV.vColor, `v ${_fmt(v, 2)} m/s`, { side: 1, lw: 2 });
     }
   }
 

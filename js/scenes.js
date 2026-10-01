@@ -1,5 +1,5 @@
 /* ============================================================
-   scenes.js — 장면 갤러리 (대표 상황 8개)
+   scenes.js — 장면 갤러리 (대표 상황 15개)
    ─ 클래식 스크립트: 전역 스코프 공유, index.html 순서대로 로드 ─
 
    각 항목은 scene.js 의 DSL(spec) 로 적는다. 시작 카드·갤러리·POE 가
@@ -187,6 +187,60 @@
           { key: 'G2', x1: 62, y1: 52, x2: 92, y2: 52, smooth: true },
         ],
         elements: [{ key: 'A', type: 'circle', gridX: 24.5, gridY: 51, mass: 1, vx0: 13, e: 0.4, showTrail: true }],
+        view: 'fit',
+      },
+    },
+
+    /* ── 돌림힘·평형 — 막대는 중심선(gridY + 0.125)이 격자선에 오게 둔다. 받침 1×1 의 꼭짓점 = (gridX + 0.5, gridY) ── */
+    {
+      id: 'lever', title: '지레의 평형', level: '기초', tag: '돌림힘·평형',
+      desc: '받침에 고정한 8 m 막대(2 kg). 받침에서 3 m 인 곳에 2 kg, 반대쪽 4 m 인 끝에 1.5 kg 을 매달았습니다. 막대는 어느 쪽으로 기울까요?',
+      hint: '2 kg × 3 m = 1.5 kg × 4 m — 받침 기준 돌림힘이 같아 기울지 않습니다. 막대를 클릭하면 Στ = 0 이 보입니다.',
+      spec: {
+        floors: [
+          { key: 'T', x1: 48, y1: 51, x2: 52, y2: 51 },
+          { key: 'G', x1: 38, y1: 58, x2: 62, y2: 58 },
+        ],
+        elements: [
+          { key: 'F', type: 'fulcrum', gridX: 49.5, gridY: 50, pinned: true },
+          { key: 'R', type: 'rod', gridX: 46, gridY: 49.875, gridW: 8, mass: 2, dims: 'L' },
+          { key: 'A', type: 'rect', gridX: 46.5, gridY: 52, mass: 2 },
+          { key: 'B', type: 'rect', gridX: 53.5, gridY: 52, mass: 1.5 },
+        ],
+        ropes: [['R', 's1', 'A', 'top'], ['R', 'p2', 'B', 'top']],
+        view: 'fit',
+      },
+    },
+    {
+      id: 'two-supports', title: '두 받침 위의 막대', level: '심화', tag: '돌림힘·평형',
+      desc: '받침 두 개 위에 3 kg 막대를 올리고, 오른쪽 받침 밖 3 m 인 끝에 0.5 kg 을 매달았습니다. 두 받침이 받치는 힘은 같을까요?',
+      hint: '오른쪽 받침이 훨씬 많이 받칩니다 (30.6 N : 3.7 N). 추를 1 kg 보다 무겁게 하면 왼쪽 받침에서 떠 넘어갑니다.',
+      spec: {
+        floors: [
+          { key: 'T', x1: 46, y1: 51, x2: 52, y2: 51 },
+          { key: 'G', x1: 38, y1: 58, x2: 62, y2: 58 },
+        ],
+        elements: [
+          { key: 'F1', type: 'fulcrum', gridX: 46.5, gridY: 50 },
+          { key: 'F2', type: 'fulcrum', gridX: 50.5, gridY: 50 },
+          { key: 'R', type: 'rod', gridX: 46, gridY: 49.875, gridW: 8, mass: 3, dims: 'm' },
+          { key: 'W', type: 'rect', gridX: 53.5, gridY: 52, mass: 0.5 },
+        ],
+        ropes: [['R', 'p2', 'W', 'top']],
+        view: 'fit',
+      },
+    },
+    {
+      id: 'hung-rod', title: '실에 매단 막대', level: '기초', tag: '돌림힘·평형',
+      desc: '6 m · 2 kg 막대를 두 실로 천장에 매달고, 왼쪽 실 가까이에 1 kg 을 매달았습니다. 두 실의 장력은 같을까요?',
+      hint: '질량중심에 가까운 실이 더 많이 받칩니다. 왼쪽 실 19.6 N, 오른쪽 실 9.8 N — 어느 점을 기준으로 돌림힘을 세워도 같은 답이 나옵니다.',
+      spec: {
+        floors: [{ key: 'C', x1: 44, y1: 45, x2: 56, y2: 45 }],
+        elements: [
+          { key: 'R', type: 'rod', gridX: 47, gridY: 49.875, gridW: 6, mass: 2, ticks: 6 },
+          { key: 'A', type: 'rect', gridX: 48.5, gridY: 52, mass: 1 },
+        ],
+        ropes: [['C', 's4', 'R', 's1'], ['C', 's9', 'R', 'p2'], ['R', 's2', 'A', 'top']],
         view: 'fit',
       },
     },

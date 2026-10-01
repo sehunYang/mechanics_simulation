@@ -60,7 +60,7 @@ function makeContext() {
 /** 실제 소스 파일들을 순서대로 로드한 컨텍스트 반환 */
 function loadEngine() {
   const ctx = makeContext();
-  const files = ['js/config.js', 'js/coords.js', 'js/elements.js', 'js/physics.js'];
+  const files = ['js/config.js', 'js/coords.js', 'js/elements.js', 'js/physics.js', 'js/rod-physics.js'];
   for (const f of files) {
     const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
     vm.runInContext(src, ctx, { filename: f });
@@ -96,6 +96,8 @@ const SCENE_API = `
   function addPulley(o){ const e = new Pulley();    Object.assign(e, o); STATE.elements.push(e); return e; }
   function addSpring(o){ const e = new Spring();    Object.assign(e, o); STATE.elements.push(e); return e; }
   function addExtF(o)  { const e = new ExtForce();  Object.assign(e, o); STATE.elements.push(e); return e; }
+  function addRod(o)   { const e = new RodBody();   Object.assign(e, o); STATE.elements.push(e); return e; }
+  function addFulcrum(o){ const e = new Fulcrum();  Object.assign(e, o); STATE.elements.push(e); return e; }
   function addFloor(x1, y1, x2, y2, o) {
     const s = new FloorSegment(x1, y1, x2, y2);
     if (o) Object.assign(s, o);

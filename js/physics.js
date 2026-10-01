@@ -63,6 +63,8 @@
         case 'pulley':    el = new Pulley();      break;
         case 'spring':    el = new Spring();      break;
         case 'extforce':  el = new ExtForce();    break;
+        case 'rod':       el = new RodBody();     break;
+        case 'fulcrum':   el = new Fulcrum();     break;
         default: return null;
       }
       Object.assign(el, d);
@@ -130,6 +132,8 @@
         el.L = el.L0;
       }
     }
+    // 막대: 질량중심·각도 초기화, 고정 받침(핀) 연결 (rod-physics.js)
+    initRodPhysics();
     // 바닥면과 이미 겹쳐 배치된 물체를 표면 밖으로 1회 밀어냄 (단면 판정 기준 정렬)
     _depenetrateInitial();
     // 시뮬 시작 시점 실제 물리 거리로 보정
@@ -162,6 +166,7 @@
     const pulleyRopeIds = new Set();
     for (const rope of STATE.ropes) {
       if (_ropeHasExtForce(rope)) continue;   // 외력 실은 제약 제외 (#2)
+      if (ropeTouchesRod(rope)) continue;     // 막대에 건 실은 단순 실처럼 길이만 잰다 (rod-physics.js 가 푼다)
       const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
       const aIsRim = elA && elA.type === 'pulley' && rope.anchorA.attachPoint !== 'center';
@@ -284,16 +289,20 @@
         el._hitBody = false;
       }
     }
+    rodBeginStep();   // 막대 제약 임펄스 누적기 (자유물체도)
     for (let i = 0; i < sub; i++) {
       _clearStepFlags();
       const _e0 = _stepEnergyBefore();
+      const _r0 = rodEnergyBefore();   // 막대 계 (중력·핀·팽팽한 실만이면 에너지 보존)
       applyForces(subDt);
       integrate(subDt);
       updateExtForceAnchors();   // 외력 앵커가 물체를 따라 이동 (실 방향 유지)
       resolveFloorCollisions(subDt);
       resolveBodyCollisions(subDt);
+      rodPositionFix();          // 막대: 핀 어긋남·침투·실 늘어남 위치 보정 (rod-physics.js)
       resolveRopeConstraints(subDt);
       _projectStepEnergy(_e0);
+      rodProjectEnergy(_r0);
     }
     if (dt > 0) {
       for (const el of STATE.elements) {
@@ -303,6 +312,7 @@
         }
       }
       computeFreeBodyDiagrams(sub);
+      rodEndStep(dt);            // 막대·받침·막대에 건 실의 힘 (기록한 임펄스 ÷ Δt)
     }
     if (typeof HEADLESS !== 'undefined' && HEADLESS.active) return;   // 헤드리스: 궤적·시계열·이벤트 생략
     recordTrails();
@@ -518,7 +528,7 @@
   /* ── 힘 적용 (중력 + ForceZone + 용수철) ── */
   function applyForces(dt) {
     for (const el of STATE.elements) {
-      if (!['rect', 'circle', 'pulley'].includes(el.type)) continue;
+      if (!['rect', 'circle', 'pulley', 'rod'].includes(el.type)) continue;
 
       // 중력 — 도르래는 무질량 중계점(자체 관성/무게 없음)이므로 제외
       if (STATE.gravityOn && el.type !== 'pulley') {
@@ -629,32 +639,40 @@
            a.gridY < b.gridY + b.gridH && a.gridY + a.gridH > b.gridY;
   }
 
-  /* ── 6-4. Semi-implicit Euler 적분 ── */
+  /* ── 6-4. Semi-implicit Euler 적분 ──
+     ① 모든 물체의 속도를 힘으로 갱신 → ② 막대 제약(속도 단계) → ③ 위치 갱신.
+     막대가 없으면 ②는 아무것도 하지 않으므로 물체마다 "속도 → 위치" 와 결과가 같다. */
   function integrate(dt) {
     const GS = CONFIG.GRID_SIZE;
-    for (const el of STATE.elements) {
-      // 도르래는 무질량 중계점 — 위치는 제약 해소가 결정하므로 자유 적분 제외
-      if (!['rect', 'circle'].includes(el.type)) continue;
-
+    // 도르래는 무질량 중계점 — 위치는 제약 해소가 결정하므로 자유 적분 제외
+    const movers = STATE.elements.filter(el => el.type === 'rect' || el.type === 'circle' || el.type === 'rod');
+    for (const el of movers) {
       el.vx += el.ax * dt;
       el.vy += el.ay * dt;
-      el.physX += el.vx * dt;
-      el.physY += el.vy * dt;
       el.ax = 0;
       el.ay = 0;
+      if (el.type === 'circle' || el.type === 'rod') {
+        el.omega += el.alpha * dt;
+        el.alpha  = 0;
+      }
+    }
 
+    rodVelocitySolve(dt);   // 막대: 핀·받침·바닥·실 (rod-physics.js) — 위치를 옮기기 전에
+
+    for (const el of movers) {
+      el.physX += el.vx * dt;
+      el.physY += el.vy * dt;
       if (el.type === 'rect') {
         el.gridX = el.physX;
         el.gridY = GS - el.physY - el.gridH;
+      } else if (el.type === 'rod') {
+        el.theta += el.omega * dt;
+        el.gridX = el.physX - el.gridW / 2;
+        el.gridY = GS - el.physY - el.gridH / 2;
       } else {
         el.gridX = el.physX - el.gridW / 2;
         el.gridY = GS - el.physY - el.gridH / 2;
-      }
-      // 원형 물체 회전 적분
-      if (el.type === 'circle') {
-        el.omega += el.alpha * dt;
-        el.theta += el.omega * dt;
-        el.alpha  = 0;
+        el.theta += el.omega * dt;   // 원형 물체 회전 적분
       }
     }
   }
@@ -837,6 +855,7 @@
     for (const fseg of STATE.floorSegments) {
       allSegs.push(...getPhysicsSegments(fseg));
     }
+    allSegs.push(...fulcrumPhysSegments());   // 받침 빗변도 네모·원에게는 단단한 면
     if (allSegs.length === 0) return;
     _annotateChains(allSegs);   // 미세 선분 사슬(이음·원호)의 곡률·매끄러운 정점 법선 — 바닥면 경계(M)도 잇는다
 
@@ -1274,6 +1293,7 @@
 
   /** 요소의 특정 앵커 포인트 물리 좌표 */
   function _getElPhysAnchor(el, pt) {
+    if (el.type === 'rod') return rodPhysPoint(el, rodAnchorDist(el, pt));
     if (el.type === 'rect') {
       // physX/Y = 좌하단 기준. 중심에서 회전시킨 오프셋을 더한다 —
       // 회전 규칙(elementRotRad)과 오프셋 정의를 렌더와 공유하므로
@@ -1681,7 +1701,7 @@
     }
     const comps = new Map();
     const get = (root) => {
-      if (!comps.has(root)) comps.set(root, { bodies: [], seen: new Set(), allTaut: true });
+      if (!comps.has(root)) comps.set(root, { bodies: [], seen: new Set(), allTaut: true, hasRod: false });
       return comps.get(root);
     };
     for (const rope of STATE.ropes) {
@@ -1692,6 +1712,7 @@
         c.seen.add(a.elementId);
         const el = STATE.elements.find(e => e.id === a.elementId);
         if (el && (el.type === 'rect' || el.type === 'circle')) c.bodies.push(el);
+        if (el && el.type === 'rod') c.hasRod = true;
       }
     }
     return [...comps.values()].filter(c => c.bodies.length > 0);
@@ -1733,6 +1754,7 @@
     if (_ropeSnapFlag) return;
     for (const { comp, e0 } of refs) {
       if (!comp.allTaut) continue;
+      if (comp.hasRod) continue;   // 막대가 낀 계는 회전 에너지까지 봐야 한다 — 보정하지 않는다
       if (comp.bodies.some(b => b._nonConservative)) continue;
       let ke = 0;
       for (const b of comp.bodies) ke += 0.5 * (b.mass || 1) * (b.vx * b.vx + b.vy * b.vy);
@@ -1773,6 +1795,7 @@
 
     for (const rope of STATE.ropes) {
       if (_ropeHasExtForce(rope)) continue;   // 외력 실은 제약 제외 (#2)
+      if (ropeTouchesRod(rope)) continue;     // 막대에 건 실은 rod-physics.js 가 막대 제약과 함께 푼다
       const elA = STATE.elements.find(e => e.id === rope.anchorA.elementId);
       const elB = STATE.elements.find(e => e.id === rope.anchorB.elementId);
 
@@ -1796,7 +1819,7 @@
     const runs = _buildRuns(pulleyGroups, fixedPulleys);
     const { component, dynamicRopeIds } = _buildDynamicComponent(runs, pulleyRopeIds, fixedPulleys);
 
-    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id) && !dynamicRopeIds.has(r.id) && !_ropeHasExtForce(r));
+    const simpleRopes = STATE.ropes.filter(r => !pulleyRopeIds.has(r.id) && !dynamicRopeIds.has(r.id) && !_ropeHasExtForce(r) && !ropeTouchesRod(r));
 
     // 무질량 노드 속도 유도용: 서브스텝 제약 해소 전 도르래 위치 기록
     const prePos = new Map();
@@ -2450,7 +2473,18 @@
     //    문구는 guide.js 의 GUIDE_FIX 키와 같아야 한다 (고치는 법이 붙는다).
     const bodies = STATE.elements.filter(e => e.type === 'rect' || e.type === 'circle');
     const hasAny = STATE.elements.length || STATE.floorSegments.length || STATE.ropes.length;
-    if (hasAny && bodies.length === 0) warnings.push('움직일 물체가 없습니다');
+    if (hasAny && bodies.length === 0 && !STATE.elements.some(e => e.type === 'rod')) warnings.push('움직일 물체가 없습니다');
+
+    // 막대: 받침에도 실에도 걸리지 않았으면 실행하는 순간 떨어진다
+    for (const r of STATE.elements) {
+      if (r.type !== 'rod') continue;
+      const onFulcrum = STATE.elements.some(f => f.type === 'fulcrum' && (fulcrumRodContact(f) || {}).rod === r);
+      const hung = STATE.ropes.some(rp => rp.anchorA.elementId === r.id || rp.anchorB.elementId === r.id);
+      if (!onFulcrum && !hung) warnings.push('막대가 받침에도 실에도 걸려 있지 않습니다');
+    }
+    for (const rp of STATE.ropes) {
+      if (ropeTouchesRod(rp) && !rodRopeSupported(rp)) warnings.push('막대에 이은 실은 고정점·물체·막대에만 걸 수 있습니다');
+    }
 
     for (const s of STATE.elements) {
       if (s.type === 'spring' && !s.leftElementId && !s.rightElementId)

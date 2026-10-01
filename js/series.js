@@ -34,7 +34,7 @@
       n++;
       if (e === el) break;
     }
-    const kind = el.type === 'rect' ? '네모' : el.type === 'circle' ? '원' : el.type;
+    const kind = el.type === 'rect' ? '네모' : el.type === 'circle' ? '원' : el.type === 'rod' ? '막대' : el.type === 'fulcrum' ? '받침' : el.type;
     return kind + n;
   }
 
@@ -53,6 +53,7 @@
     const bodies = {};
     for (const [id, b] of SERIES.bodies) {
       bodies[id] = { label: b.label, x: b.x.slice(), y: b.y.slice(), v: b.v.slice(), ke: b.ke.slice(), pe: b.pe.slice() };
+      if (b.th) bodies[id].th = b.th.slice();
     }
     SERIES.ghost = { t: SERIES.t.slice(), bodies, sys: { e: SERIES.sys.e.slice(), ke: SERIES.sys.ke.slice(), pe: SERIES.sys.pe.slice() } };
   }
@@ -89,6 +90,11 @@
     return e;
   }
 
+  /** 물체 시계열의 배열 이름들 (막대는 θ·ω 가 더 있다) */
+  function _seriesKeys(b) {
+    return b.th ? ['x','y','vx','vy','v','ax','ay','ke','pe','th','om'] : ['x','y','vx','vy','v','ax','ay','ke','pe'];
+  }
+
   /** 한 스텝 기록 — physics.simStep 끝에서 호출 */
   function recordSeries(dt) {
     SERIES.time += dt;
@@ -101,18 +107,22 @@
     const g = STATE.gravityOn ? CONFIG.G : 0;
     const y0 = energyBaselineY();
     for (const el of STATE.elements) {
-      if (el.type !== 'rect' && el.type !== 'circle') continue;
+      if (el.type !== 'rect' && el.type !== 'circle' && el.type !== 'rod') continue;
+      const isRod = el.type === 'rod';
       let b = SERIES.bodies.get(el.id);
       if (!b) {
         b = { label: bodyLabel(el), x: [], y: [], vx: [], vy: [], v: [], ax: [], ay: [], ke: [], pe: [] };
+        if (isRod) { b.th = []; b.om = []; }   // 막대: 각도 [°] · 각속도 [rad/s]
         // 중간에 나타난 물체는 앞을 NaN 으로 채워 길이를 맞춘다
-        for (let i = 0; i < SERIES.t.length - 1; i++) for (const k of ['x','y','vx','vy','v','ax','ay','ke','pe']) b[k].push(NaN);
+        for (let i = 0; i < SERIES.t.length - 1; i++) for (const k of _seriesKeys(b)) b[k].push(NaN);
         SERIES.bodies.set(el.id, b);
       }
       const cx = el.type === 'rect' ? el.physX + el.gridW / 2 : el.physX;
       const cy = el.type === 'rect' ? el.physY + el.gridH / 2 : el.physY;
       const m = el.mass || 1;
-      const ke = 0.5 * m * (el.vx * el.vx + el.vy * el.vy);
+      // 막대의 운동에너지 = 병진 + 회전 (½Iω²)
+      const ke = 0.5 * m * (el.vx * el.vx + el.vy * el.vy) + (isRod ? 0.5 * rodInertia(el) * el.omega * el.omega : 0);
+      if (isRod) { b.th.push(el.theta * 180 / Math.PI); b.om.push(el.omega); }
       const pe = m * g * (cy - y0);
       b.x.push(cx); b.y.push(cy);
       b.vx.push(el.vx); b.vy.push(el.vy); b.v.push(Math.hypot(el.vx, el.vy));
@@ -131,7 +141,7 @@
   function _decimateSeries() {
     const half = arr => arr.filter((_, i) => i % 2 === 0);
     SERIES.t = half(SERIES.t);
-    for (const b of SERIES.bodies.values()) for (const k of ['x','y','vx','vy','v','ax','ay','ke','pe']) b[k] = half(b[k]);
+    for (const b of SERIES.bodies.values()) for (const k of _seriesKeys(b)) b[k] = half(b[k]);
     for (const k of ['ke','pe','es','e']) SERIES.sys[k] = half(SERIES.sys[k]);
     SERIES.decim *= 2;
   }
@@ -154,6 +164,7 @@
       heads.push(`${L}_x[m]`, `${L}_y[m]`, `${L}_vx[m/s]`, `${L}_vy[m/s]`, `${L}_v[m/s]`,
                  `${L}_ax[m/s2]`, `${L}_ay[m/s2]`, `${L}_KE[J]`, `${L}_PE[J]`);
       cols.push(b.x, b.y, b.vx, b.vy, b.v, b.ax, b.ay, b.ke, b.pe);
+      if (b.th) { heads.push(`${L}_theta[deg]`, `${L}_omega[rad/s]`); cols.push(b.th, b.om); }
     }
     heads.push('KE_total[J]', 'PE_total[J]', 'E_spring[J]', 'E_total[J]');
     cols.push(SERIES.sys.ke, SERIES.sys.pe, SERIES.sys.es, SERIES.sys.e);

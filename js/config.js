@@ -33,7 +33,7 @@
      따라서 둘의 높이차는 아무리 맞춰도 최소 0.5칸이 남고, 바닥면과 평행한
      실을 그릴 수 없다. 도르래를 반칸 격자에 놓을 수 있게 하면 정확히 정렬된다.
      (외력 ExtForce도 같은 이유로 반칸 배치가 필요하다) */
-  const HALF_SNAP_TYPES = ['extforce', 'pulley'];
+  const HALF_SNAP_TYPES = ['extforce', 'pulley', 'fulcrum'];   // 막대는 중심선을 반칸에 맞춘다 (interaction.js)
 
   /* ================================================================
      [VIEWPORT] — 줌/팬 상태

@@ -235,8 +235,8 @@
        Element 공통 속성
     ───────────────────────── */
 
-    // 가로 칸수 — Spring·Pulley·Circle·ExtForce 제외
-    if (!['spring','pulley','circle','extforce'].includes(sel.type)) {
+    // 가로 칸수 — Spring·Pulley·Circle·ExtForce·막대·받침 제외 (각자 전용 행)
+    if (!['spring','pulley','circle','extforce','rod','fulcrum'].includes(sel.type)) {
       panelRight.appendChild(_row('가로 칸수',
         _numInput(sel.gridW, 1, 20, 1, v => {
           sel.gridW = Math.max(1, Math.round(v));
@@ -244,8 +244,8 @@
         })));
     }
 
-    // 세로 칸수 — Spring·Pulley·Circle·ExtForce 제외
-    if (!['spring','pulley','circle','extforce'].includes(sel.type)) {
+    // 세로 칸수 — Spring·Pulley·Circle·ExtForce·막대·받침 제외
+    if (!['spring','pulley','circle','extforce','rod','fulcrum'].includes(sel.type)) {
       panelRight.appendChild(_row('세로 칸수',
         _numInput(sel.gridH, 1, 20, 1, v => {
           sel.gridH = Math.max(1, Math.round(v));
@@ -431,6 +431,16 @@
     }
 
     /* ─────────────────────────
+       RodBody (막대)
+    ───────────────────────── */
+    if (sel.type === 'rod') _rodPanel(sel);
+
+    /* ─────────────────────────
+       Fulcrum (받침)
+    ───────────────────────── */
+    if (sel.type === 'fulcrum') _fulcrumPanel(sel);
+
+    /* ─────────────────────────
        ForceZone
     ───────────────────────── */
     if (sel.type === 'forceZone') {
@@ -453,7 +463,7 @@
     }
 
     /* ── 측정값 (물체·용수철·도르래) ── */
-    if (typeof buildMeasureSection === 'function' && ['rect', 'circle', 'spring', 'pulley'].includes(sel.type))
+    if (typeof buildMeasureSection === 'function' && ['rect', 'circle', 'spring', 'pulley', 'rod', 'fulcrum'].includes(sel.type))
       panelRight.appendChild(buildMeasureSection(sel));
 
     /* ── 공통: 삭제 버튼 ── */
@@ -463,13 +473,129 @@
   /* 타입 → 한국어 레이블 */
   function _typeLabel(type) {
     return { rect:'네모 물체', circle:'원 물체', forceZone:'힘 구간',
-             pulley:'도르래', spring:'용수철', extforce:'외력',
+             pulley:'도르래', spring:'용수철', extforce:'외력', rod:'막대', fulcrum:'받침',
              floorSegment:'바닥면', rope:'실' }[type] || type;
+  }
+
+  /* 체크박스 행 */
+  function _check(label, checked, onChange) {
+    const wrap = document.createElement('label');
+    wrap.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--text);font-size:11px;margin:3px 0;';
+    const cb = document.createElement('input');
+    cb.type    = 'checkbox';
+    cb.checked = checked;
+    cb.style.cssText = 'accent-color:var(--accent);width:13px;height:13px;cursor:pointer;';
+    cb.addEventListener('change', () => {
+      onChange(cb.checked);
+      if (typeof recordHistory === 'function') recordHistory();
+    });
+    const txt = document.createElement('span');
+    txt.textContent = label;
+    wrap.appendChild(cb);
+    wrap.appendChild(txt);
+    return wrap;
+  }
+
+  function _note(text) {
+    const n = document.createElement('div');
+    n.className = 'pp-note';
+    n.textContent = text;
+    return n;
+  }
+
+  /* 막대 속성 — 길이·각도를 바꿀 때 받침에 얹혀 있으면 그 접점을 축으로 (받침에서 떨어지지 않게) */
+  function _rodPanel(sel) {
+    const pivotOf = () => {
+      for (const f of STATE.elements) {
+        if (f.type !== 'fulcrum') continue;
+        const c = fulcrumRodContact(f);
+        if (c && c.rod === sel) return { d: c.d, p: fulcrumApexGrid(f) };
+      }
+      return null;
+    };
+    // 막대 위 p1 로부터 d 인 점이 P 에 오도록 중심을 옮긴다
+    const placeAt = (d, P) => {
+      const g = rodGeometry(sel);
+      const s = d - sel.gridW / 2;
+      sel.gridX = P.x - g.ux * s - sel.gridW / 2;
+      sel.gridY = P.y - g.uy * s - sel.gridH / 2;
+    };
+
+    const nameInp = document.createElement('input');
+    nameInp.type = 'text'; nameInp.className = 'panel-input'; nameInp.maxLength = 12;
+    nameInp.placeholder = (typeof bodyLabel === 'function') ? bodyLabel(sel) : '이름';
+    nameInp.value = sel.label || '';
+    nameInp.addEventListener('pointerdown', e => e.stopPropagation());
+    nameInp.addEventListener('change', () => { sel.label = nameInp.value.trim(); if (typeof recordHistory === 'function') recordHistory(); });
+    panelRight.appendChild(_row('이름', nameInp));
+
+    panelRight.appendChild(_row('길이 L (m)',
+      _numInput(sel.gridW, 1, 30, 0.5, v => {
+        const pv = pivotOf();
+        const keep = pv ? pv : { d: 0, p: rodGeometry(sel).p1 };   // 받침 접점(없으면 왼쪽 끝)을 그대로
+        const ratio = pv ? pv.d / sel.gridW : 0;
+        sel.gridW = clamp(Math.round(v * 2) / 2, 1, 30);
+        placeAt(pv ? ratio * sel.gridW : 0, keep.p);
+        validateAll(); renderPanel();
+      })));
+    panelRight.appendChild(_row('질량 M (kg)',
+      _numInput(sel.mass, 0.1, undefined, 0.1, v => { sel.mass = v; renderPanel(); })));
+    panelRight.appendChild(_row('초기 각도 θ₀ (°, 반시계 +)',
+      _numInput(sel.angle0 || 0, -90, 90, 5, v => {
+        const pv = pivotOf();
+        const d = pv ? pv.d : sel.gridW / 2;
+        const P = pv ? pv.p : rodPointGrid(sel, d);
+        sel.angle0 = clamp(v, -90, 90);
+        placeAt(d, P);
+        validateAll();
+      })));
+    panelRight.appendChild(_row('반발계수 e (바닥)',
+      _slider(sel.e ?? 0, 0.0, 1.0, 0.01, v => { sel.e = v; })));
+    panelRight.appendChild(_row('눈금 (등분 수, 0 = 없음)',
+      _numInput(sel.ticks || 0, 0, 20, 1, v => { sel.ticks = Math.max(0, Math.round(v)); })));
+    const DIMS = ['off', 'm', 'L'], DIM_NAME = { off: '끔', m: '길이 (m)', L: 'L 의 배수' };
+    panelRight.appendChild(_row('치수선 (수능 그림)', _btn(DIM_NAME[sel.dims || 'off'], '', () => {
+      sel.dims = DIMS[(DIMS.indexOf(sel.dims || 'off') + 1) % DIMS.length];
+      if (typeof recordHistory === 'function') recordHistory();
+      renderPanel();
+    })));
+    const I = sel.mass * sel.gridW * sel.gridW / 12;
+    panelRight.appendChild(_note(`균일한 얇은 막대 — 질량중심은 가운데, I = ML²/12 = ${fmtNum(I, 3)} kg·m². 양 끝 핸들을 끌면 길이·각도가 바뀝니다.`));
+    panelRight.appendChild(_note('실은 막대 위 0.5 m 마다 걸 수 있습니다 (실 도구로 막대 위 점을 클릭).'));
+  }
+
+  /* 받침 속성 — 막대가 꼭짓점에 닿아 있을 때만 "고정" 체크박스 */
+  function _fulcrumPanel(sel) {
+    panelRight.appendChild(_row('크기 (칸)',
+      _numInput(sel.gridW, 0.5, 4, 0.5, v => {
+        const ax = sel.gridX + sel.gridW / 2, baseY = sel.gridY + sel.gridH;   // 밑변 가운데를 그대로
+        const size = clamp(Math.round(v * 2) / 2, 0.5, 4);
+        sel.gridW = sel.gridH = size;
+        sel.gridX = ax - size / 2; sel.gridY = baseY - size;
+        validateAll(); renderPanel();
+      })));
+    const c = fulcrumRodContact(sel);
+    if (c) {
+      panelRight.appendChild(_note(`막대에 닿음 — 왼쪽 끝에서 ${fmtNum(c.d, 2)} m, 오른쪽 끝에서 ${fmtNum(c.rod.gridW - c.d, 2)} m`));
+      panelRight.appendChild(_check('막대를 받침에 고정 (회전축)', !!sel.pinned, v => { sel.pinned = v; renderPanel(); }));
+      panelRight.appendChild(_note(sel.pinned
+        ? '고정: 막대가 꼭짓점을 축으로 돌기만 합니다 (들리거나 미끄러지지 않음).'
+        : '받치기만: 막대가 들리거나, 마찰을 이기면 미끄러지거나, 끝을 넘어가면 떨어집니다.'));
+    } else {
+      panelRight.appendChild(_note('막대에 닿지 않음 — 꼭짓점을 막대 아래에 대거나 막대를 꼭짓점 위로 끌어 오면 붙습니다.'));
+    }
+    if (!(c && sel.pinned)) {
+      panelRight.appendChild(_row('정지 마찰계수 μs (접점)',
+        _slider(sel.muS ?? 0.5, 0.0, 1.5, 0.01, v => { sel.muS = v; if ((sel.muK ?? 0) > v) { sel.muK = v; renderPanel(); } })));
+      panelRight.appendChild(_row('운동 마찰계수 μk (접점)',
+        _slider(sel.muK ?? 0.4, 0.0, 1.5, 0.01, v => { sel.muK = Math.min(v, sel.muS ?? 0.5); renderPanel(); })));
+    }
   }
 
   /* 앵커 → 레이블 (요소 타입 + 포인트) */
   function _anchorLabel(anchor) {
     const el  = STATE.elements.find(e => e.id === anchor.elementId);
+    if (el && el.type === 'rod') return `막대 (왼쪽 끝에서 ${fmtNum(rodAnchorDist(el, anchor.attachPoint), 2)} m)`;
     if (el)  return _typeLabel(el.type) + ' (' + anchor.attachPoint + ')';
     const seg = STATE.floorSegments.find(s => s.id === anchor.elementId);
     if (seg) {

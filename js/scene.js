@@ -29,6 +29,8 @@
       case 'pulley':    return Pulley;
       case 'spring':    return Spring;
       case 'extforce':  return ExtForce;
+      case 'rod':       return RodBody;
+      case 'fulcrum':   return Fulcrum;
       default:          return null;
     }
   }

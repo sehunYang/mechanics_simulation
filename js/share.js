@@ -141,7 +141,7 @@
     return { g: d.g !== 0, elements, floorSegments: floors, ropes };
   }
   function _sceneElementClassExists(type) {
-    return ['rect', 'circle', 'forceZone', 'pulley', 'spring', 'extforce'].includes(type);
+    return ['rect', 'circle', 'forceZone', 'pulley', 'spring', 'extforce', 'rod', 'fulcrum'].includes(type);
   }
 
   /** 현재 장면의 공유 URL */

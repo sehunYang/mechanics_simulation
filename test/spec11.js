@@ -35,20 +35,20 @@ const RUN = `
 `;
 
 /* ────────────────────────────────────────────────────────────── */
-scenario('S11-1', '갤러리 8개 장면 — 모두 로드되고 3초 동안 NaN 없이 돈다', () => {
+scenario('S11-1', '갤러리 15개 장면 — 모두 로드되고 3초 동안 NaN 없이 돈다', () => {
   const a = app();
   a.evalIn(RUN);
   const n = a.evalIn(`SCENES.length`);
-  expect('장면 수', n, 12, 0, '개');
+  expect('장면 수', n, 15, 0, '개');
   for (let i = 0; i < n; i++) {
     const r = a.evalIn(`
       const sc = SCENES[${i}];
       const { ids } = buildSceneFromSpec(sc.spec, { history:false, view:false });
       _begin(); _run(3);
       let bad = 0;
-      for (const e of STATE.elements) if (['rect','circle','pulley'].includes(e.type) && !(isFinite(e.physX) && isFinite(e.physY) && isFinite(e.vx) && isFinite(e.vy))) bad++;
+      for (const e of STATE.elements) if (['rect','circle','pulley','rod'].includes(e.type) && !(isFinite(e.physX) && isFinite(e.physY) && isFinite(e.vx) && isFinite(e.vy))) bad++;
       stopSimulation(); STATE.simMode = 'EDIT';
-      ({ id: sc.id, bodies: STATE.elements.filter(e=>e.type==='rect'||e.type==='circle').length, bad, warn: STATE.warnings.length })
+      ({ id: sc.id, bodies: STATE.elements.filter(e=>e.type==='rect'||e.type==='circle'||e.type==='rod').length, bad, warn: STATE.warnings.length })
     `);
     truthy(`${r.id}: 물체 ${r.bodies}개, NaN 없음`, r.bad === 0 && r.bodies >= 1);
     truthy(`${r.id}: 편집 경고 없음`, r.warn === 0);

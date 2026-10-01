@@ -30,7 +30,7 @@ function num(s) { const m = String(s || '').replace(/,/g, '').match(/-?\d+(\.\d+
     /* ── 1. 데스크톱: 시작 카드 · 갤러리 · 측정값 ── */
     let p = await L.newPage(browser, 1280, 800, SHOTS ? 2 : 1);
     chk('시작 카드가 보인다', await p.evaluate(() => document.getElementById('start-guide').classList.contains('visible')));
-    chk('갤러리 12개', (await p.evaluate(() => document.querySelectorAll('#sg-gallery .gal-item').length)) === 12);
+    chk('갤러리 15개', (await p.evaluate(() => document.querySelectorAll('#sg-gallery .gal-item').length)) === 15);
     if (SHOTS) await L.shot(p, '01-start.png');
 
     await L.scene(p, 'atwood');
@@ -91,11 +91,35 @@ function num(s) { const m = String(s || '').replace(/,/g, '').match(/-?\d+(\.\d+
     chk('링크로 연 장면이 실제로 움직인다 (하중 위로, 추 아래로)', vs.length === 2 && vs[0] > 0.05 && vs[1] < -0.05);
     await p2.close();
 
+    /* ── 4b. 돌림힘 — 지레: 막대 패널의 받침 반작용·Στ, 받침 고정 체크박스, 공유 링크로 열기 ── */
+    await L.scene(p, 'lever');
+    chk('지레: 경고 칩 없음', !(await p.evaluate(() => document.getElementById('status-chip').classList.contains('visible'))));
+    await p.evaluate(() => _selectObject(STATE.elements.find(e => e.type === 'fulcrum')));
+    await L.sleep(150);
+    chk('받침 패널: "막대를 받침에 고정" 체크박스 (체크됨)', await p.evaluate(() =>
+      [...document.querySelectorAll('#panel-right label')].some(l => /막대를 받침에 고정/.test(l.textContent) && l.querySelector('input').checked)));
+    await L.run(p, 800); await L.pause(p);
+    await p.evaluate(() => _selectObject(STATE.elements.find(e => e.type === 'rod')));
+    await L.sleep(150);
+    rows = await L.rows(p);
+    near('막대 패널: 받침 반작용 R = 5.5g', num(rows['받침 반작용 R']), 5.5 * 9.8, 0.01);
+    near('막대 패널: 장력 T1 = 2g', num(rows['장력 T1']), 2 * 9.8, 0.01);
+    near('막대 패널: Στ = 0', num(rows['돌림힘 합 Στ (받침 기준)']), 0, 0, 0.01);
+    chk('막대 패널: 회전 평형 배지', /회전 평형/.test(rows['돌림힘 합 Στ (받침 기준)'] || ''));
+    chk('그래프: θ–t 탭 보임', await p.evaluate(() => getComputedStyle(document.querySelector('.g-tab[data-tab="th"]')).display !== 'none'));
+    if (SHOTS) await L.shot(p, '10-lever.png');
+    await L.reset(p);
+    const urlR = await p.evaluate(() => sceneShareURL());
+    const p3 = await L.newPage(browser, 1280, 800, 1, false, urlR);
+    const backR = await p3.evaluate(() => ({ rods: STATE.elements.filter(e => e.type === 'rod').length, pinned: STATE.elements.some(e => e.type === 'fulcrum' && e.pinned), warn: STATE.warnings.length }));
+    chk('링크로 연 지레: 막대 1 · 고정 받침 · 경고 없음', backR.rods === 1 && backR.pinned && backR.warn === 0);
+    await p3.close();
+
     /* ── 5. POE 흐름 ── */
     await L.reset(p);
     await p.evaluate(() => { togglePOE(true); });
     await L.sleep(150);
-    chk('POE 목록: 분류 탭 9개(7 + 해설 + 탐구)', (await p.evaluate(() => document.querySelectorAll('#poe-body .poe-tab').length)) === 9);
+    chk('POE 목록: 분류 탭 10개(8 + 해설 + 탐구)', (await p.evaluate(() => document.querySelectorAll('#poe-body .poe-tab').length)) === 10);
     if (SHOTS) await L.shot(p, '05-poe-list.png');
     await p.evaluate(() => startPOE(POE_EXAMPLES.find(e => e.id === 'atwood-T')));
     await L.sleep(200);

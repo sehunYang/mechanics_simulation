@@ -78,6 +78,9 @@
       return rows;
     }
 
+    if (sel.type === 'rod') return _rodRows(sel, live);
+    if (sel.type === 'fulcrum') return _fulcrumRows(sel, live);
+
     if (sel.type === 'rope') {
       const A = _resolveAnchorWorld(sel.anchorA), B = _resolveAnchorWorld(sel.anchorB);
       const len = (A && B) ? Math.hypot(B.x - A.x, B.y - A.y) / CONFIG.cellSize : null;
@@ -136,6 +139,105 @@
         rows.push({ k: '속도', v: `(${fmtNum(sel.vx, 2)}, ${fmtNum(sel.vy, 2)}) m/s` });
       }
       return rows;
+    }
+    return rows;
+  }
+
+  /** 막대를 받치는 받침 (실행 중: 핀·접촉 기록 / 편집 중: 꼭짓점 기하) */
+  function rodPivotFulcrum(rod) {
+    const live = STATE.simMode !== 'EDIT';
+    for (const f of STATE.elements) {
+      if (f.type !== 'fulcrum') continue;
+      if (live ? (f._pinRod === rod.id || f._contactRod === rod.id) : ((fulcrumRodContact(f) || {}).rod === rod)) return f;
+    }
+    return null;
+  }
+  const _rotWord = (tau) => Math.abs(tau) < 1e-6 ? null : (tau > 0 ? '반시계' : '시계');
+
+  function _rodRows(sel, live) {
+    const rows = [];
+    const M = sel.mass || 1, L = sel.gridW, I = M * L * L / 12;
+    const g = STATE.gravityOn ? CONFIG.G : 0;
+    const GS = CONFIG.GRID_SIZE;
+    const piv = rodPivotFulcrum(sel);
+    rows.push({ k: '길이 L · 질량 M', v: `${fmtNum(L, 2)} m · ${fmtNum(M, 2)} kg` });
+    rows.push({ k: '관성모멘트 I = ML²/12', v: _u(I, 'kg·m²', 3), note: '질량중심(가운데)을 지나는 축 기준' });
+
+    if (!live) {
+      rows.push({ k: '초기 각도 θ₀', v: _u(sel.angle0 || 0, '°', 1) });
+      if (piv) {
+        const A = fulcrumApexGrid(piv), c = rodGeometry(sel);
+        const arm = A.x - c.cx;                      // 받침 → 질량중심 수평 거리 (격자 x 는 오른쪽 +)
+        const tau = arm * M * g;                     // r × (0, −Mg) = −(cx − Ax)·Mg
+        rows.push({ k: '받침', v: piv.pinned ? '고정 (회전축)' : '받치기만', badge: `왼쪽 끝에서 ${fmtNum(fulcrumRodContact(piv).d, 2)} m` });
+        rows.push({ k: '무게의 돌림힘 (받침 기준)', v: _u(tau, 'N·m', 2), badge: _rotWord(tau), note: '질량중심과 받침 사이의 수평 거리 × Mg — 실·물체의 돌림힘은 실행하면 표시' });
+      } else {
+        rows.push({ k: '받침', v: '없음', cls: 'dim' });
+      }
+      return rows;
+    }
+
+    const th = sel.theta * 180 / Math.PI;
+    const v = Math.hypot(sel.vx, sel.vy);
+    const y0 = (typeof energyBaselineY === 'function') ? energyBaselineY() : 0;
+    const ke = 0.5 * M * v * v, kr = 0.5 * I * sel.omega * sel.omega, pe = M * g * (sel.physY - y0);
+    rows.push({ k: '각도 θ', v: _u(th, '°', 2) });
+    rows.push({ k: '각속도 ω', v: _u(sel.omega, 'rad/s', 3), badge: Math.abs(sel.omega) < 1e-3 ? '회전 없음' : _rotWord(sel.omega) });
+    rows.push({ k: '각가속도 α', v: _u(sel._alphaMeas || 0, 'rad/s²', 3) });
+    rows.push({ k: '질량중심 (x, y)', v: `(${fmtNum(sel.physX, 2)}, ${fmtNum(sel.physY, 2)}) m` });
+    rows.push({ k: '질량중심 속력', v: _u(v, 'm/s', 2) });
+    rows.push({ k: '운동에너지 (병진 + 회전)', v: `${fmtNum(ke, 2)} + ${fmtNum(kr, 2)} J` });
+    rows.push({ k: '위치에너지 Mgh', v: _u(pe, 'J', 2) });
+
+    const f = sel._fbd;
+    if (f) {
+      for (const F of f.forces) {
+        if (F.kind === 'g') continue;
+        const mag = Math.hypot(F.fx, F.fy);
+        if (mag < 1e-6) continue;
+        const name = F.kind === 'T' ? '장력' : F.kind === 'R' ? '받침 반작용' : F.kind === 'N' ? (F.ref ? '받침 수직항력' : '바닥 수직항력') : '마찰력';
+        rows.push({ k: `${name} ${F.label}`, v: _u(mag, 'N', 2) });
+      }
+      if (piv) {
+        const A = piv._apex || { x: fulcrumApexGrid(piv).x, y: GS - fulcrumApexGrid(piv).y };
+        // 받침 기준 — 받침 자신의 힘은 팔 길이 0 이라 빠진다
+        for (const F of f.forces) {
+          if (F.ref === piv) continue;
+          const tau = (F.px - A.x) * F.fy - (F.py - A.y) * F.fx;
+          if (Math.abs(tau) < 1e-4) continue;
+          rows.push({ k: `돌림힘 τ(${F.label})`, v: _u(tau, 'N·m', 2), badge: _rotWord(tau) });
+        }
+        const sum = rodTorqueAbout(sel, A.x, A.y, piv);
+        const still = Math.abs(sel.omega) < 1e-3;
+        rows.push({ k: '돌림힘 합 Στ (받침 기준)', v: _u(sum, 'N·m', 2),
+                    badge: Math.abs(sum) < 0.05 ? (still ? '회전 평형' : 'Στ = 0') : _rotWord(sum), cls: Math.abs(sum) < 0.05 ? 'ok' : null,
+                    note: 'Στ = I_받침·α. 0 이면 각속도가 변하지 않는다 (멈춰 있으면 계속 멈춤).' });
+      }
+      const net = Math.hypot(f.net[0], f.net[1]);
+      rows.push({ k: '알짜힘 ΣF = Ma', v: _u(net, 'N', 2), badge: net < 0.05 ? '힘 평형' : null, cls: net < 0.05 ? 'ok' : null });
+    }
+    return rows;
+  }
+
+  function _fulcrumRows(sel, live) {
+    const rows = [];
+    const c = fulcrumRodContact(sel);
+    if (!live) {
+      rows.push({ k: '막대', v: c ? (sel.pinned ? '고정 (회전축)' : '받치기만') : '닿지 않음', cls: c ? null : 'dim' });
+      if (c) rows.push({ k: '접점 위치', v: `왼쪽 끝에서 ${fmtNum(c.d, 2)} m` });
+      rows.push({ k: '받치는 힘', v: '실행하면 표시', cls: 'dim' });
+      return rows;
+    }
+    const F = sel._force;
+    if (!F || !F.touching) { rows.push({ k: '막대', v: '닿아 있지 않음', cls: 'dim', badge: '힘 0' }); return rows; }
+    const mag = Math.hypot(F.fx, F.fy);
+    if (sel._pinRod) {
+      rows.push({ k: '받침 반작용 R', v: _u(mag, 'N', 2) });
+      rows.push({ k: '성분 (Rx, Ry)', v: `(${fmtNum(F.fx, 2)}, ${fmtNum(F.fy, 2)}) N` });
+    } else {
+      rows.push({ k: '수직항력 N', v: _u(F.N, 'N', 2) });
+      rows.push({ k: '마찰력 f', v: _u(Math.abs(F.f), 'N', 2) });
+      rows.push({ k: '받치는 힘 (합)', v: _u(mag, 'N', 2) });
     }
     return rows;
   }

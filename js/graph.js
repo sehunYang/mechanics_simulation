@@ -17,6 +17,7 @@
     { id: 'vx', label: 'vx',   unit: 'm/s',  pick: b => b.vx },
     { id: 'vy', label: 'vy',   unit: 'm/s',  pick: b => b.vy },
     { id: 'a',  label: 'a–t',  unit: 'm/s²', pick: b => b.ay.map((ay, i) => Math.hypot(b.ax[i], ay)) },
+    { id: 'th', label: 'θ–t',  unit: '°',    pick: b => b.th, rod: true },   // 막대가 있을 때만 보인다
     { id: 'E',  label: 'E–t',  unit: 'J',    sys: true },
   ];
   const GRAPH_COLORS = ['#1d4ed8', '#b45309', '#15803d', '#a21caf', '#0e7490', '#b91c1c'];
@@ -76,13 +77,15 @@
     for (const [id, b] of SERIES.bodies) {
       const color = GRAPH_COLORS[i++ % GRAPH_COLORS.length];
       if (GRAPH.hidden.has(b.label)) continue;
-      out.push({ label: b.label, color, t: SERIES.t, y: tab.pick(b) });
+      const y = tab.pick(b);
+      if (!y) continue;   // θ 탭: 막대가 아닌 물체는 각도가 없다
+      out.push({ label: b.label, color, t: SERIES.t, y });
     }
     if (SERIES.ghost) {
       for (const id of Object.keys(SERIES.ghost.bodies)) {
         const g = SERIES.ghost.bodies[id];
         if (GRAPH.hidden.has(g.label)) continue;
-        const gy = tab.id === 'y' ? g.y : tab.id === 'x' ? g.x : tab.id === 'v' ? g.v : null;
+        const gy = tab.id === 'y' ? g.y : tab.id === 'x' ? g.x : tab.id === 'v' ? g.v : tab.id === 'th' ? g.th : null;
         if (gy) out.push({ label: '이전 ' + g.label, color: '#9aa1ab', t: SERIES.ghost.t, y: gy, ghost: true });
       }
     }
@@ -106,6 +109,15 @@
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px'; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
+
+    // θ–t 탭은 막대가 있을 때만
+    const hasRod = STATE.elements.some(e => e.type === 'rod') || [...SERIES.bodies.values()].some(b => b.th);
+    const thBtn = _gEl('graph-tabs') && _gEl('graph-tabs').querySelector('[data-tab="th"]');
+    if (thBtn) thBtn.style.display = hasRod ? '' : 'none';
+    if (!hasRod && GRAPH.tab === 'th') {
+      GRAPH.tab = 'y';
+      _gEl('graph-tabs').querySelectorAll('.g-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === 'y'));
+    }
 
     const { tab, list } = _graphSeries();
     const padL = 44, padR = 10, padT = 10, padB = 22;

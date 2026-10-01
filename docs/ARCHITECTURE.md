@@ -21,16 +21,16 @@ python -m http.server 8123      # → http://localhost:8123
 ## 검증
 
 ```bash
-node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (17 스위트, 249 항목)
+node test/run-all.js            # Node vm — 물리·모듈 수치 검증 (18 스위트, 264 항목)
 node test/run-all.js --verbose
 
 npm i --no-save puppeteer-core  # 1회
 python -m http.server 8123      # 다른 터미널
-node test/browser/run.js        # 헤드리스 Chrome — 화면에 보이는 값 41 항목
+node test/browser/run.js        # 헤드리스 Chrome — 화면에 보이는 값 49 항목
 node test/browser/run.js --shots   # + docs/images 스크린샷 갱신
 ```
 
-- `test/harness.js` — `config → coords → elements → physics` 를 **수정 없이** vm 에 올리고 DOM 만 스텁. 물리 공식(닫힌형)과 대조.
+- `test/harness.js` — `config → coords → elements → physics → rod-physics` 를 **수정 없이** vm 에 올리고 DOM 만 스텁. 물리 공식(닫힌형)과 대조.
 - `test/dom-harness.js` — `index.html` 의 `<script>` 순서대로 전체 JS 를 올리고, 등록된 실제 이벤트 핸들러에 합성 포인터 입력을 흘린다. 1~3단계 기능(spec11~13)은 이 하네스 위에서 검증한다.
 - `test/browser/` — puppeteer-core. 속성 패널 텍스트, 툴바 토글, 패널 표시, 공유 링크를 **새 탭에서 URL 로 열어** 왕복, 모바일 뷰포트.
 
@@ -54,12 +54,14 @@ mechanics_simulation/
 │   ├── svg-shapes.js          수능 작도 규격 도형 (SVG path → Path2D)
 │   ├── canvas.js              캔버스 초기화·격자
 │   ├── render.js              rAF 루프 + 씬 드로잉 (drawOverlays 호출)
-│   ├── elements.js            요소 클래스 (RectBody · CircleBody · ForceZone · ExtForce · Pulley · Spring · FloorSegment · Rope)
+│   ├── elements.js            요소 클래스 (RectBody · CircleBody · ForceZone · ExtForce · Pulley · Spring · RodBody · Fulcrum · FloorSegment · Rope)
+│   │                          + 막대 기하 rodGeometry (렌더·히트테스트·촬영·물리 공용) · 막대/받침 그림 조각
 │   ├── joints.js              바닥면 이음 클로소이드 다듬기 (적격 판정·경로·토글)
 │   ├── hit-test.js            히트 테스트
 │   ├── interaction.js         포인터·키보드 (실행 중에는 선택만 허용)
 │   ├── ui-controls.js         팔레트 · 하단 pill · 배속(0.25~100x) · 한 스텝
 │   ├── physics.js             ★ 물리 엔진 + validateAll (편집 경고) + 자유물체도 분해
+│   ├── rod-physics.js         막대 강체(병진+회전) · 받침 핀/접촉 · 막대에 건 실 · 막대 계 에너지 보정
 │   ├── series.js              시계열 기록 (t·x·y·v·a·KE·PE·E) · 잔상 · CSV
 │   ├── overlay.js             속도·힘 벡터 · 잔상 궤적 오버레이
 │   ├── capture.js             SVG 촬영 (라벨 토글 반영)
@@ -68,10 +70,10 @@ mechanics_simulation/
 │   ├── panel.js               속성 패널
 │   ├── history.js             실행취소/다시실행
 │   ├── scene.js               장면 직렬화·복원 · 선언적 DSL · 뷰 맞춤
-│   ├── scenes.js              갤러리 장면 12개 (DSL)
+│   ├── scenes.js              갤러리 장면 15개 (DSL)
 │   ├── share.js               공유 링크 (#s=…, delta 인코딩)
 │   ├── headless.js            화면 없이 장면을 돌려 측정 (POE·스윕)
-│   ├── poe-data.js            POE 문항 34 · 해설 12 · 탐구 카드 10
+│   ├── poe-data.js            POE 문항 40 · 해설 15 · 탐구 카드 11
 │   ├── poe.js                 POE 엔진 (예측→관찰→설명, CSV)
 │   ├── sweep.js               파라미터 스윕 (표·그래프·CSV·프리셋)
 │   ├── graph.js               시간 그래프 패널
@@ -124,6 +126,16 @@ mechanics_simulation/
 - 에너지 투영: 실 제약은 무일이므로 서브스텝 전후 에너지 차(이산화 오차)를 속도 배율로 되돌린다.
 - **자유물체도(computeFreeBodyDiagrams)**: 한 스텝의 실제 가속도 a = Δv/dt 에서 알려진 힘(중력·힘구간·외력·공기저항·용수철·**물체 간 충돌 임펄스**)을 뺀 잔차 R 을 실 방향·접촉 법선·정지 마찰 접선 기저로 **최소자승 연립** 풀이한다 (2D 에서 미지수 ≤ 2 일 때 유일). 미끄러지는 중이면 마찰 = μk N 을 법선에 접어 미지수를 줄이고(원판은 접촉점 상대 속도 v − ωr 로 판정), 음수 장력·수직항력은 제거 후 다시 푼다. 1차에서 결정된 실 장력은 2차에서 상대 물체의 알려진 힘으로 재사용하고, 그래도 결정 불가면 탐욕 분해로 폴백한다. 결과 `el._fbd` 를 overlay·measure·headless 가 읽는다. 검증(spec12·spec14): 아트우드 T, 빗면 N·f, 정지 마찰, V자 실 두 줄 T = mg/(2cosθ), 적층 수직항력 (m₁+m₂)g, 견인 장력 m₂(a+μg), 구름 원판 f = ⅓mg sinθ 를 1~5 % 안에서 재현.
 - 공기저항: `el.drag` (b, N·s/m) 가 0 보다 크면 F = −b·v. 종단속도 mg/b.
+- **막대 (rod-physics.js)**: 네모·원과 달리 회전하는 강체. 상태 = 질량중심(physX/Y)·속도·theta·omega, I = ML²/12.
+  `integrate` 는 ① 모든 물체 속도 갱신 → ② `rodVelocitySolve` → ③ 위치 갱신 순서다. ②에서 핀(고정 받침, 2축 양방향)·
+  받침 접촉(λ ≥ 0, 쿨롱 마찰)·바닥면 ↔ 막대 모서리·**막대에 건 실**을 한 묶음으로 반복 순차 임펄스(30회)로 푼다.
+  위치를 옮기기 전에 풀기 때문에 정지 마찰로 멈춘 막대가 기어가지 않는다. 막대가 없으면 ②는 아무것도 하지 않아
+  기존 장면의 결과는 그대로다. 충돌 단계 뒤 `rodPositionFix` 가 핀 어긋남·침투·실 늘어남을 위치만으로 되돌린다.
+  막대에 건 실은 실 제약 단계(`resolveRopeConstraints`)에서 빠진다. 막대는 물리에서 **두께 없는 중심선**이며
+  받침 꼭짓점·실 앵커가 모두 중심선에 있어 평형이 중립이다(두께는 그림용, 바닥 충돌만 네 모서리).
+  힘은 잔차로 풀지 않고 **제약 임펄스를 직접 기록**해 작용점과 함께 `rod._fbd.forces` 에 남긴다 → 돌림힘 r × F.
+  중력·핀·팽팽한 실만 받는 막대 계는 서브스텝 에너지 차를 속도 배율로 되돌린다 (진자 10 s 에너지 오차 0.1 %).
+  설계 근거: [design/rod-fulcrum.md](design/rod-fulcrum.md).
 
 ## 장면 DSL (scene.js)
 
