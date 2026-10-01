@@ -5,6 +5,8 @@
 'use strict';
 const { execFileSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const SUITES = [
   ['spec',  '기본 역학 (중력·충돌·마찰·회전·실·도르래·용수철·외력)'],
@@ -23,6 +25,7 @@ const SUITES = [
   ['spec14','역학 공식 대조 매트릭스 (자유물체도 힘 값 · 조합 상황)'],
   ['spec15','포물선 · 원운동 · 수직 원운동 · 회전 낙하 (스핀 → 병진)'],
   ['spec16','클로소이드 이음 (적격 판정 · 접선 연속 · 무충격 · 볼록 이탈 조건 · 공유)'],
+  ['spec17','돌림힘 (막대 강체 · 받침 핀/접촉 · 평형 · 렌더↔물리 · SVG · 공유 · 편집 스냅 · POE)'],
 ];
 
 const verbose = process.argv.includes('--verbose');
@@ -41,13 +44,16 @@ try {
 }
 
 for (const [name, desc] of SUITES) {
-  let out;
+  // 출력은 파이프가 아니라 임시 파일로 받는다 — 스펙들이 끝에서 process.exit() 를 부르는데,
+  // macOS 에서는 파이프 쓰기가 비동기라 버퍼(64KB)를 넘는 출력이 잘려 결과 줄이 사라진다.
+  const tmp = path.join(os.tmpdir(), `mech-spec-${process.pid}-${name}.out`);
+  const fd = fs.openSync(tmp, 'w');
   try {
-    out = execFileSync(process.execPath, [path.join(__dirname, name + '.js')],
-      { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-  } catch (err) {
-    out = (err.stdout || '') + (err.stderr || '');
-  }
+    execFileSync(process.execPath, [path.join(__dirname, name + '.js')], { stdio: ['ignore', fd, fd] });
+  } catch (err) { /* 종료 코드는 아래 요약 줄로 판정 */ }
+  fs.closeSync(fd);
+  const out = fs.readFileSync(tmp, 'utf8');
+  fs.unlinkSync(tmp);
   const m = out.match(/PASS (\d+) \/ FAIL (\d+) \/ ERROR (\d+)\s+\(total (\d+)\)/);
   const [, p, f, e, n] = m ? m.map(Number) : [0, 0, 0, 1, 1];
   tp += p; tf += f; te += e; tn += n;
